@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -35,7 +36,10 @@ AXIS_LIMITS = {
     "vertical": (-300000, 300000),
 }
 
-RECIPE_PATH = Path(__file__).with_name("recipe_default.json")
+RECIPES_DIR = Path(__file__).with_name("recipes")
+LEGACY_RECIPE_PATH = Path(__file__).with_name("recipe_default.json")
+DEFAULT_RECIPE_NAME = "default"
+MAX_RECIPE_NAME_LENGTH = 80
 MAX_RECIPE_STEPS = 100
 
 app = Flask(__name__)
@@ -1088,19 +1092,32 @@ def axes_home():
     )
 
 
-@app.get("/api/recipe")
-def load_recipe():
-    if not RECIPE_PATH.exists():
-        return jsonify({"ok": True, **default_recipe_payload()})
+def normalize_recipe_name(raw_name: Any) -> str:
+    name = str(raw_name or "").strip()
+    if not name:
+        raise ValueError("recipe name cannot be empty.")
+    if len(name) > MAX_RECIPE_NAME_LENGTH:
+        raise ValueError(f"recipe name cannot be longer than {MAX_RECIPE_NAME_LENGTH} characters.")
+    name = re.sub(r"[^A-Za-z0-9 _.-]", "_", name)
+    name = re.sub(r"\s+", " ", name).strip(" ._")
+    if not name:
+        raise ValueError("recipe name must contain at least one letter or number.")
+    return name
 
-    try:
-        with RECIPE_PATH.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception as exc:
-        return jsonify({"error": f"Unable to load recipe: {exc}"}), 500
+
+def recipe_path_for_name(raw_name: Any) -> Path:
+    name = normalize_recipe_name(raw_name)
+    return RECIPES_DIR / f"{name}.json"
+
+
+def recipe_payload_from_file(path: Path) -> dict[str, Any]:
+    with path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
 
     if not isinstance(data, dict):
-        return jsonify({"error": "Saved recipe file is invalid."}), 500
+        raise ValueError("recipe file is invalid.")
+
+    name = normalize_recipe_name(data.get("name", path.stem))
 
     try:
         repetitions = int(data.get("repetitions", 1))
@@ -1108,18 +1125,107 @@ def load_recipe():
         repetitions = 1
 
     repetitions = min(100, max(1, repetitions))
+    steps = normalize_recipe_steps_for_storage(data.get("steps", []))
+
+    return {
+        "name": name,
+        "repetitions": repetitions,
+        "steps": steps,
+        "saved_at": data.get("saved_at"),
+    }
+
+
+def write_recipe_payload(name: str, repetitions: int, steps: list[dict[str, Any]]) -> Path:
+    RECIPES_DIR.mkdir(parents=True, exist_ok=True)
+    path = recipe_path_for_name(name)
+    data = {
+        "name": normalize_recipe_name(name),
+        "repetitions": repetitions,
+        "steps": steps,
+        "saved_at": datetime.now(timezone.utc).isoformat(),
+    }
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    return path
+
+
+def list_saved_recipes() -> list[dict[str, Any]]:
+    RECIPES_DIR.mkdir(parents=True, exist_ok=True)
+    recipes = []
+
+    for path in sorted(RECIPES_DIR.glob("*.json")):
+        try:
+            data = recipe_payload_from_file(path)
+            recipes.append(
+                {
+                    "name": data["name"],
+                    "repetitions": data["repetitions"],
+                    "step_count": len(data["steps"]),
+                    "saved_at": data.get("saved_at"),
+                }
+            )
+        except Exception:
+            continue
+
+    if not recipes and LEGACY_RECIPE_PATH.exists():
+        try:
+            data = recipe_payload_from_file(LEGACY_RECIPE_PATH)
+            data["name"] = DEFAULT_RECIPE_NAME
+            write_recipe_payload(data["name"], data["repetitions"], data["steps"])
+            recipes.append(
+                {
+                    "name": data["name"],
+                    "repetitions": data["repetitions"],
+                    "step_count": len(data["steps"]),
+                    "saved_at": data.get("saved_at"),
+                }
+            )
+        except Exception:
+            pass
+
+    return recipes
+
+
+@app.get("/api/recipes")
+def list_recipes():
+    return jsonify({"ok": True, "recipes": list_saved_recipes()})
+
+
+@app.get("/api/recipe")
+def load_recipe():
+    raw_name = request.args.get("name", DEFAULT_RECIPE_NAME)
 
     try:
-        steps = normalize_recipe_steps_for_storage(data.get("steps", []))
+        name = normalize_recipe_name(raw_name)
+        path = recipe_path_for_name(name)
     except ValueError as exc:
-        return jsonify({"error": f"Saved recipe file is invalid: {exc}"}), 500
+        return jsonify({"error": str(exc)}), 400
 
-    return jsonify({"ok": True, "repetitions": repetitions, "steps": steps})
+    if not path.exists():
+        if name == DEFAULT_RECIPE_NAME and LEGACY_RECIPE_PATH.exists():
+            path = LEGACY_RECIPE_PATH
+        else:
+            payload = default_recipe_payload()
+            return jsonify({"ok": True, "name": name, **payload})
+
+    try:
+        data = recipe_payload_from_file(path)
+    except Exception as exc:
+        return jsonify({"error": f"Unable to load recipe: {exc}"}), 500
+
+    data["name"] = name
+    return jsonify({"ok": True, **data})
 
 
 @app.post("/api/recipe")
 def save_recipe():
     payload = request.get_json(silent=True) or {}
+
+    try:
+        name = normalize_recipe_name(payload.get("name", DEFAULT_RECIPE_NAME))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     try:
         repetitions = int(payload.get("repetitions", 1))
@@ -1134,20 +1240,33 @@ def save_recipe():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    data = {
-        "repetitions": repetitions,
-        "steps": steps,
-        "saved_at": datetime.now(timezone.utc).isoformat(),
-    }
-
     try:
-        with RECIPE_PATH.open("w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-            f.write("\n")
+        write_recipe_payload(name, repetitions, steps)
     except Exception as exc:
         return jsonify({"error": f"Unable to save recipe: {exc}"}), 500
 
-    return jsonify({"ok": True, "count": len(steps), "repetitions": repetitions})
+    return jsonify({"ok": True, "name": name, "count": len(steps), "repetitions": repetitions})
+
+
+@app.delete("/api/recipe")
+def delete_recipe():
+    raw_name = request.args.get("name", "")
+
+    try:
+        name = normalize_recipe_name(raw_name)
+        path = recipe_path_for_name(name)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if not path.exists():
+        return jsonify({"error": f"Recipe '{name}' does not exist."}), 404
+
+    try:
+        path.unlink()
+    except Exception as exc:
+        return jsonify({"error": f"Unable to delete recipe: {exc}"}), 500
+
+    return jsonify({"ok": True, "name": name})
 
 
 @app.get("/api/automation/status")

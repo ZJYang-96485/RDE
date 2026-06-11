@@ -10,7 +10,7 @@
     <div class="page-grid">
     <main class="panel">
       <h1>Motor Control</h1>
-      <p class="meta">RPM: {{ com_port }} | Rotation: {{ rotation_com_port }} | Linear: {{ linear_com_port }} | Horizontal: {{ horizontal_com_port }}</p>
+      <p class="meta">RPM: {{ com_port }} | Rotation: {{ rotation_com_port }} | Linear: {{ linear_com_port }} | Horizontal: {{ horizontal_com_port }} | Vertical: {{ vertical_com_port }}</p>
 
       <label for="rpm">RPM ({{ rpm_min }} to {{ rpm_max }})</label>
       <input id="rpm" type="number" min="{{ rpm_min }}" max="{{ rpm_max }}" value="1000" />
@@ -60,6 +60,22 @@
         </div>
       </div>
       <p id="horizontalStatus" class="hint"></p>
+      <label for="verticalStepsSlider">Vertical Movement ({{ vertical_com_port }})</label>
+      <div class="linear-row">
+        <div class="linear-slider-wrap">
+          <div class="slider-input-row">
+            <input id="verticalStepsSlider" type="range" min="0" max="1000" value="0" />
+            <input id="verticalStepsInput" class="step-input" type="number" min="1" max="100000" step="1" value="1" />
+          </div>
+          <p id="verticalStepsValue" class="hint">Steps: 1</p>
+          <p class="hint range-hint">Input range: 1 to 100000. Values outside this range will not run.</p>
+        </div>
+        <div class="linear-arrow-buttons">
+          <button id="verticalUpBtn" class="icon-btn up" title="Send +steps">&#9650;</button>
+          <button id="verticalDownBtn" class="icon-btn down" title="Send -steps">&#9660;</button>
+        </div>
+      </div>
+      <p id="verticalStatus" class="hint"></p>
       <button id="axesHomeBtn" class="home-btn">Home Axes</button>
       <p id="axesHomeStatus" class="hint"></p>
 
@@ -131,6 +147,12 @@
       const horizontalLeftBtn = document.getElementById("horizontalLeftBtn");
       const horizontalRightBtn = document.getElementById("horizontalRightBtn");
       const horizontalStatusEl = document.getElementById("horizontalStatus");
+      const verticalStepsSlider = document.getElementById("verticalStepsSlider");
+      const verticalStepsInput = document.getElementById("verticalStepsInput");
+      const verticalStepsValue = document.getElementById("verticalStepsValue");
+      const verticalUpBtn = document.getElementById("verticalUpBtn");
+      const verticalDownBtn = document.getElementById("verticalDownBtn");
+      const verticalStatusEl = document.getElementById("verticalStatus");
       const axesHomeBtn = document.getElementById("axesHomeBtn");
       const axesHomeStatusEl = document.getElementById("axesHomeStatus");
       const startExperimentBtn = document.getElementById("startExperimentBtn");
@@ -230,6 +252,8 @@
           linearDownBtn.disabled = automationRunning;
           horizontalLeftBtn.disabled = automationRunning;
           horizontalRightBtn.disabled = automationRunning;
+          verticalUpBtn.disabled = automationRunning;
+          verticalDownBtn.disabled = automationRunning;
           axesHomeBtn.disabled = automationRunning;
           rpmInput.disabled = automationRunning;
           secondsInput.disabled = automationRunning;
@@ -237,6 +261,8 @@
           linearStepsInput.disabled = automationRunning;
           horizontalStepsSlider.disabled = automationRunning;
           horizontalStepsInput.disabled = automationRunning;
+          verticalStepsSlider.disabled = automationRunning;
+          verticalStepsInput.disabled = automationRunning;
           automationRepetitionsInput.disabled = automationRunning;
           for (const sample of sampleBlocks) {
             sample.enabled.disabled = automationRunning;
@@ -369,6 +395,28 @@
         return true;
       }
 
+      async function sendVertical(command) {
+        setError("");
+
+        const res = await fetch("/api/vertical/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ command }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          setError(data.error || "Unable to send vertical command.");
+          return false;
+        }
+
+        verticalStatusEl.textContent = `Sent '${data.command}' to ${data.com_port}`;
+        if (data.ack) {
+          verticalStatusEl.textContent += ` | Board: ${data.ack}`;
+        }
+        return true;
+      }
+
       async function homeAxes() {
         setError("");
         axesHomeStatusEl.textContent = "";
@@ -384,12 +432,14 @@
         axesHomeStatusEl.textContent =
           `Homed sequence: Linear ${data.linear_command} (${data.linear_com_port}) -> ` +
           `Rotation ${data.rotation_command} (${data.rotation_com_port}) -> ` +
-          `Horizontal ${data.horizontal_command} (${data.horizontal_com_port})`;
+          `Horizontal ${data.horizontal_command} (${data.horizontal_com_port}) -> ` +
+          `Vertical ${data.vertical_command} (${data.vertical_com_port})`;
         if (data.rotation_ack) {
           axesHomeStatusEl.textContent += ` | Rotation board: ${data.rotation_ack}`;
         }
         linearStatusEl.textContent = `At home position (${data.linear_com_port})`;
         horizontalStatusEl.textContent = `At home position (${data.horizontal_com_port})`;
+        verticalStatusEl.textContent = `At home position (${data.vertical_com_port})`;
         return true;
       }
 
@@ -476,6 +526,11 @@
         horizontalStepsValue.textContent = `Steps: ${steps}`;
       }
 
+      function syncVerticalDisplay(steps) {
+        verticalStepsInput.value = String(steps);
+        verticalStepsValue.textContent = `Steps: ${steps}`;
+      }
+
       function updateLinearFromSlider() {
         const steps = sliderToLinearSteps(linearStepsSlider.value);
         syncLinearDisplay(steps);
@@ -485,6 +540,12 @@
       function updateHorizontalFromSlider() {
         const steps = sliderToLinearSteps(horizontalStepsSlider.value);
         syncHorizontalDisplay(steps);
+        return steps;
+      }
+
+      function updateVerticalFromSlider() {
+        const steps = sliderToLinearSteps(verticalStepsSlider.value);
+        syncVerticalDisplay(steps);
         return steps;
       }
 
@@ -507,6 +568,17 @@
           horizontalStepsSlider.value = String(stepsToSliderValue(steps));
         }
         syncHorizontalDisplay(steps);
+        return steps;
+      }
+
+      function updateVerticalFromInput() {
+        const parsed = Number(verticalStepsInput.value);
+        const fallback = sliderToLinearSteps(verticalStepsSlider.value);
+        const steps = Number.isFinite(parsed) ? Math.abs(Math.round(parsed)) : fallback;
+        if (steps >= LINEAR_MIN_STEPS && steps <= LINEAR_MAX_STEPS) {
+          verticalStepsSlider.value = String(stepsToSliderValue(steps));
+        }
+        syncVerticalDisplay(steps);
         return steps;
       }
 
@@ -558,10 +630,13 @@
 
       linearStepsSlider.addEventListener("input", updateLinearFromSlider);
       horizontalStepsSlider.addEventListener("input", updateHorizontalFromSlider);
+      verticalStepsSlider.addEventListener("input", updateVerticalFromSlider);
       linearStepsInput.addEventListener("input", updateLinearFromInput);
       horizontalStepsInput.addEventListener("input", updateHorizontalFromInput);
+      verticalStepsInput.addEventListener("input", updateVerticalFromInput);
       enableOverwriteOnFocus(linearStepsInput);
       enableOverwriteOnFocus(horizontalStepsInput);
+      enableOverwriteOnFocus(verticalStepsInput);
 
       linearUpBtn.addEventListener("click", async () => {
         linearUpBtn.disabled = true;
@@ -608,6 +683,30 @@
           setError(err.message);
         } finally {
           horizontalRightBtn.disabled = false;
+        }
+      });
+
+      verticalUpBtn.addEventListener("click", async () => {
+        verticalUpBtn.disabled = true;
+        try {
+          const steps = updateVerticalFromInput();
+          await sendVertical(String(-steps));
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          verticalUpBtn.disabled = false;
+        }
+      });
+
+      verticalDownBtn.addEventListener("click", async () => {
+        verticalDownBtn.disabled = true;
+        try {
+          const steps = updateVerticalFromInput();
+          await sendVertical(String(steps));
+        } catch (err) {
+          setError(err.message);
+        } finally {
+          verticalDownBtn.disabled = false;
         }
       });
 
@@ -659,6 +758,7 @@
 
       updateLinearFromSlider();
       updateHorizontalFromSlider();
+      updateVerticalFromSlider();
       fetchStatus();
     </script>
   </body>

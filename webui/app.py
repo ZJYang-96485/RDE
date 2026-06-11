@@ -16,7 +16,7 @@ COM_PORT = "COM10"
 ROTATION_COM_PORT = "COM7"
 LINEAR_COM_PORT = "COM9"
 HORIZONTAL_COM_PORT = "COM4"
-VERTICAL_COM_PORT = "COM8"
+VERTICAL_COM_PORT = "COM5"
 BAUD_RATE = 115200
 RPM_MIN = 30
 RPM_MAX = 12000
@@ -38,14 +38,17 @@ serial_conn = None
 rotation_serial_conn = None
 linear_serial_conn = None
 horizontal_serial_conn = None
+vertical_serial_conn = None
 stop_timer = None
 rotation_lock = threading.Lock()
 linear_lock = threading.Lock()
 horizontal_lock = threading.Lock()
+vertical_lock = threading.Lock()
 axis_position_lock = threading.Lock()
 axis_positions = {
     "linear": 0,
     "horizontal": 0,
+    "vertical": 0,
 }
 automation_lock = threading.Lock()
 automation_state = {
@@ -321,6 +324,60 @@ def send_horizontal_text(command: str, abort_event: threading.Event | None = Non
 
     return ack
 
+def ensure_vertical_serial_connection() -> None:
+    global vertical_serial_conn
+
+    if serial is None:
+        raise RuntimeError("pyserial is not installed. Run: pip install -r requirements.txt")
+
+    if vertical_serial_conn and vertical_serial_conn.is_open:
+        return
+
+    vertical_serial_conn = serial.Serial(
+        VERTICAL_COM_PORT,
+        BAUD_RATE,
+        timeout=0.4,
+        write_timeout=1,
+    )
+    time.sleep(2.0)
+    vertical_serial_conn.reset_input_buffer()
+    vertical_serial_conn.reset_output_buffer()
+
+
+def send_vertical_text(command: str, abort_event: threading.Event | None = None) -> str | None:
+    global vertical_serial_conn
+
+    if serial is None:
+        raise RuntimeError("pyserial is not installed. Run: pip install -r requirements.txt")
+
+    payload = f"{command}\n".encode("ascii")
+    ack_timeout_seconds = axis_ack_timeout_seconds(command)
+
+    with vertical_lock:
+        try:
+            ensure_vertical_serial_connection()
+            vertical_serial_conn.write(payload)
+            vertical_serial_conn.flush()
+        except Exception:
+            try:
+                if vertical_serial_conn and vertical_serial_conn.is_open:
+                    vertical_serial_conn.close()
+            finally:
+                vertical_serial_conn = None
+
+            ensure_vertical_serial_connection()
+            vertical_serial_conn.write(payload)
+            vertical_serial_conn.flush()
+
+        ack = wait_for_axis_ack(
+            vertical_serial_conn,
+            ack_timeout_seconds,
+            VERTICAL_COM_PORT,
+            abort_event=abort_event,
+        )
+
+    return ack
+
 
 def move_linear_steps(steps: int, abort_event: threading.Event | None = None) -> str | None:
     ack = send_linear_text(str(int(steps)), abort_event=abort_event)
@@ -333,6 +390,12 @@ def move_horizontal_steps(steps: int, abort_event: threading.Event | None = None
     ack = send_horizontal_text(str(int(steps)), abort_event=abort_event)
     with axis_position_lock:
         axis_positions["horizontal"] += int(steps)
+    return ack
+
+def move_vertical_steps(steps: int, abort_event: threading.Event | None = None) -> str | None:
+    ack = send_vertical_text(str(int(steps)), abort_event=abort_event)
+    with axis_position_lock:
+        axis_positions["vertical"] += int(steps)
     return ack
 
 
@@ -389,23 +452,32 @@ def home_axes_internal() -> dict:
     with axis_position_lock:
         linear_offset = axis_positions["linear"]
         horizontal_offset = axis_positions["horizontal"]
+        vertical_offset = axis_positions["vertical"]
 
     linear_home_cmd = -linear_offset
     horizontal_home_cmd = -horizontal_offset
+    vertical_home_cmd = -vertical_offset
 
     if linear_home_cmd != 0:
         send_linear_text(str(linear_home_cmd))
+
     rotation_ack = send_rotation_command(0)
+
     if horizontal_home_cmd != 0:
         send_horizontal_text(str(horizontal_home_cmd))
+
+    if vertical_home_cmd != 0:
+        send_vertical_text(str(vertical_home_cmd))
 
     with axis_position_lock:
         axis_positions["linear"] = 0
         axis_positions["horizontal"] = 0
+        axis_positions["vertical"] = 0
 
     return {
         "linear_command": linear_home_cmd,
         "horizontal_command": horizontal_home_cmd,
+        "vertical_command": vertical_home_cmd,
         "rotation_command": 0,
         "rotation_ack": rotation_ack,
     }
@@ -521,6 +593,7 @@ def index():
         rotation_com_port=ROTATION_COM_PORT,
         linear_com_port=LINEAR_COM_PORT,
         horizontal_com_port=HORIZONTAL_COM_PORT,
+        vertical_com_port=VERTICAL_COM_PORT,
     )
 
 
@@ -530,6 +603,7 @@ def status():
         with axis_position_lock:
             linear_pos = axis_positions["linear"]
             horizontal_pos = axis_positions["horizontal"]
+            vertical_pos = axis_positions["vertical"]
         with automation_lock:
             automation_running = automation_state["running"]
             automation_step = automation_state["current_step"]
@@ -546,8 +620,10 @@ def status():
                 "rotation_com_port": ROTATION_COM_PORT,
                 "linear_com_port": LINEAR_COM_PORT,
                 "horizontal_com_port": HORIZONTAL_COM_PORT,
+                "vertical_com_port": VERTICAL_COM_PORT,
                 "linear_position": linear_pos,
                 "horizontal_position": horizontal_pos,
+                "vertical_position": vertical_pos,
                 "automation_running": automation_running,
                 "automation_step": automation_step,
                 "automation_error": automation_error,
@@ -775,6 +851,42 @@ def horizontal_send():
 
     return jsonify({"ok": True, "command": command, "com_port": HORIZONTAL_COM_PORT, "ack": ack})
 
+@app.post("/api/vertical/send")
+def vertical_send():
+    with automation_lock:
+        if automation_state["running"]:
+            return jsonify({"error": "automation is running; manual vertical commands are disabled."}), 409
+
+    payload = request.get_json(silent=True) or {}
+    command = str(payload.get("command", "")).strip()
+
+    try:
+        steps = int(command)
+    except ValueError:
+        return jsonify({"error": "command must be an integer."}), 400
+
+    if steps == 0:
+        return jsonify({"error": "command cannot be 0."}), 400
+
+    if abs(steps) > 100000:
+        return jsonify({"error": "absolute command must be between 1 and 100000."}), 400
+
+    try:
+        ack = move_vertical_steps(steps)
+    except Exception as exc:
+        return (
+            jsonify(
+                {
+                    "error": (
+                        f"Unable to send '{command}' to {VERTICAL_COM_PORT}: {exc}. "
+                        f"Close Arduino Serial Monitor/Plotter for {VERTICAL_COM_PORT} and try again."
+                    )
+                }
+            ),
+            500,
+        )
+
+    return jsonify({"ok": True, "command": command, "com_port": VERTICAL_COM_PORT, "ack": ack})
 
 @app.post("/api/axes/home")
 def axes_home():
@@ -810,6 +922,9 @@ def axes_home():
             "horizontal_com_port": HORIZONTAL_COM_PORT,
             "rotation_command": result["rotation_command"],
             "rotation_ack": result["rotation_ack"],
+            "vertical_command": result["vertical_command"],
+            "vertical_position": 0,
+            "vertical_com_port": VERTICAL_COM_PORT,
         }
     )
 

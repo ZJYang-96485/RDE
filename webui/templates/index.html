@@ -102,6 +102,8 @@
 
         <div class="cmd-buttons">
           <button id="addStepBtn" class="home-btn" type="button">Add Step</button>
+          <button id="saveRecipeBtn" class="home-btn" type="button">Save Recipe</button>
+          <button id="loadRecipeBtn" class="home-btn" type="button">Load Recipe</button>
           <button id="startExperimentBtn" class="home-btn" type="button">Start Experiment</button>
         </div>
         <button id="abortHomeBtn" class="abort-btn" type="button">Abort Then Go Home</button>
@@ -177,6 +179,8 @@
       const startExperimentBtn = document.getElementById("startExperimentBtn");
       const abortHomeBtn = document.getElementById("abortHomeBtn");
       const addStepBtn = document.getElementById("addStepBtn");
+      const saveRecipeBtn = document.getElementById("saveRecipeBtn");
+      const loadRecipeBtn = document.getElementById("loadRecipeBtn");
       const recipeStepsEl = document.getElementById("recipeSteps");
       const recipeStepTemplate = document.getElementById("recipeStepTemplate");
       const automationStatusEl = document.getElementById("automationStatus");
@@ -227,6 +231,8 @@
           el.disabled = disabled;
         }
         addStepBtn.disabled = disabled;
+        saveRecipeBtn.disabled = disabled;
+        loadRecipeBtn.disabled = disabled;
       }
 
       async function fetchStatus() {
@@ -444,6 +450,10 @@
         });
       }
 
+      function clearRecipeSteps() {
+        recipeStepsEl.innerHTML = "";
+      }
+
       function updateStepTitles() {
         const steps = Array.from(recipeStepsEl.querySelectorAll(".recipe-step"));
         steps.forEach((step, index) => {
@@ -495,6 +505,59 @@
           duration_seconds: Number(step.querySelector(".step-seconds").value),
           rotation_command: step.querySelector(".step-rotation").value,
         }));
+      }
+
+      async function saveRecipe() {
+        setAutomationError("");
+        automationStatusEl.textContent = "Saving recipe...";
+
+        const res = await fetch("/api/recipe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            repetitions: Number(automationRepetitionsInput.value),
+            steps: getRecipeStepsPayload(),
+          }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          setAutomationError(data.error || "Unable to save recipe.");
+          automationStatusEl.textContent = "Recipe save failed.";
+          return false;
+        }
+
+        automationStatusEl.textContent = `Recipe saved: ${data.count} steps, ${data.repetitions} repetition(s).`;
+        return true;
+      }
+
+      async function loadRecipe() {
+        setAutomationError("");
+        automationStatusEl.textContent = "Loading recipe...";
+
+        const res = await fetch("/api/recipe");
+        const data = await res.json();
+
+        if (!res.ok) {
+          setAutomationError(data.error || "Unable to load recipe.");
+          automationStatusEl.textContent = "Recipe load failed.";
+          return false;
+        }
+
+        automationRepetitionsInput.value = String(data.repetitions || 1);
+        clearRecipeSteps();
+
+        const steps = Array.isArray(data.steps) ? data.steps : [];
+        for (const step of steps) {
+          addRecipeStep(step);
+        }
+
+        if (recipeStepsEl.children.length === 0) {
+          addRecipeStep({ name: "Step 1", rpm: 0, duration_seconds: 0, z: 0 });
+        }
+
+        automationStatusEl.textContent = `Loaded recipe: ${recipeStepsEl.children.length} steps.`;
+        return true;
       }
 
       async function startAutomation() {
@@ -671,6 +734,30 @@
         addRecipeStep({ name: `Step ${recipeStepsEl.children.length + 1}`, rpm: 0, duration_seconds: 0, z: 0 });
       });
 
+      saveRecipeBtn.addEventListener("click", async () => {
+        saveRecipeBtn.disabled = true;
+        try {
+          await saveRecipe();
+        } catch (err) {
+          setAutomationError(err.message);
+          automationStatusEl.textContent = "Recipe save failed.";
+        } finally {
+          saveRecipeBtn.disabled = automationRunning;
+        }
+      });
+
+      loadRecipeBtn.addEventListener("click", async () => {
+        loadRecipeBtn.disabled = true;
+        try {
+          await loadRecipe();
+        } catch (err) {
+          setAutomationError(err.message);
+          automationStatusEl.textContent = "Recipe load failed.";
+        } finally {
+          loadRecipeBtn.disabled = automationRunning;
+        }
+      });
+
       startExperimentBtn.addEventListener("click", async () => {
         startExperimentBtn.disabled = true;
         try {
@@ -693,12 +780,16 @@
         }
       });
 
-      addRecipeStep({ name: "Sample 1", x: 0, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10 });
-      addRecipeStep({ name: "Sample 2", x: 80000, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10 });
-      addRecipeStep({ name: "Sample 3", x: 160000, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10 });
-      addRecipeStep({ name: "DI Water", x: 120000, vertical: 60000, z: 50000, rpm: 0, duration_seconds: 5 });
-      addRecipeStep({ name: "Blank Electrode", x: 180000, vertical: 60000, z: 50000, rpm: 1000, duration_seconds: 10 });
-      addRecipeStep({ name: "Empty Rotation", x: 240000, vertical: 60000, z: 0, rpm: 0, duration_seconds: 0, rotation_command: "1" });
+      loadRecipe().catch((err) => {
+        setAutomationError(err.message);
+        clearRecipeSteps();
+        addRecipeStep({ name: "Sample 1", x: 0, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10 });
+        addRecipeStep({ name: "Sample 2", x: 80000, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10 });
+        addRecipeStep({ name: "Sample 3", x: 160000, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10 });
+        addRecipeStep({ name: "DI Water", x: 120000, vertical: 60000, z: 50000, rpm: 0, duration_seconds: 5 });
+        addRecipeStep({ name: "Blank Electrode", x: 180000, vertical: 60000, z: 50000, rpm: 1000, duration_seconds: 10 });
+        addRecipeStep({ name: "Empty Rotation", x: 240000, vertical: 60000, z: 0, rpm: 0, duration_seconds: 0, rotation_command: "1" });
+      });
 
       setInterval(() => {
         updateStatusText();

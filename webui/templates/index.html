@@ -8,122 +8,140 @@
   </head>
   <body>
     <div class="page-grid">
-    <main class="panel">
-      <h1>Motor Control</h1>
-      <p class="meta">RPM: {{ com_port }} | Rotation: {{ rotation_com_port }} | Linear: {{ linear_com_port }} | Horizontal: {{ horizontal_com_port }} | Vertical: {{ vertical_com_port }}</p>
+      <main class="panel">
+        <h1>Motor Control</h1>
+        <p class="meta">RPM: {{ com_port }} | Rotation: {{ rotation_com_port }} | Linear/Z: {{ linear_com_port }} | Horizontal/X: {{ horizontal_com_port }} | Vertical/Y: {{ vertical_com_port }}</p>
 
-      <label for="rpm">RPM ({{ rpm_min }} to {{ rpm_max }})</label>
-      <input id="rpm" type="number" min="{{ rpm_min }}" max="{{ rpm_max }}" value="1000" />
+        <label for="rpm">RPM ({{ rpm_min }} to {{ rpm_max }})</label>
+        <input id="rpm" type="number" min="{{ rpm_min }}" max="{{ rpm_max }}" value="1000" />
 
-      <label for="seconds">Run Time (seconds)</label>
-      <input id="seconds" type="number" min="1" value="10" />
+        <label for="seconds">Run Time (seconds)</label>
+        <input id="seconds" type="number" min="1" value="10" />
 
-      <button id="startStopBtn" class="start">Start</button>
+        <button id="startStopBtn" class="start">Start</button>
 
-      <label>Send To Rotation ({{ rotation_com_port }})</label>
-      <div class="cmd-buttons">
-        <button id="sendOneBtn" class="icon-btn up" title="Send 1">&#9650;</button>
-        <button id="sendZeroBtn" class="icon-btn down" title="Send 0">&#9660;</button>
-      </div>
-      <p id="rotationStatus" class="hint"></p>
+        <label>Send To Rotation ({{ rotation_com_port }})</label>
+        <div class="cmd-buttons">
+          <button id="sendOneBtn" class="icon-btn up" title="Send 1">&#9650;</button>
+          <button id="sendZeroBtn" class="icon-btn down" title="Send 0">&#9660;</button>
+        </div>
+        <p id="rotationStatus" class="hint"></p>
 
-      <label for="linearStepsSlider">Linear Movement ({{ linear_com_port }})</label>
-      <div class="linear-row">
-        <div class="linear-slider-wrap">
-          <div class="slider-input-row">
-            <input id="linearStepsSlider" type="range" min="0" max="1000" value="0" />
-            <input id="linearStepsInput" class="step-input" type="number" min="1" max="100000" step="1" value="1" />
+        <label for="linearStepsSlider">Linear / Z Movement ({{ linear_com_port }})</label>
+        <div class="linear-row">
+          <div class="linear-slider-wrap">
+            <div class="slider-input-row">
+              <input id="linearStepsSlider" type="range" min="0" max="1000" value="0" />
+              <input id="linearStepsInput" class="step-input" type="number" min="1" max="300000" step="1" value="1" />
+            </div>
+            <p id="linearStepsValue" class="hint">Steps: 1</p>
+            <p class="hint range-hint">Input range: 1 to 300000. Values outside this range will not run.</p>
           </div>
-          <p id="linearStepsValue" class="hint">Steps: 1</p>
-          <p class="hint range-hint">Input range: 1 to 100000. Values outside this range will not run.</p>
-        </div>
-        <div class="linear-arrow-buttons">
-          <button id="linearUpBtn" class="icon-btn up" title="Send +steps">&#9650;</button>
-          <button id="linearDownBtn" class="icon-btn down" title="Send -steps">&#9660;</button>
-        </div>
-      </div>
-      <p id="linearStatus" class="hint"></p>
-
-      <label for="horizontalStepsSlider">Horizontal Movement ({{ horizontal_com_port }})</label>
-      <div class="linear-row">
-        <div class="linear-slider-wrap">
-          <div class="slider-input-row">
-            <input id="horizontalStepsSlider" type="range" min="0" max="1000" value="0" />
-            <input id="horizontalStepsInput" class="step-input" type="number" min="1" max="100000" step="1" value="1" />
+          <div class="linear-arrow-buttons">
+            <button id="linearUpBtn" class="icon-btn up" title="Send -steps">&#9650;</button>
+            <button id="linearDownBtn" class="icon-btn down" title="Send +steps">&#9660;</button>
           </div>
-          <p id="horizontalStepsValue" class="hint">Steps: 1</p>
-          <p class="hint range-hint">Input range: 1 to 100000. Values outside this range will not run.</p>
         </div>
-        <div class="horizontal-arrow-buttons">
-          <button id="horizontalLeftBtn" class="icon-btn down" title="Send +steps">&#9664;</button>
-          <button id="horizontalRightBtn" class="icon-btn up" title="Send -steps">&#9654;</button>
-        </div>
-      </div>
-      <p id="horizontalStatus" class="hint"></p>
-      <label for="verticalStepsSlider">Vertical Movement ({{ vertical_com_port }})</label>
-      <div class="linear-row">
-        <div class="linear-slider-wrap">
-          <div class="slider-input-row">
-            <input id="verticalStepsSlider" type="range" min="0" max="1000" value="0" />
-            <input id="verticalStepsInput" class="step-input" type="number" min="1" max="100000" step="1" value="1" />
+        <p id="linearStatus" class="hint"></p>
+
+        <label for="horizontalStepsSlider">Horizontal / X Movement ({{ horizontal_com_port }})</label>
+        <div class="linear-row">
+          <div class="linear-slider-wrap">
+            <div class="slider-input-row">
+              <input id="horizontalStepsSlider" type="range" min="0" max="1000" value="0" />
+              <input id="horizontalStepsInput" class="step-input" type="number" min="1" max="300000" step="1" value="1" />
+            </div>
+            <p id="horizontalStepsValue" class="hint">Steps: 1</p>
+            <p class="hint range-hint">Input range: 1 to 300000. Values outside this range will not run.</p>
           </div>
-          <p id="verticalStepsValue" class="hint">Steps: 1</p>
-          <p class="hint range-hint">Input range: 1 to 100000. Values outside this range will not run.</p>
+          <div class="horizontal-arrow-buttons">
+            <button id="horizontalLeftBtn" class="icon-btn down" title="Send +steps">&#9664;</button>
+            <button id="horizontalRightBtn" class="icon-btn up" title="Send -steps">&#9654;</button>
+          </div>
         </div>
-        <div class="linear-arrow-buttons">
-          <button id="verticalUpBtn" class="icon-btn up" title="Send +steps">&#9650;</button>
-          <button id="verticalDownBtn" class="icon-btn down" title="Send -steps">&#9660;</button>
+        <p id="horizontalStatus" class="hint"></p>
+
+        <label for="verticalStepsSlider">Vertical / Y Movement ({{ vertical_com_port }})</label>
+        <div class="linear-row">
+          <div class="linear-slider-wrap">
+            <div class="slider-input-row">
+              <input id="verticalStepsSlider" type="range" min="0" max="1000" value="0" />
+              <input id="verticalStepsInput" class="step-input" type="number" min="1" max="300000" step="1" value="1" />
+            </div>
+            <p id="verticalStepsValue" class="hint">Steps: 1</p>
+            <p class="hint range-hint">Input range: 1 to 300000. Values outside this range will not run.</p>
+          </div>
+          <div class="linear-arrow-buttons">
+            <button id="verticalUpBtn" class="icon-btn up" title="Send +steps">&#9650;</button>
+            <button id="verticalDownBtn" class="icon-btn down" title="Send -steps">&#9660;</button>
+          </div>
         </div>
-      </div>
-      <p id="verticalStatus" class="hint"></p>
-      <button id="axesHomeBtn" class="home-btn">Home Axes</button>
-      <p id="axesHomeStatus" class="hint"></p>
+        <p id="verticalStatus" class="hint"></p>
 
-      <div class="status-wrap">
-        <p id="status" class="status">Idle</p>
-        <p id="countdown" class="countdown"></p>
-      </div>
+        <button id="axesHomeBtn" class="home-btn">Home Axes</button>
+        <p id="axesHomeStatus" class="hint"></p>
 
-      <p id="hint" class="hint">When stopped, controller sends {{ stop_rpm }} RPM.</p>
-      <p id="error" class="error" hidden></p>
-    </main>
+        <div class="status-wrap">
+          <p id="status" class="status">Idle</p>
+          <p id="countdown" class="countdown"></p>
+        </div>
 
-    <section class="panel automation-panel">
-      <h2>Automation</h2>
-      <p class="hint">Select sample blocks, set RPM/time, and run experiment.</p>
-      <label for="automationRepetitions">Repetitions</label>
-      <input id="automationRepetitions" type="number" min="1" max="100" value="1" />
+        <p id="positionStatus" class="hint"></p>
+        <p id="hint" class="hint">When stopped, controller sends {{ stop_rpm }} RPM.</p>
+        <p id="error" class="error" hidden></p>
+      </main>
 
-      <div id="sample1Block" class="automation-block">
-        <label class="check-label"><input id="sample1Enabled" type="checkbox" checked /> Sample 1</label>
-        <label for="sample1Rpm">RPM</label>
-        <input id="sample1Rpm" type="number" min="{{ rpm_min }}" max="{{ rpm_max }}" value="1000" />
-        <label for="sample1Seconds">Run Time (seconds)</label>
-        <input id="sample1Seconds" type="number" min="1" value="10" />
-      </div>
+      <section class="panel automation-panel">
+        <h2>Automation Recipe</h2>
+        <p class="hint">Add custom steps. Each step can move to X/Y/Z, rotate the RDE arm, and optionally run RPM for a chosen time.</p>
 
-      <div id="sample2Block" class="automation-block">
-        <label class="check-label"><input id="sample2Enabled" type="checkbox" checked /> Sample 2</label>
-        <label for="sample2Rpm">RPM</label>
-        <input id="sample2Rpm" type="number" min="{{ rpm_min }}" max="{{ rpm_max }}" value="1000" />
-        <label for="sample2Seconds">Run Time (seconds)</label>
-        <input id="sample2Seconds" type="number" min="1" value="10" />
-      </div>
+        <label for="automationRepetitions">Repetitions</label>
+        <input id="automationRepetitions" type="number" min="1" max="100" value="1" />
 
-      <div id="sample3Block" class="automation-block">
-        <label class="check-label"><input id="sample3Enabled" type="checkbox" checked /> Sample 3</label>
-        <label for="sample3Rpm">RPM</label>
-        <input id="sample3Rpm" type="number" min="{{ rpm_min }}" max="{{ rpm_max }}" value="1000" />
-        <label for="sample3Seconds">Run Time (seconds)</label>
-        <input id="sample3Seconds" type="number" min="1" value="10" />
-      </div>
+        <div id="recipeSteps"></div>
 
-      <button id="startExperimentBtn" class="home-btn">Start Experiment</button>
-      <button id="abortHomeBtn" class="abort-btn">Abort Then Go Home</button>
-      <p id="automationStatus" class="hint">Idle</p>
-      <p id="automationError" class="error" hidden></p>
-    </section>
+        <div class="cmd-buttons">
+          <button id="addStepBtn" class="home-btn" type="button">Add Step</button>
+          <button id="startExperimentBtn" class="home-btn" type="button">Start Experiment</button>
+        </div>
+        <button id="abortHomeBtn" class="abort-btn" type="button">Abort Then Go Home</button>
+        <p id="automationStatus" class="hint">Idle</p>
+        <p id="automationError" class="error" hidden></p>
+      </section>
     </div>
+
+    <template id="recipeStepTemplate">
+      <div class="automation-block recipe-step">
+        <label class="check-label"><input class="step-enabled" type="checkbox" checked /> <span class="step-title">Step</span></label>
+
+        <label>Name</label>
+        <input class="step-name" type="text" value="Sample" />
+
+        <label>X / Horizontal position</label>
+        <input class="step-x" type="number" step="1" value="0" />
+
+        <label>Y / Vertical position</label>
+        <input class="step-vertical" type="number" step="1" value="0" />
+
+        <label>Z / Linear position</label>
+        <input class="step-z" type="number" step="1" value="50000" />
+
+        <label>RPM, use 0 for no spin</label>
+        <input class="step-rpm" type="number" min="0" max="{{ rpm_max }}" value="1000" />
+
+        <label>Run Time (seconds)</label>
+        <input class="step-seconds" type="number" min="0" value="10" />
+
+        <label>Rotation command, blank for none</label>
+        <input class="step-rotation" type="text" value="" placeholder="0 or 1" />
+
+        <div class="cmd-buttons">
+          <button class="step-up home-btn" type="button">Move Up</button>
+          <button class="step-down home-btn" type="button">Move Down</button>
+          <button class="step-delete abort-btn" type="button">Delete</button>
+        </div>
+      </div>
+    </template>
 
     <script>
       const btn = document.getElementById("startStopBtn");
@@ -132,6 +150,7 @@
       const statusEl = document.getElementById("status");
       const countdownEl = document.getElementById("countdown");
       const errorEl = document.getElementById("error");
+      const positionStatusEl = document.getElementById("positionStatus");
       const sendOneBtn = document.getElementById("sendOneBtn");
       const sendZeroBtn = document.getElementById("sendZeroBtn");
       const rotationStatusEl = document.getElementById("rotationStatus");
@@ -157,54 +176,27 @@
       const axesHomeStatusEl = document.getElementById("axesHomeStatus");
       const startExperimentBtn = document.getElementById("startExperimentBtn");
       const abortHomeBtn = document.getElementById("abortHomeBtn");
+      const addStepBtn = document.getElementById("addStepBtn");
+      const recipeStepsEl = document.getElementById("recipeSteps");
+      const recipeStepTemplate = document.getElementById("recipeStepTemplate");
       const automationStatusEl = document.getElementById("automationStatus");
       const automationErrorEl = document.getElementById("automationError");
       const automationRepetitionsInput = document.getElementById("automationRepetitions");
-      const sampleBlocks = [
-        {
-          block: document.getElementById("sample1Block"),
-          enabled: document.getElementById("sample1Enabled"),
-          rpm: document.getElementById("sample1Rpm"),
-          seconds: document.getElementById("sample1Seconds"),
-        },
-        {
-          block: document.getElementById("sample2Block"),
-          enabled: document.getElementById("sample2Enabled"),
-          rpm: document.getElementById("sample2Rpm"),
-          seconds: document.getElementById("sample2Seconds"),
-        },
-        {
-          block: document.getElementById("sample3Block"),
-          enabled: document.getElementById("sample3Enabled"),
-          rpm: document.getElementById("sample3Rpm"),
-          seconds: document.getElementById("sample3Seconds"),
-        },
-      ];
 
       let running = false;
       let endsAt = null;
       let automationRunning = false;
-      const LINEAR_MIN_STEPS = 1;
-      const LINEAR_MAX_STEPS = 100000;
+      const MIN_STEPS = 1;
+      const MAX_STEPS = 300000;
 
       function setError(message) {
-        if (!message) {
-          errorEl.hidden = true;
-          errorEl.textContent = "";
-          return;
-        }
-        errorEl.hidden = false;
-        errorEl.textContent = message;
+        errorEl.hidden = !message;
+        errorEl.textContent = message || "";
       }
 
       function setAutomationError(message) {
-        if (!message) {
-          automationErrorEl.hidden = true;
-          automationErrorEl.textContent = "";
-          return;
-        }
-        automationErrorEl.hidden = false;
-        automationErrorEl.textContent = message;
+        automationErrorEl.hidden = !message;
+        automationErrorEl.textContent = message || "";
       }
 
       function updateButton() {
@@ -226,10 +218,15 @@
           return;
         }
 
-        const now = new Date();
-        const remainingMs = endsAt - now;
-        const remaining = Math.max(0, Math.ceil(remainingMs / 1000));
+        const remaining = Math.max(0, Math.ceil((endsAt - new Date()) / 1000));
         countdownEl.textContent = `Remaining: ${remaining}s`;
+      }
+
+      function setRecipeDisabled(disabled) {
+        for (const el of recipeStepsEl.querySelectorAll("input, button")) {
+          el.disabled = disabled;
+        }
+        addStepBtn.disabled = disabled;
       }
 
       async function fetchStatus() {
@@ -242,6 +239,7 @@
           automationStatusEl.textContent = automationRunning
             ? `Running: ${data.automation_step || "working..."}`
             : data.automation_step || "Idle";
+          positionStatusEl.textContent = `Position: X ${data.horizontal_position ?? 0}, Y ${data.vertical_position ?? 0}, Z ${data.linear_position ?? 0}`;
           setAutomationError(data.automation_error || "");
           startExperimentBtn.disabled = automationRunning;
           abortHomeBtn.disabled = !automationRunning;
@@ -264,11 +262,7 @@
           verticalStepsSlider.disabled = automationRunning;
           verticalStepsInput.disabled = automationRunning;
           automationRepetitionsInput.disabled = automationRunning;
-          for (const sample of sampleBlocks) {
-            sample.enabled.disabled = automationRunning;
-            sample.rpm.disabled = automationRunning || !sample.enabled.checked;
-            sample.seconds.disabled = automationRunning || !sample.enabled.checked;
-          }
+          setRecipeDisabled(automationRunning);
           setError(data.last_error || "");
           updateButton();
           updateStatusText();
@@ -313,7 +307,6 @@
 
       async function stopMotor() {
         setError("");
-
         const res = await fetch("/api/stop", { method: "POST" });
         const data = await res.json();
 
@@ -331,7 +324,6 @@
       async function sendRotation(command) {
         setError("");
         rotationStatusEl.textContent = "";
-
         const res = await fetch("/api/rotation/send", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -345,16 +337,14 @@
         }
 
         rotationStatusEl.textContent = `Sent '${data.command}' to ${data.com_port}`;
-
         if (data.ack) {
           rotationStatusEl.textContent += ` | Board: ${data.ack}`;
         }
       }
 
-      async function sendLinear(command) {
+      async function sendAxis(axis, command) {
         setError("");
-
-        const res = await fetch("/api/linear/send", {
+        const res = await fetch(`/api/${axis}/send`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ command }),
@@ -362,58 +352,20 @@
         const data = await res.json();
 
         if (!res.ok) {
-          setError(data.error || "Unable to send linear command.");
+          setError(data.error || `Unable to send ${axis} command.`);
           return false;
         }
 
-        linearStatusEl.textContent = `Sent '${data.command}' to ${data.com_port}`;
+        const statusMap = {
+          linear: linearStatusEl,
+          horizontal: horizontalStatusEl,
+          vertical: verticalStatusEl,
+        };
+        statusMap[axis].textContent = `Sent '${data.command}' to ${data.com_port}`;
         if (data.ack) {
-          linearStatusEl.textContent += ` | Board: ${data.ack}`;
+          statusMap[axis].textContent += ` | Board: ${data.ack}`;
         }
-        return true;
-      }
-
-      async function sendHorizontal(command) {
-        setError("");
-
-        const res = await fetch("/api/horizontal/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ command }),
-        });
-        const data = await res.json();
-
-        if (!res.ok) {
-          setError(data.error || "Unable to send horizontal command.");
-          return false;
-        }
-
-        horizontalStatusEl.textContent = `Sent '${data.command}' to ${data.com_port}`;
-        if (data.ack) {
-          horizontalStatusEl.textContent += ` | Board: ${data.ack}`;
-        }
-        return true;
-      }
-
-      async function sendVertical(command) {
-        setError("");
-
-        const res = await fetch("/api/vertical/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ command }),
-        });
-        const data = await res.json();
-
-        if (!res.ok) {
-          setError(data.error || "Unable to send vertical command.");
-          return false;
-        }
-
-        verticalStatusEl.textContent = `Sent '${data.command}' to ${data.com_port}`;
-        if (data.ack) {
-          verticalStatusEl.textContent += ` | Board: ${data.ack}`;
-        }
+        await fetchStatus();
         return true;
       }
 
@@ -440,21 +392,108 @@
         linearStatusEl.textContent = `At home position (${data.linear_com_port})`;
         horizontalStatusEl.textContent = `At home position (${data.horizontal_com_port})`;
         verticalStatusEl.textContent = `At home position (${data.vertical_com_port})`;
+        await fetchStatus();
         return true;
       }
 
-      function updateSampleBlockState(sample) {
-        const enabled = sample.enabled.checked;
-        sample.block.classList.toggle("disabled", !enabled);
-        sample.rpm.disabled = automationRunning || !enabled;
-        sample.seconds.disabled = automationRunning || !enabled;
+      function sliderToSteps(raw) {
+        const t = Number(raw) / 1000;
+        const ratio = MAX_STEPS / MIN_STEPS;
+        return Math.round(MIN_STEPS * Math.pow(ratio, t));
       }
 
-      function getAutomationSamplesPayload() {
-        return sampleBlocks.map((sample) => ({
-          enabled: sample.enabled.checked,
-          rpm: Number(sample.rpm.value),
-          duration_seconds: Number(sample.seconds.value),
+      function clampSteps(steps) {
+        return Math.min(MAX_STEPS, Math.max(MIN_STEPS, steps));
+      }
+
+      function stepsToSliderValue(steps) {
+        const bounded = clampSteps(steps);
+        const ratio = MAX_STEPS / MIN_STEPS;
+        const t = Math.log(bounded / MIN_STEPS) / Math.log(ratio);
+        return Math.round(t * 1000);
+      }
+
+      function syncStepDisplay(input, label, steps) {
+        input.value = String(steps);
+        label.textContent = `Steps: ${steps}`;
+      }
+
+      function updateFromSlider(slider, input, label) {
+        const steps = sliderToSteps(slider.value);
+        syncStepDisplay(input, label, steps);
+        return steps;
+      }
+
+      function updateFromInput(slider, input, label) {
+        const parsed = Number(input.value);
+        const fallback = sliderToSteps(slider.value);
+        const steps = Number.isFinite(parsed) ? Math.abs(Math.round(parsed)) : fallback;
+        if (steps >= MIN_STEPS && steps <= MAX_STEPS) {
+          slider.value = String(stepsToSliderValue(steps));
+        }
+        syncStepDisplay(input, label, steps);
+        return steps;
+      }
+
+      function enableOverwriteOnFocus(inputEl) {
+        inputEl.addEventListener("focus", () => {
+          requestAnimationFrame(() => inputEl.select());
+        });
+        inputEl.addEventListener("click", () => {
+          inputEl.select();
+        });
+      }
+
+      function updateStepTitles() {
+        const steps = Array.from(recipeStepsEl.querySelectorAll(".recipe-step"));
+        steps.forEach((step, index) => {
+          step.querySelector(".step-title").textContent = `Step ${index + 1}`;
+        });
+      }
+
+      function addRecipeStep(values = {}) {
+        const fragment = recipeStepTemplate.content.cloneNode(true);
+        const block = fragment.querySelector(".recipe-step");
+        block.querySelector(".step-name").value = values.name ?? "Sample";
+        block.querySelector(".step-enabled").checked = values.enabled ?? true;
+        block.querySelector(".step-x").value = values.x ?? 0;
+        block.querySelector(".step-vertical").value = values.vertical ?? 0;
+        block.querySelector(".step-z").value = values.z ?? 50000;
+        block.querySelector(".step-rpm").value = values.rpm ?? 1000;
+        block.querySelector(".step-seconds").value = values.duration_seconds ?? 10;
+        block.querySelector(".step-rotation").value = values.rotation_command ?? "";
+        block.querySelector(".step-delete").addEventListener("click", () => {
+          block.remove();
+          updateStepTitles();
+        });
+        block.querySelector(".step-up").addEventListener("click", () => {
+          const previous = block.previousElementSibling;
+          if (previous) {
+            recipeStepsEl.insertBefore(block, previous);
+            updateStepTitles();
+          }
+        });
+        block.querySelector(".step-down").addEventListener("click", () => {
+          const next = block.nextElementSibling;
+          if (next) {
+            recipeStepsEl.insertBefore(next, block);
+            updateStepTitles();
+          }
+        });
+        recipeStepsEl.appendChild(fragment);
+        updateStepTitles();
+      }
+
+      function getRecipeStepsPayload() {
+        return Array.from(recipeStepsEl.querySelectorAll(".recipe-step")).map((step) => ({
+          enabled: step.querySelector(".step-enabled").checked,
+          name: step.querySelector(".step-name").value,
+          x: Number(step.querySelector(".step-x").value),
+          vertical: Number(step.querySelector(".step-vertical").value),
+          z: Number(step.querySelector(".step-z").value),
+          rpm: Number(step.querySelector(".step-rpm").value),
+          duration_seconds: Number(step.querySelector(".step-seconds").value),
+          rotation_command: step.querySelector(".step-rotation").value,
         }));
       }
 
@@ -466,7 +505,7 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            samples: getAutomationSamplesPayload(),
+            steps: getRecipeStepsPayload(),
             repetitions: Number(automationRepetitionsInput.value),
           }),
         });
@@ -478,8 +517,7 @@
           return false;
         }
 
-        automationStatusEl.textContent =
-          `Started samples: ${data.selected_samples.join(", ")} | Repetitions: ${data.repetitions} | Spin-down wait: 5s`;
+        automationStatusEl.textContent = `Started steps: ${data.selected_steps.join(", ")} | Repetitions: ${data.repetitions}`;
         await fetchStatus();
         return true;
       }
@@ -497,98 +535,6 @@
         automationStatusEl.textContent = data.message || "Abort requested.";
         await fetchStatus();
         return true;
-      }
-
-      function sliderToLinearSteps(raw) {
-        const t = Number(raw) / 1000;
-        const ratio = LINEAR_MAX_STEPS / LINEAR_MIN_STEPS;
-        return Math.round(LINEAR_MIN_STEPS * Math.pow(ratio, t));
-      }
-
-      function clampLinearSteps(steps) {
-        return Math.min(LINEAR_MAX_STEPS, Math.max(LINEAR_MIN_STEPS, steps));
-      }
-
-      function stepsToSliderValue(steps) {
-        const bounded = clampLinearSteps(steps);
-        const ratio = LINEAR_MAX_STEPS / LINEAR_MIN_STEPS;
-        const t = Math.log(bounded / LINEAR_MIN_STEPS) / Math.log(ratio);
-        return Math.round(t * 1000);
-      }
-
-      function syncLinearDisplay(steps) {
-        linearStepsInput.value = String(steps);
-        linearStepsValue.textContent = `Steps: ${steps}`;
-      }
-
-      function syncHorizontalDisplay(steps) {
-        horizontalStepsInput.value = String(steps);
-        horizontalStepsValue.textContent = `Steps: ${steps}`;
-      }
-
-      function syncVerticalDisplay(steps) {
-        verticalStepsInput.value = String(steps);
-        verticalStepsValue.textContent = `Steps: ${steps}`;
-      }
-
-      function updateLinearFromSlider() {
-        const steps = sliderToLinearSteps(linearStepsSlider.value);
-        syncLinearDisplay(steps);
-        return steps;
-      }
-
-      function updateHorizontalFromSlider() {
-        const steps = sliderToLinearSteps(horizontalStepsSlider.value);
-        syncHorizontalDisplay(steps);
-        return steps;
-      }
-
-      function updateVerticalFromSlider() {
-        const steps = sliderToLinearSteps(verticalStepsSlider.value);
-        syncVerticalDisplay(steps);
-        return steps;
-      }
-
-      function updateLinearFromInput() {
-        const parsed = Number(linearStepsInput.value);
-        const fallback = sliderToLinearSteps(linearStepsSlider.value);
-        const steps = Number.isFinite(parsed) ? Math.abs(Math.round(parsed)) : fallback;
-        if (steps >= LINEAR_MIN_STEPS && steps <= LINEAR_MAX_STEPS) {
-          linearStepsSlider.value = String(stepsToSliderValue(steps));
-        }
-        syncLinearDisplay(steps);
-        return steps;
-      }
-
-      function updateHorizontalFromInput() {
-        const parsed = Number(horizontalStepsInput.value);
-        const fallback = sliderToLinearSteps(horizontalStepsSlider.value);
-        const steps = Number.isFinite(parsed) ? Math.abs(Math.round(parsed)) : fallback;
-        if (steps >= LINEAR_MIN_STEPS && steps <= LINEAR_MAX_STEPS) {
-          horizontalStepsSlider.value = String(stepsToSliderValue(steps));
-        }
-        syncHorizontalDisplay(steps);
-        return steps;
-      }
-
-      function updateVerticalFromInput() {
-        const parsed = Number(verticalStepsInput.value);
-        const fallback = sliderToLinearSteps(verticalStepsSlider.value);
-        const steps = Number.isFinite(parsed) ? Math.abs(Math.round(parsed)) : fallback;
-        if (steps >= LINEAR_MIN_STEPS && steps <= LINEAR_MAX_STEPS) {
-          verticalStepsSlider.value = String(stepsToSliderValue(steps));
-        }
-        syncVerticalDisplay(steps);
-        return steps;
-      }
-
-      function enableOverwriteOnFocus(inputEl) {
-        inputEl.addEventListener("focus", () => {
-          requestAnimationFrame(() => inputEl.select());
-        });
-        inputEl.addEventListener("click", () => {
-          inputEl.select();
-        });
       }
 
       btn.addEventListener("click", async () => {
@@ -628,12 +574,12 @@
         }
       });
 
-      linearStepsSlider.addEventListener("input", updateLinearFromSlider);
-      horizontalStepsSlider.addEventListener("input", updateHorizontalFromSlider);
-      verticalStepsSlider.addEventListener("input", updateVerticalFromSlider);
-      linearStepsInput.addEventListener("input", updateLinearFromInput);
-      horizontalStepsInput.addEventListener("input", updateHorizontalFromInput);
-      verticalStepsInput.addEventListener("input", updateVerticalFromInput);
+      linearStepsSlider.addEventListener("input", () => updateFromSlider(linearStepsSlider, linearStepsInput, linearStepsValue));
+      horizontalStepsSlider.addEventListener("input", () => updateFromSlider(horizontalStepsSlider, horizontalStepsInput, horizontalStepsValue));
+      verticalStepsSlider.addEventListener("input", () => updateFromSlider(verticalStepsSlider, verticalStepsInput, verticalStepsValue));
+      linearStepsInput.addEventListener("input", () => updateFromInput(linearStepsSlider, linearStepsInput, linearStepsValue));
+      horizontalStepsInput.addEventListener("input", () => updateFromInput(horizontalStepsSlider, horizontalStepsInput, horizontalStepsValue));
+      verticalStepsInput.addEventListener("input", () => updateFromInput(verticalStepsSlider, verticalStepsInput, verticalStepsValue));
       enableOverwriteOnFocus(linearStepsInput);
       enableOverwriteOnFocus(horizontalStepsInput);
       enableOverwriteOnFocus(verticalStepsInput);
@@ -641,8 +587,8 @@
       linearUpBtn.addEventListener("click", async () => {
         linearUpBtn.disabled = true;
         try {
-          const steps = updateLinearFromInput();
-          await sendLinear(String(-steps));
+          const steps = updateFromInput(linearStepsSlider, linearStepsInput, linearStepsValue);
+          await sendAxis("linear", String(-steps));
         } catch (err) {
           setError(err.message);
         } finally {
@@ -653,8 +599,8 @@
       linearDownBtn.addEventListener("click", async () => {
         linearDownBtn.disabled = true;
         try {
-          const steps = updateLinearFromInput();
-          await sendLinear(String(steps));
+          const steps = updateFromInput(linearStepsSlider, linearStepsInput, linearStepsValue);
+          await sendAxis("linear", String(steps));
         } catch (err) {
           setError(err.message);
         } finally {
@@ -665,8 +611,8 @@
       horizontalLeftBtn.addEventListener("click", async () => {
         horizontalLeftBtn.disabled = true;
         try {
-          const steps = updateHorizontalFromInput();
-          await sendHorizontal(String(steps));
+          const steps = updateFromInput(horizontalStepsSlider, horizontalStepsInput, horizontalStepsValue);
+          await sendAxis("horizontal", String(steps));
         } catch (err) {
           setError(err.message);
         } finally {
@@ -677,8 +623,8 @@
       horizontalRightBtn.addEventListener("click", async () => {
         horizontalRightBtn.disabled = true;
         try {
-          const steps = updateHorizontalFromInput();
-          await sendHorizontal(String(-steps));
+          const steps = updateFromInput(horizontalStepsSlider, horizontalStepsInput, horizontalStepsValue);
+          await sendAxis("horizontal", String(-steps));
         } catch (err) {
           setError(err.message);
         } finally {
@@ -689,8 +635,8 @@
       verticalUpBtn.addEventListener("click", async () => {
         verticalUpBtn.disabled = true;
         try {
-          const steps = updateVerticalFromInput();
-          await sendVertical(String(-steps));
+          const steps = updateFromInput(verticalStepsSlider, verticalStepsInput, verticalStepsValue);
+          await sendAxis("vertical", String(steps));
         } catch (err) {
           setError(err.message);
         } finally {
@@ -701,8 +647,8 @@
       verticalDownBtn.addEventListener("click", async () => {
         verticalDownBtn.disabled = true;
         try {
-          const steps = updateVerticalFromInput();
-          await sendVertical(String(steps));
+          const steps = updateFromInput(verticalStepsSlider, verticalStepsInput, verticalStepsValue);
+          await sendAxis("vertical", String(-steps));
         } catch (err) {
           setError(err.message);
         } finally {
@@ -719,6 +665,10 @@
         } finally {
           axesHomeBtn.disabled = false;
         }
+      });
+
+      addStepBtn.addEventListener("click", () => {
+        addRecipeStep({ name: `Step ${recipeStepsEl.children.length + 1}`, rpm: 0, duration_seconds: 0, z: 0 });
       });
 
       startExperimentBtn.addEventListener("click", async () => {
@@ -743,10 +693,12 @@
         }
       });
 
-      for (const sample of sampleBlocks) {
-        sample.enabled.addEventListener("change", () => updateSampleBlockState(sample));
-        updateSampleBlockState(sample);
-      }
+      addRecipeStep({ name: "Sample 1", x: 0, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10 });
+      addRecipeStep({ name: "Sample 2", x: 80000, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10 });
+      addRecipeStep({ name: "Sample 3", x: 160000, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10 });
+      addRecipeStep({ name: "DI Water", x: 120000, vertical: 60000, z: 50000, rpm: 0, duration_seconds: 5 });
+      addRecipeStep({ name: "Blank Electrode", x: 180000, vertical: 60000, z: 50000, rpm: 1000, duration_seconds: 10 });
+      addRecipeStep({ name: "Empty Rotation", x: 240000, vertical: 60000, z: 0, rpm: 0, duration_seconds: 0, rotation_command: "1" });
 
       setInterval(() => {
         updateStatusText();
@@ -756,9 +708,9 @@
       }, 500);
       setInterval(fetchStatus, 2000);
 
-      updateLinearFromSlider();
-      updateHorizontalFromSlider();
-      updateVerticalFromSlider();
+      updateFromSlider(linearStepsSlider, linearStepsInput, linearStepsValue);
+      updateFromSlider(horizontalStepsSlider, horizontalStepsInput, horizontalStepsValue);
+      updateFromSlider(verticalStepsSlider, verticalStepsInput, verticalStepsValue);
       fetchStatus();
     </script>
   </body>

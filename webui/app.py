@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import threading
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from flask import Flask, jsonify, render_template, request
@@ -32,6 +34,9 @@ AXIS_LIMITS = {
     "horizontal": (-300000, 300000),
     "vertical": (-300000, 300000),
 }
+
+RECIPE_PATH = Path(__file__).with_name("recipe_default.json")
+MAX_RECIPE_STEPS = 100
 
 app = Flask(__name__)
 
@@ -639,6 +644,100 @@ def parse_recipe_steps(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return parsed_steps
 
 
+def normalize_recipe_steps_for_storage(raw_steps: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw_steps, list):
+        raise ValueError("steps must be a list.")
+
+    if len(raw_steps) > MAX_RECIPE_STEPS:
+        raise ValueError(f"recipe cannot contain more than {MAX_RECIPE_STEPS} steps.")
+
+    normalized_steps = []
+
+    for idx, raw_step in enumerate(raw_steps, start=1):
+        if not isinstance(raw_step, dict):
+            raise ValueError(f"step {idx} must be an object.")
+
+        enabled = bool(raw_step.get("enabled", True))
+        name = str(raw_step.get("name") or f"Step {idx}").strip()
+        if not name:
+            name = f"Step {idx}"
+
+        try:
+            x = parse_int_field(raw_step, ("x", "horizontal"), default=0)
+            vertical = parse_int_field(raw_step, ("vertical", "y"), default=0)
+            z = parse_int_field(raw_step, ("z", "linear"), default=0)
+            rpm = parse_int_field(raw_step, ("rpm",), default=0)
+            duration_seconds = parse_int_field(raw_step, ("duration_seconds", "seconds", "time"), default=0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{name}: invalid numeric field: {exc}") from exc
+
+        rotation_command = str(raw_step.get("rotation_command", "") or "").strip()
+
+        if rpm != 0 and (rpm < RPM_MIN or rpm > RPM_MAX):
+            raise ValueError(f"{name}: rpm must be 0 or between {RPM_MIN} and {RPM_MAX}.")
+
+        if duration_seconds < 0:
+            raise ValueError(f"{name}: duration_seconds cannot be negative.")
+
+        for axis, value in (("horizontal", x), ("vertical", vertical), ("linear", z)):
+            axis_min, axis_max = AXIS_LIMITS[axis]
+            if value < axis_min or value > axis_max:
+                raise ValueError(f"{name}: {axis} position {value} is outside [{axis_min}, {axis_max}].")
+
+        normalized_steps.append(
+            {
+                "name": name,
+                "enabled": enabled,
+                "x": x,
+                "vertical": vertical,
+                "z": z,
+                "rpm": rpm,
+                "duration_seconds": duration_seconds,
+                "rotation_command": rotation_command,
+            }
+        )
+
+    return normalized_steps
+
+
+def default_recipe_payload() -> dict[str, Any]:
+    return {
+        "repetitions": 1,
+        "steps": [
+            {
+                "name": "Sample 1",
+                "enabled": True,
+                "x": 0,
+                "vertical": 0,
+                "z": 50000,
+                "rpm": 1000,
+                "duration_seconds": 10,
+                "rotation_command": "",
+            },
+            {
+                "name": "Sample 2",
+                "enabled": True,
+                "x": 80000,
+                "vertical": 0,
+                "z": 50000,
+                "rpm": 1000,
+                "duration_seconds": 10,
+                "rotation_command": "",
+            },
+            {
+                "name": "DI Water",
+                "enabled": False,
+                "x": 120000,
+                "vertical": 60000,
+                "z": 50000,
+                "rpm": 0,
+                "duration_seconds": 5,
+                "rotation_command": "",
+            },
+        ],
+    }
+
+
 def automation_worker(recipe_steps: list[dict[str, Any]], repetitions: int) -> None:
     try:
         for repetition in range(1, repetitions + 1):
@@ -987,6 +1086,68 @@ def axes_home():
             "rotation_ack": result["rotation_ack"],
         }
     )
+
+
+@app.get("/api/recipe")
+def load_recipe():
+    if not RECIPE_PATH.exists():
+        return jsonify({"ok": True, **default_recipe_payload()})
+
+    try:
+        with RECIPE_PATH.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as exc:
+        return jsonify({"error": f"Unable to load recipe: {exc}"}), 500
+
+    if not isinstance(data, dict):
+        return jsonify({"error": "Saved recipe file is invalid."}), 500
+
+    try:
+        repetitions = int(data.get("repetitions", 1))
+    except (TypeError, ValueError):
+        repetitions = 1
+
+    repetitions = min(100, max(1, repetitions))
+
+    try:
+        steps = normalize_recipe_steps_for_storage(data.get("steps", []))
+    except ValueError as exc:
+        return jsonify({"error": f"Saved recipe file is invalid: {exc}"}), 500
+
+    return jsonify({"ok": True, "repetitions": repetitions, "steps": steps})
+
+
+@app.post("/api/recipe")
+def save_recipe():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        repetitions = int(payload.get("repetitions", 1))
+    except (TypeError, ValueError):
+        return jsonify({"error": "repetitions must be an integer."}), 400
+
+    if repetitions < 1 or repetitions > 100:
+        return jsonify({"error": "repetitions must be between 1 and 100."}), 400
+
+    try:
+        steps = normalize_recipe_steps_for_storage(payload.get("steps"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    data = {
+        "repetitions": repetitions,
+        "steps": steps,
+        "saved_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    try:
+        with RECIPE_PATH.open("w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+    except Exception as exc:
+        return jsonify({"error": f"Unable to save recipe: {exc}"}), 500
+
+    return jsonify({"ok": True, "count": len(steps), "repetitions": repetitions})
 
 
 @app.get("/api/automation/status")

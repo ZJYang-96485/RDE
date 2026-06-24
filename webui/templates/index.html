@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Motor Control</title>
+    <title>RDE EChem Automation</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
   </head>
   <body>
@@ -92,13 +92,13 @@
       </main>
 
       <section class="panel automation-panel">
-        <h2>Automation Recipe</h2>
-        <p class="hint">Add custom steps. Each step can move to X/Y/Z, rotate the RDE arm, and optionally run RPM for a chosen time.</p>
+        <h2>Sample Run Plan</h2>
+        <p class="hint">Add samples or physical positions. Each sample can move to X/Y/Z, rotate the RDE arm, set RPM, stabilize, run a selected EChem protocol, and optionally rinse afterward.</p>
 
-        <label for="recipeNameInput">Recipe Name</label>
+        <label for="recipeNameInput">Run Plan Name</label>
         <input id="recipeNameInput" type="text" value="default" placeholder="e.g. AuNW ORR sample map" />
 
-        <label for="recipeSelect">Saved Recipes</label>
+        <label for="recipeSelect">Saved Run Plans</label>
         <select id="recipeSelect"></select>
 
         <label for="automationRepetitions">Repetitions</label>
@@ -107,11 +107,11 @@
         <div id="recipeSteps"></div>
 
         <div class="cmd-buttons">
-          <button id="addStepBtn" class="home-btn" type="button">Add Step</button>
-          <button id="saveRecipeBtn" class="home-btn" type="button">Save Recipe</button>
-          <button id="loadRecipeBtn" class="home-btn" type="button">Load Recipe</button>
-          <button id="refreshRecipesBtn" class="home-btn" type="button">Refresh Recipes</button>
-          <button id="deleteRecipeBtn" class="abort-btn" type="button">Delete Recipe</button>
+          <button id="addStepBtn" class="home-btn" type="button">Add Sample</button>
+          <button id="saveRecipeBtn" class="home-btn" type="button">Save Run Plan</button>
+          <button id="loadRecipeBtn" class="home-btn" type="button">Load Run Plan</button>
+          <button id="refreshRecipesBtn" class="home-btn" type="button">Refresh Run Plans</button>
+          <button id="deleteRecipeBtn" class="abort-btn" type="button">Delete Run Plan</button>
           <button id="startExperimentBtn" class="home-btn" type="button">Start Experiment</button>
         </div>
         <button id="abortHomeBtn" class="abort-btn" type="button">Abort Then Go Home</button>
@@ -122,7 +122,7 @@
 
     <template id="recipeStepTemplate">
       <div class="automation-block recipe-step">
-        <label class="check-label"><input class="step-enabled" type="checkbox" checked /> <span class="step-title">Step</span></label>
+        <label class="check-label"><input class="step-enabled" type="checkbox" checked /> <span class="step-title">Sample</span></label>
 
         <label>Name</label>
         <input class="step-name" type="text" value="Sample" />
@@ -139,11 +139,19 @@
         <label>RPM, use 0 for no spin</label>
         <input class="step-rpm" type="number" min="0" max="{{ rpm_max }}" value="1000" />
 
-        <label>Run Time (seconds)</label>
+        <label>Stabilization Time (seconds)</label>
         <input class="step-seconds" type="number" min="0" value="10" />
 
         <label>Rotation command, blank for none</label>
         <input class="step-rotation" type="text" value="" placeholder="0 or 1" />
+
+        <label>EChem Protocol</label>
+        <select class="step-protocol"></select>
+
+        <label class="check-label">
+          <input class="step-rinse" type="checkbox" />
+          <span>Rinse after this sample</span>
+        </label>
 
         <div class="cmd-buttons">
           <button class="step-up home-btn" type="button">Move Up</button>
@@ -202,6 +210,7 @@
       let running = false;
       let endsAt = null;
       let automationRunning = false;
+      let availableProtocols = [];
       const MIN_STEPS = 1;
       const MAX_STEPS = 300000;
 
@@ -239,7 +248,7 @@
       }
 
       function setRecipeDisabled(disabled) {
-        for (const el of recipeStepsEl.querySelectorAll("input, button")) {
+        for (const el of recipeStepsEl.querySelectorAll("input, button, select")) {
           el.disabled = disabled;
         }
         addStepBtn.disabled = disabled;
@@ -470,16 +479,76 @@
         recipeStepsEl.innerHTML = "";
       }
 
+      function fillProtocolSelect(select, selectedName = "ca_steps_backward") {
+        select.innerHTML = "";
+
+        for (const protocol of availableProtocols) {
+          const name = protocol.protocol_name || protocol.name;
+          const label = protocol.display_name || name;
+
+          if (!name) {
+            continue;
+          }
+
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = label;
+
+          if (name === selectedName) {
+            option.selected = true;
+          }
+
+          select.appendChild(option);
+        }
+
+        if (select.options.length === 0) {
+          const option = document.createElement("option");
+          option.value = "ca_steps_backward";
+          option.textContent = "CA Steps with Backward Scan";
+          option.selected = true;
+          select.appendChild(option);
+        }
+      }
+
+      async function refreshProtocolList() {
+        const res = await fetch("/api/protocols");
+        const data = await res.json();
+
+        if (!res.ok) {
+          setAutomationError(data.error || "Unable to list EChem protocols.");
+          return false;
+        }
+
+        availableProtocols = Array.isArray(data.protocols) ? data.protocols : [];
+
+        if (availableProtocols.length === 0) {
+          availableProtocols = [
+            {
+              protocol_name: "ca_steps_backward",
+              display_name: "CA Steps with Backward Scan"
+            }
+          ];
+        }
+
+        for (const select of recipeStepsEl.querySelectorAll(".step-protocol")) {
+          const current = select.value || "ca_steps_backward";
+          fillProtocolSelect(select, current);
+        }
+
+        return true;
+      }
+
       function updateStepTitles() {
         const steps = Array.from(recipeStepsEl.querySelectorAll(".recipe-step"));
         steps.forEach((step, index) => {
-          step.querySelector(".step-title").textContent = `Step ${index + 1}`;
+          step.querySelector(".step-title").textContent = `Sample ${index + 1}`;
         });
       }
 
       function addRecipeStep(values = {}) {
         const fragment = recipeStepTemplate.content.cloneNode(true);
         const block = fragment.querySelector(".recipe-step");
+
         block.querySelector(".step-name").value = values.name ?? "Sample";
         block.querySelector(".step-enabled").checked = values.enabled ?? true;
         block.querySelector(".step-x").value = values.x ?? 0;
@@ -488,10 +557,14 @@
         block.querySelector(".step-rpm").value = values.rpm ?? 1000;
         block.querySelector(".step-seconds").value = values.duration_seconds ?? 10;
         block.querySelector(".step-rotation").value = values.rotation_command ?? "";
+        fillProtocolSelect(block.querySelector(".step-protocol"), values.protocol ?? "ca_steps_backward");
+        block.querySelector(".step-rinse").checked = Boolean(values.rinse_after ?? false);
+
         block.querySelector(".step-delete").addEventListener("click", () => {
           block.remove();
           updateStepTitles();
         });
+
         block.querySelector(".step-up").addEventListener("click", () => {
           const previous = block.previousElementSibling;
           if (previous) {
@@ -499,6 +572,7 @@
             updateStepTitles();
           }
         });
+
         block.querySelector(".step-down").addEventListener("click", () => {
           const next = block.nextElementSibling;
           if (next) {
@@ -506,6 +580,7 @@
             updateStepTitles();
           }
         });
+
         recipeStepsEl.appendChild(fragment);
         updateStepTitles();
       }
@@ -520,6 +595,8 @@
           rpm: Number(step.querySelector(".step-rpm").value),
           duration_seconds: Number(step.querySelector(".step-seconds").value),
           rotation_command: step.querySelector(".step-rotation").value,
+          protocol: step.querySelector(".step-protocol").value,
+          rinse_after: step.querySelector(".step-rinse").checked,
         }));
       }
 
@@ -534,7 +611,7 @@
         const data = await res.json();
 
         if (!res.ok) {
-          setAutomationError(data.error || "Unable to list recipes.");
+          setAutomationError(data.error || "Unable to list run plans.");
           return false;
         }
 
@@ -545,7 +622,7 @@
         for (const recipe of recipes) {
           const option = document.createElement("option");
           option.value = recipe.name;
-          option.textContent = `${recipe.name} (${recipe.step_count} steps)`;
+          option.textContent = `${recipe.name} (${recipe.step_count} sample${recipe.step_count === 1 ? "" : "s"})`;
           if (recipe.name === currentName) {
             option.selected = true;
           }
@@ -570,7 +647,7 @@
 
       async function saveRecipe() {
         setAutomationError("");
-        automationStatusEl.textContent = "Saving recipe...";
+        automationStatusEl.textContent = "Saving run plan...";
 
         const recipeName = selectedRecipeName();
         const res = await fetch("/api/recipe", {
@@ -585,28 +662,28 @@
         const data = await res.json();
 
         if (!res.ok) {
-          setAutomationError(data.error || "Unable to save recipe.");
-          automationStatusEl.textContent = "Recipe save failed.";
+          setAutomationError(data.error || "Unable to save run plan.");
+          automationStatusEl.textContent = "Run plan save failed.";
           return false;
         }
 
         recipeNameInput.value = data.name || recipeName;
         await refreshRecipeList(recipeNameInput.value);
-        automationStatusEl.textContent = `Recipe '${recipeNameInput.value}' saved: ${data.count} steps, ${data.repetitions} repetition(s).`;
+        automationStatusEl.textContent = `Run plan '${recipeNameInput.value}' saved: ${data.count} sample(s), ${data.repetitions} repetition(s).`;
         return true;
       }
 
       async function loadRecipe() {
         setAutomationError("");
-        automationStatusEl.textContent = "Loading recipe...";
+        automationStatusEl.textContent = "Loading run plan...";
 
         const recipeName = selectedRecipeName();
         const res = await fetch(`/api/recipe?name=${encodeURIComponent(recipeName)}`);
         const data = await res.json();
 
         if (!res.ok) {
-          setAutomationError(data.error || "Unable to load recipe.");
-          automationStatusEl.textContent = "Recipe load failed.";
+          setAutomationError(data.error || "Unable to load run plan.");
+          automationStatusEl.textContent = "Run plan load failed.";
           return false;
         }
 
@@ -620,10 +697,17 @@
         }
 
         if (recipeStepsEl.children.length === 0) {
-          addRecipeStep({ name: "Step 1", rpm: 0, duration_seconds: 0, z: 0 });
+          addRecipeStep({
+            name: "Sample 1",
+            rpm: 0,
+            duration_seconds: 0,
+            z: 0,
+            protocol: "ca_steps_backward",
+            rinse_after: false
+          });
         }
 
-        automationStatusEl.textContent = `Loaded recipe '${recipeNameInput.value}': ${recipeStepsEl.children.length} steps.`;
+        automationStatusEl.textContent = `Loaded run plan '${recipeNameInput.value}': ${recipeStepsEl.children.length} sample(s).`;
         return true;
       }
 
@@ -631,21 +715,21 @@
         setAutomationError("");
         const recipeName = selectedRecipeName();
 
-        if (!confirm(`Delete recipe '${recipeName}'?`)) {
+        if (!confirm(`Delete run plan '${recipeName}'?`)) {
           return false;
         }
 
-        automationStatusEl.textContent = "Deleting recipe...";
+        automationStatusEl.textContent = "Deleting run plan...";
         const res = await fetch(`/api/recipe?name=${encodeURIComponent(recipeName)}`, { method: "DELETE" });
         const data = await res.json();
 
         if (!res.ok) {
-          setAutomationError(data.error || "Unable to delete recipe.");
-          automationStatusEl.textContent = "Recipe delete failed.";
+          setAutomationError(data.error || "Unable to delete run plan.");
+          automationStatusEl.textContent = "Run plan delete failed.";
           return false;
         }
 
-        automationStatusEl.textContent = `Deleted recipe '${data.name}'.`;
+        automationStatusEl.textContent = `Deleted run plan '${data.name}'.`;
         recipeNameInput.value = "default";
         await refreshRecipeList("default");
         await loadRecipe();
@@ -672,7 +756,8 @@
           return false;
         }
 
-        automationStatusEl.textContent = `Started steps: ${data.selected_steps.join(", ")} | Repetitions: ${data.repetitions}`;
+        const selected = data.selected_samples || data.selected_steps || [];
+        automationStatusEl.textContent = `Started samples: ${selected.join(", ")} | Repetitions: ${data.repetitions}`;
         await fetchStatus();
         return true;
       }
@@ -823,7 +908,14 @@
       });
 
       addStepBtn.addEventListener("click", () => {
-        addRecipeStep({ name: `Step ${recipeStepsEl.children.length + 1}`, rpm: 0, duration_seconds: 0, z: 0 });
+        addRecipeStep({
+          name: `Sample ${recipeStepsEl.children.length + 1}`,
+          rpm: 0,
+          duration_seconds: 0,
+          z: 0,
+          protocol: "ca_steps_backward",
+          rinse_after: false
+        });
       });
 
       saveRecipeBtn.addEventListener("click", async () => {
@@ -832,7 +924,7 @@
           await saveRecipe();
         } catch (err) {
           setAutomationError(err.message);
-          automationStatusEl.textContent = "Recipe save failed.";
+          automationStatusEl.textContent = "Run plan save failed.";
         } finally {
           saveRecipeBtn.disabled = automationRunning;
         }
@@ -844,7 +936,7 @@
           await loadRecipe();
         } catch (err) {
           setAutomationError(err.message);
-          automationStatusEl.textContent = "Recipe load failed.";
+          automationStatusEl.textContent = "Run plan load failed.";
         } finally {
           loadRecipeBtn.disabled = automationRunning;
         }
@@ -853,11 +945,12 @@
       refreshRecipesBtn.addEventListener("click", async () => {
         refreshRecipesBtn.disabled = true;
         try {
+          await refreshProtocolList();
           await refreshRecipeList();
-          automationStatusEl.textContent = "Recipe list refreshed.";
+          automationStatusEl.textContent = "Run plan and protocol lists refreshed.";
         } catch (err) {
           setAutomationError(err.message);
-          automationStatusEl.textContent = "Recipe list refresh failed.";
+          automationStatusEl.textContent = "List refresh failed.";
         } finally {
           refreshRecipesBtn.disabled = automationRunning;
         }
@@ -869,7 +962,7 @@
           await deleteRecipe();
         } catch (err) {
           setAutomationError(err.message);
-          automationStatusEl.textContent = "Recipe delete failed.";
+          automationStatusEl.textContent = "Run plan delete failed.";
         } finally {
           deleteRecipeBtn.disabled = automationRunning;
         }
@@ -903,18 +996,19 @@
         }
       });
 
-      refreshRecipeList("default")
+      refreshProtocolList()
+        .then(() => refreshRecipeList("default"))
         .then(() => loadRecipe())
         .catch((err) => {
           setAutomationError(err.message);
           clearRecipeSteps();
           recipeNameInput.value = "default";
-          addRecipeStep({ name: "Sample 1", x: 0, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10 });
-          addRecipeStep({ name: "Sample 2", x: 80000, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10 });
-          addRecipeStep({ name: "Sample 3", x: 160000, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10 });
-          addRecipeStep({ name: "DI Water", x: 120000, vertical: 60000, z: 50000, rpm: 0, duration_seconds: 5 });
-          addRecipeStep({ name: "Blank Electrode", x: 180000, vertical: 60000, z: 50000, rpm: 1000, duration_seconds: 10 });
-          addRecipeStep({ name: "Empty Rotation", x: 240000, vertical: 60000, z: 0, rpm: 0, duration_seconds: 0, rotation_command: "1" });
+          addRecipeStep({ name: "Sample 1", x: 0, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10, protocol: "ca_steps_backward", rinse_after: true });
+          addRecipeStep({ name: "Sample 2", x: 80000, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10, protocol: "ca_steps_backward", rinse_after: true });
+          addRecipeStep({ name: "Sample 3", x: 160000, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10, protocol: "ca_steps_backward", rinse_after: true });
+          addRecipeStep({ name: "DI Water", x: 120000, vertical: 60000, z: 50000, rpm: 0, duration_seconds: 5, protocol: "ca_steps_backward", rinse_after: false });
+          addRecipeStep({ name: "Blank Electrode", x: 180000, vertical: 60000, z: 50000, rpm: 1000, duration_seconds: 10, protocol: "ca_steps_backward", rinse_after: true });
+          addRecipeStep({ name: "Empty Rotation", x: 240000, vertical: 60000, z: 0, rpm: 0, duration_seconds: 0, rotation_command: "1", protocol: "ca_steps_backward", rinse_after: false });
         });
 
       setInterval(() => {
@@ -923,6 +1017,7 @@
           fetchStatus();
         }
       }, 500);
+
       setInterval(fetchStatus, 2000);
 
       updateFromSlider(linearStepsSlider, linearStepsInput, linearStepsValue);

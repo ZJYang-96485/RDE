@@ -1,0 +1,110 @@
+{
+  "protocol_name": "ca_steps_backward",
+  "display_name": "CA Steps with Backward Scan",
+  "description": "OCP and EIS before and after a forward/backward chronoamperometry staircase.",
+  "source": {
+    "type": "gamry_gsequence",
+    "group_name": "PBS-layers--rpm 1600"
+  },
+  "steps": [
+    {
+      "name": "ocp_before",
+      "technique": "ocp",
+      "output": "OCP_before.DTA",
+      "duration_s": 300,
+      "sample_period_s": 0.5,
+      "stability_mv_s": 0,
+      "area_cm2": 1
+    },
+    {
+      "name": "eis_before",
+      "technique": "eis",
+      "output": "EIS_before.DTA",
+      "dc_voltage_v": 0,
+      "dc_voltage_reference": "open_circuit",
+      "initial_frequency_hz": 100000,
+      "final_frequency_hz": 0.1,
+      "points_per_decade": 10,
+      "ac_voltage_mv_rms": 10,
+      "estimated_z_ohm": 100,
+      "area_cm2": 1,
+      "speed": "normal",
+      "thd": false,
+      "drift_correction": false
+    },
+    {
+      "name": "ocp_between",
+      "technique": "ocp",
+      "output": "OCP_between.DTA",
+      "duration_s": 300,
+      "sample_period_s": 0.5,
+      "stability_mv_s": 0,
+      "area_cm2": 1
+    },
+    {
+      "name": "ca_forward",
+      "technique": "ca_staircase",
+      "output_prefix": "CHRONOA",
+      "start_voltage_v": -0.1,
+      "step_voltage_v": -0.1,
+      "step_count": 16,
+      "pre_step_time_s": 0,
+      "step_time_s": 300,
+      "second_step_time_s": 0,
+      "sample_period_s": 1,
+      "current_limit_ma_cm2": 300,
+      "area_cm2": 1,
+      "current_range_mode": "auto",
+      "sampling_mode": "fast",
+      "max_current_ma": 100,
+      "equilibration_time_s": 0,
+      "ir_compensation": "none",
+      "pf_correction_ohm": 30
+    },
+    {
+      "name": "ca_backward",
+      "technique": "ca_staircase",
+      "output_prefix": "CHRONOA_B",
+      "start_voltage_v": -1.6,
+      "step_voltage_v": 0.1,
+      "step_count": 16,
+      "pre_step_time_s": 0,
+      "step_time_s": 300,
+      "second_step_time_s": 0,
+      "sample_period_s": 1,
+      "current_limit_ma_cm2": 300,
+      "area_cm2": 1,
+      "current_range_mode": "auto",
+      "sampling_mode": "fast",
+      "max_current_ma": 100,
+      "equilibration_time_s": 0,
+      "ir_compensation": "none",
+      "pf_correction_ohm": 30
+    },
+    {
+      "name": "ocp_after",
+      "technique": "ocp",
+      "output": "OCP_after.DTA",
+      "duration_s": 300,
+      "sample_period_s": 0.5,
+      "stability_mv_s": 0,
+      "area_cm2": 1
+    },
+    {
+      "name": "eis_after",
+      "technique": "eis",
+      "output": "EIS_after.DTA",
+      "dc_voltage_v": 0,
+      "dc_voltage_reference": "open_circuit",
+      "initial_frequency_hz": 100000,
+      "final_frequency_hz": 0.1,
+      "points_per_decade": 10,
+      "ac_voltage_mv_rms": 10,
+      "estimated_z_ohm": 100,
+      "area_cm2": 1,
+      "speed": "normal",
+      "thd": false,
+      "drift_correction": false
+    }
+  ]
+}

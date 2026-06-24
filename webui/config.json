@@ -1,0 +1,82 @@
+{
+  "serial": {
+    "baud_rate": 115200,
+    "ports": {
+      "rde": "COM10",
+      "rotation": "COM7",
+      "linear": "COM9",
+      "horizontal": "COM4",
+      "vertical": "COM5"
+    },
+    "timeouts": {
+      "rde_s": 1.0,
+      "axis_s": 0.4,
+      "rotation_s": 0.4,
+      "write_s": 1.0,
+      "startup_delay_s": 2.0
+    }
+  },
+  "rde": {
+    "rpm_min": 30,
+    "rpm_max": 12000,
+    "stop_rpm": 20
+  },
+  "motion": {
+    "safe_z": 0,
+    "max_axis_command": 300000,
+    "axis_limits": {
+      "linear": [-100000, 100000],
+      "horizontal": [-300000, 300000],
+      "vertical": [-300000, 300000]
+    },
+    "axis_mapping": {
+      "x": "horizontal",
+      "y": "vertical",
+      "z": "linear"
+    },
+    "default_positions": {
+      "sample_z": 50000,
+      "home": {
+        "linear": 0,
+        "horizontal": 0,
+        "vertical": 0
+      }
+    }
+  },
+  "rotation": {
+    "home_command": "0",
+    "ccw_command": "1"
+  },
+  "rinse": {
+    "enabled": true,
+    "position": {
+      "x": 120000,
+      "y": 60000,
+      "z": 50000
+    },
+    "rpm": 1000,
+    "duration_s": 10,
+    "rotation_command": "",
+    "return_to_safe_z_after": true
+  },
+  "automation": {
+    "max_repetitions": 100,
+    "max_samples": 100,
+    "max_protocol_steps": 100,
+    "poll_interval_s": 0.1
+  },
+  "paths": {
+    "protocols_dir": "protocols",
+    "run_plans_dir": "run_plans",
+    "output_dir": "output/runs",
+    "legacy_recipes_dir": "recipes"
+  },
+  "gamry": {
+    "mode": "mock",
+    "worker_python": "",
+    "worker_script": "gamry_worker/worker.py",
+    "instrument_index": 0,
+    "instrument_label": "",
+    "default_file_extension": ".DTA"
+  }
+}

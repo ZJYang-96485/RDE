@@ -1,0 +1,56 @@
+{
+  "run_name": "multi_sample_test",
+  "display_name": "Multi Sample Test",
+  "description": "Example run plan for several sample positions using selectable EChem protocols.",
+  "repetitions": 1,
+  "samples": [
+    {
+      "sample_id": "sample_001",
+      "label": "Sample 1",
+      "enabled": true,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 50000
+      },
+      "rpm": 1600,
+      "stabilization_s": 10,
+      "protocol": "ca_steps_backward",
+      "rotation_command": "",
+      "post_echem_wait_s": 0,
+      "rinse_after": true
+    },
+    {
+      "sample_id": "sample_002",
+      "label": "Sample 2",
+      "enabled": true,
+      "position": {
+        "x": 80000,
+        "y": 0,
+        "z": 50000
+      },
+      "rpm": 1600,
+      "stabilization_s": 10,
+      "protocol": "lsv_orr",
+      "rotation_command": "",
+      "post_echem_wait_s": 0,
+      "rinse_after": true
+    },
+    {
+      "sample_id": "sample_003",
+      "label": "Blank",
+      "enabled": false,
+      "position": {
+        "x": 160000,
+        "y": 0,
+        "z": 50000
+      },
+      "rpm": 1600,
+      "stabilization_s": 10,
+      "protocol": "ocp_only",
+      "rotation_command": "",
+      "post_echem_wait_s": 0,
+      "rinse_after": true
+    }
+  ]
+}

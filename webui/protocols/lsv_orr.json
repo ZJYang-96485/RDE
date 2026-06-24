@@ -1,0 +1,31 @@
+{
+  "protocol_name": "lsv_orr",
+  "display_name": "ORR LSV",
+  "description": "OCP followed by an ORR linear sweep voltammetry scan.",
+  "source": {
+    "type": "default"
+  },
+  "steps": [
+    {
+      "name": "ocp_before",
+      "technique": "ocp",
+      "enabled": true,
+      "output": "OCP_before.DTA",
+      "duration_s": 60,
+      "sample_period_s": 0.5,
+      "stability_mv_s": 0,
+      "area_cm2": 1
+    },
+    {
+      "name": "lsv_orr",
+      "technique": "lsv",
+      "enabled": true,
+      "output": "LSV_ORR.DTA",
+      "start_voltage_v": 0.2,
+      "end_voltage_v": -0.8,
+      "scan_rate_v_s": 0.01,
+      "sample_period_s": 0.1,
+      "area_cm2": 1
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "protocol_name": "custom_example",
+  "display_name": "Custom Example",
+  "description": "Example custom EChem protocol.",
+  "source": {
+    "type": "custom"
+  },
+  "steps": [
+    {
+      "name": "ocp_before",
+      "technique": "ocp",
+      "enabled": true,
+      "output": "OCP_before.DTA",
+      "duration_s": 60,
+      "sample_period_s": 0.5,
+      "stability_mv_s": 0,
+      "area_cm2": 1
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "protocol_name": "ocp_only",
+  "display_name": "OCP Only",
+  "description": "Simple open-circuit potential measurement.",
+  "source": {
+    "type": "default"
+  },
+  "steps": [
+    {
+      "name": "ocp",
+      "technique": "ocp",
+      "enabled": true,
+      "output": "OCP.DTA",
+      "duration_s": 60,
+      "sample_period_s": 0.5,
+      "stability_mv_s": 0,
+      "area_cm2": 1
+    }
+  ]
+}

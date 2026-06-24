@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+.DS_Store
+.vscode/*
+!.vscode/settings.json
+
+webui/output/runs/*
+!webui/output/runs/.gitkeep
+
+.env
+.venv/
+venv/
+
+*.log

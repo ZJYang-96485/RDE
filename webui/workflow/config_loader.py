@@ -18,6 +18,9 @@ _DEFAULT_CONFIG = {
             "horizontal": "COM4",
             "vertical": "COM5"
         },
+        "hardware": {
+            "mock_serial": False
+        },
         "timeouts": {
             "rde_s": 1.0,
             "axis_s": 0.4,

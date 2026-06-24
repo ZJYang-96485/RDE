@@ -30,7 +30,7 @@ from workflow.protocol_loader import (
     load_protocol,
     save_protocol,
 )
-from workflow.recipe_runner import abort_automation, run_plan_payload_background
+from workflow.recipe_runner import RecipeRunnerError, abort_automation, run_plan_payload_background
 from workflow.run_plan_loader import (
     RunPlanError,
     default_run_plan_payload,
@@ -629,7 +629,10 @@ def automation_start():
     except Exception as exc:
         return json_error(str(exc), 400)
 
-    run_plan_payload_background(run_plan)
+    try:
+        run_plan_payload_background(run_plan)
+    except RecipeRunnerError as exc:
+        return json_error(str(exc), 409)
 
     selected_samples = [
         sample["label"]

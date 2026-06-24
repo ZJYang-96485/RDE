@@ -13,8 +13,10 @@ def run(
     outputs: list[str],
     sample_id: str | None = None,
 ) -> dict[str, Any]:
+    if not outputs:
+        raise ValueError("outputs must contain at least one path.")
+
     return _run_cv(
         step=step,
-        outputs=outputs,
-        sample_id=sample_id,
+        output_path=outputs[0],
     )

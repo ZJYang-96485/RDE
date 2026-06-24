@@ -24,12 +24,14 @@ from workflow.protocol_loader import load_protocol
 from workflow.run_plan_loader import load_run_plan, validate_run_plan_payload
 from workflow.state import (
     AutomationAbortRequested,
+    automation_is_running,
     check_abort,
     clear_abort,
     fail_automation,
     finish_automation,
     get_abort_event,
     request_abort,
+    reserve_automation,
     start_automation,
     set_automation_state,
 )
@@ -314,9 +316,19 @@ def run_saved_plan(name: str) -> dict[str, Any]:
 def run_plan_payload_background(run_plan: dict[str, Any]) -> threading.Thread:
     clear_abort()
 
+    if not reserve_automation():
+        raise RecipeRunnerError("automation is already running.")
+
+    def target() -> None:
+        try:
+            run_plan_payload(run_plan)
+        except Exception as exc:
+            if automation_is_running():
+                fail_automation(str(exc), "Automation failed")
+            raise
+
     thread = threading.Thread(
-        target=run_plan_payload,
-        args=(run_plan,),
+        target=target,
         daemon=True,
     )
     thread.start()

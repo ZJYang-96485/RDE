@@ -148,6 +148,20 @@ def start_automation(run_dir: str | None = None) -> None:
         automation_state["finished_at"] = None
 
 
+def reserve_automation(step: str = "Queued automation") -> bool:
+    with automation_lock:
+        if bool(automation_state["running"]):
+            return False
+
+        automation_state["running"] = True
+        automation_state["step"] = str(step)
+        automation_state["error"] = None
+        automation_state["run_dir"] = None
+        automation_state["started_at"] = iso_utc()
+        automation_state["finished_at"] = None
+        return True
+
+
 def set_automation_state(
     step: str | None = None,
     error: str | None = None,

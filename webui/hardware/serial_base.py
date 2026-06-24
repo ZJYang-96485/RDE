@@ -14,6 +14,37 @@ class SerialConnectionError(RuntimeError):
     pass
 
 
+class MockSerialConnection:
+    def __init__(self, name: str, port: str) -> None:
+        self.name = name
+        self.port = port
+        self.is_open = True
+        self.responses: list[bytes] = []
+
+    def close(self) -> None:
+        self.is_open = False
+
+    def reset_input_buffer(self) -> None:
+        self.responses.clear()
+
+    def reset_output_buffer(self) -> None:
+        pass
+
+    def write(self, payload: bytes) -> int:
+        text = payload.decode("ascii", errors="replace").strip()
+        self.responses.append(f"ACK MOCK {self.name} {text}\n".encode("utf-8"))
+        return len(payload)
+
+    def flush(self) -> None:
+        pass
+
+    def readline(self) -> bytes:
+        if not self.responses:
+            return b""
+
+        return self.responses.pop(0)
+
+
 class SerialDevice:
     def __init__(
         self,
@@ -37,14 +68,32 @@ class SerialDevice:
         if serial is None:
             raise SerialConnectionError("pyserial is not installed. Run: pip install -r requirements.txt")
 
+    def mock_serial_enabled(self) -> bool:
+        try:
+            from workflow.config_loader import load_config
+        except ModuleNotFoundError:
+            return False
+
+        serial_config = load_config().get("serial", {})
+        hardware_config = serial_config.get("hardware", {})
+
+        if not isinstance(hardware_config, dict):
+            return False
+
+        return bool(hardware_config.get("mock_serial", False))
+
     def is_open(self) -> bool:
         return bool(self.conn and self.conn.is_open)
 
     def connect(self) -> None:
-        self.ensure_available()
-
         if self.is_open():
             return
+
+        if self.mock_serial_enabled():
+            self.conn = MockSerialConnection(self.name, self.port)
+            return
+
+        self.ensure_available()
 
         self.conn = serial.Serial(
             self.port,

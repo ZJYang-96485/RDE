@@ -33,6 +33,16 @@ RPM range:
 * Maximum RPM: `12000`
 * Stop RPM: `20`
 
+For software-only development, `config.json` can enable:
+
+```json
+"hardware": {
+  "mock_serial": true
+}
+```
+
+When enabled, serial commands return mock ACK responses instead of opening real COM ports.
+
 ## Project structure
 
 ```text
@@ -81,6 +91,12 @@ Open browser:
 
 ```text
 http://127.0.0.1:5000
+```
+
+Run smoke tests:
+
+```bash
+python -B -m unittest discover -s tests
 ```
 
 ## How the workflow works

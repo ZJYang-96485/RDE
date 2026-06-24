@@ -9,12 +9,14 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from gamry_worker.real_gamry import run as run_real_gamry
     from gamry_worker.run_ca import run as run_ca
     from gamry_worker.run_cv import run as run_cv
     from gamry_worker.run_eis import run as run_eis
     from gamry_worker.run_lsv import run as run_lsv
     from gamry_worker.run_ocp import run as run_ocp
 except ModuleNotFoundError:
+    from real_gamry import run as run_real_gamry
     from run_ca import run as run_ca
     from run_cv import run as run_cv
     from run_eis import run as run_eis
@@ -101,13 +103,16 @@ def dispatch_mock_step(
 
 
 def dispatch_real_step(
+    job: dict[str, Any],
     step: dict[str, Any],
     outputs: list[str],
     sample_id: str | None,
 ) -> dict[str, Any]:
-    technique = str(step.get("technique", "")).strip().lower()
-    raise GamryWorkerError(
-        f"real Gamry mode is not implemented yet for technique '{technique}'. Use gamry.mode = 'mock' for now."
+    return run_real_gamry(
+        job=job,
+        step=step,
+        outputs=outputs,
+        sample_id=sample_id,
     )
 
 
@@ -131,6 +136,7 @@ def run_job(job: dict[str, Any]) -> dict[str, Any]:
         )
     elif mode in {"real", "toolkitpy", "gamry"}:
         result = dispatch_real_step(
+            job=job,
             step=step,
             outputs=outputs,
             sample_id=sample_id,
@@ -173,9 +179,13 @@ def main() -> int:
 
     try:
         job = read_json(args.job)
+        job["_job_path"] = str(Path(args.job))
 
         if not result_path:
             result_path = job.get("result_path")
+
+        if result_path:
+            job["result_path"] = str(result_path)
 
         result = run_job(job)
 

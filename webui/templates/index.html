@@ -95,6 +95,16 @@
         <h2>Sample Run Plan</h2>
         <p class="hint">Add samples or physical positions. Each sample can move to X/Y/Z, rotate the RDE arm, set RPM, stabilize, run a selected EChem protocol, and optionally rinse afterward.</p>
 
+        <label for="gamryModeSelect">Gamry Backend</label>
+        <div class="inline-control-row">
+          <select id="gamryModeSelect">
+            <option value="mock">Mock</option>
+            <option value="real">Real / Windows</option>
+          </select>
+          <button id="saveGamryModeBtn" class="home-btn" type="button">Apply</button>
+        </div>
+        <p id="gamryModeStatus" class="hint"></p>
+
         <label for="recipeNameInput">Run Plan Name</label>
         <input id="recipeNameInput" type="text" value="default" placeholder="e.g. AuNW ORR sample map" />
 
@@ -199,6 +209,9 @@
       const loadRecipeBtn = document.getElementById("loadRecipeBtn");
       const refreshRecipesBtn = document.getElementById("refreshRecipesBtn");
       const deleteRecipeBtn = document.getElementById("deleteRecipeBtn");
+      const gamryModeSelect = document.getElementById("gamryModeSelect");
+      const saveGamryModeBtn = document.getElementById("saveGamryModeBtn");
+      const gamryModeStatusEl = document.getElementById("gamryModeStatus");
       const recipeNameInput = document.getElementById("recipeNameInput");
       const recipeSelect = document.getElementById("recipeSelect");
       const recipeStepsEl = document.getElementById("recipeSteps");
@@ -210,6 +223,8 @@
       let running = false;
       let endsAt = null;
       let automationRunning = false;
+      let gamryRealRunnerConfigured = false;
+      let gamryModeDirty = false;
       let availableProtocols = [];
       const MIN_STEPS = 1;
       const MAX_STEPS = 300000;
@@ -260,6 +275,55 @@
         recipeSelect.disabled = disabled;
       }
 
+      function renderGamryModeStatus(mode, runnerConfigured = gamryRealRunnerConfigured) {
+        const normalized = (mode || "mock").toLowerCase();
+        gamryModeSelect.value = normalized === "mock" ? "mock" : "real";
+        gamryRealRunnerConfigured = Boolean(runnerConfigured);
+        gamryModeDirty = false;
+
+        if (gamryModeSelect.value === "real" && !gamryRealRunnerConfigured) {
+          gamryModeStatusEl.textContent = "Gamry backend: real (runner path not configured yet)";
+        } else {
+          gamryModeStatusEl.textContent = `Gamry backend: ${gamryModeSelect.value}`;
+        }
+      }
+
+      async function fetchConfig() {
+        const res = await fetch("/api/config");
+        const data = await res.json();
+
+        if (!res.ok) {
+          setAutomationError(data.error || "Unable to load app config.");
+          return false;
+        }
+
+        const config = data.config || {};
+        renderGamryModeStatus(config.gamry_mode, config.gamry_real_runner_configured);
+        return true;
+      }
+
+      async function saveGamryMode() {
+        setAutomationError("");
+        gamryModeStatusEl.textContent = "Updating Gamry backend...";
+
+        const res = await fetch("/api/config/gamry-mode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: gamryModeSelect.value }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          setAutomationError(data.error || "Unable to update Gamry backend.");
+          await fetchConfig();
+          return false;
+        }
+
+        const config = data.config || {};
+        renderGamryModeStatus(config.gamry_mode || data.gamry_mode, config.gamry_real_runner_configured);
+        return true;
+      }
+
       async function fetchStatus() {
         try {
           const res = await fetch("/api/status");
@@ -267,6 +331,9 @@
           running = data.running;
           endsAt = data.ends_at ? new Date(data.ends_at) : null;
           automationRunning = Boolean(data.automation_running);
+          if (data.gamry_mode && !gamryModeDirty) {
+            renderGamryModeStatus(data.gamry_mode, data.gamry_real_runner_configured);
+          }
           automationStatusEl.textContent = automationRunning
             ? `Running: ${data.automation_step || "working..."}`
             : data.automation_step || "Idle";
@@ -293,6 +360,8 @@
           verticalStepsSlider.disabled = automationRunning;
           verticalStepsInput.disabled = automationRunning;
           automationRepetitionsInput.disabled = automationRunning;
+          gamryModeSelect.disabled = automationRunning;
+          saveGamryModeBtn.disabled = automationRunning;
           setRecipeDisabled(automationRunning);
           setError(data.last_error || "");
           updateButton();
@@ -617,6 +686,7 @@
 
         const currentName = selectedName || selectedRecipeName();
         recipeSelect.innerHTML = "";
+        let selectedFound = false;
 
         const recipes = Array.isArray(data.recipes) ? data.recipes : [];
         for (const recipe of recipes) {
@@ -625,6 +695,7 @@
           option.textContent = `${recipe.name} (${recipe.step_count} sample${recipe.step_count === 1 ? "" : "s"})`;
           if (recipe.name === currentName) {
             option.selected = true;
+            selectedFound = true;
           }
           recipeSelect.appendChild(option);
         }
@@ -634,13 +705,14 @@
           option.value = "default";
           option.textContent = "default";
           recipeSelect.appendChild(option);
+          selectedFound = true;
         }
 
-        if (currentName) {
-          recipeNameInput.value = currentName;
-        } else if (recipeSelect.value) {
-          recipeNameInput.value = recipeSelect.value;
+        if (!selectedFound && recipeSelect.options.length > 0) {
+          recipeSelect.selectedIndex = 0;
         }
+
+        recipeNameInput.value = recipeSelect.value || currentName || "default";
 
         return true;
       }
@@ -968,9 +1040,34 @@
         }
       });
 
-      recipeSelect.addEventListener("change", () => {
+      saveGamryModeBtn.addEventListener("click", async () => {
+        saveGamryModeBtn.disabled = true;
+        try {
+          await saveGamryMode();
+        } catch (err) {
+          setAutomationError(err.message);
+        } finally {
+          saveGamryModeBtn.disabled = automationRunning;
+        }
+      });
+
+      gamryModeSelect.addEventListener("change", () => {
+        gamryModeDirty = true;
+      });
+
+      recipeSelect.addEventListener("change", async () => {
         if (recipeSelect.value) {
           recipeNameInput.value = recipeSelect.value;
+        }
+
+        loadRecipeBtn.disabled = true;
+        try {
+          await loadRecipe();
+        } catch (err) {
+          setAutomationError(err.message);
+          automationStatusEl.textContent = "Run plan load failed.";
+        } finally {
+          loadRecipeBtn.disabled = automationRunning;
         }
       });
 
@@ -996,7 +1093,8 @@
         }
       });
 
-      refreshProtocolList()
+      fetchConfig()
+        .then(() => refreshProtocolList())
         .then(() => refreshRecipeList("default"))
         .then(() => loadRecipe())
         .catch((err) => {

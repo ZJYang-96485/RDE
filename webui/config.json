@@ -9,7 +9,7 @@
       "vertical": "COM5"
     },
     "hardware": {
-  "mock_serial": true
+      "mock_serial": true
     },
     "timeouts": {
       "rde_s": 1.0,
@@ -28,9 +28,18 @@
     "safe_z": 0,
     "max_axis_command": 300000,
     "axis_limits": {
-      "linear": [-100000, 100000],
-      "horizontal": [-300000, 300000],
-      "vertical": [-300000, 300000]
+      "linear": [
+        -100000,
+        100000
+      ],
+      "horizontal": [
+        -300000,
+        300000
+      ],
+      "vertical": [
+        -300000,
+        300000
+      ]
     },
     "axis_mapping": {
       "x": "horizontal",
@@ -78,6 +87,10 @@
     "mode": "mock",
     "worker_python": "",
     "worker_script": "gamry_worker/worker.py",
+    "real_worker_python": "",
+    "real_worker_script": "",
+    "real_worker_command": [],
+    "real_timeout_s": 7200,
     "instrument_index": 0,
     "instrument_label": "",
     "default_file_extension": ".DTA"

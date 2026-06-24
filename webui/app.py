@@ -15,6 +15,7 @@ from hardware.motion_controller import (
 from hardware.rde_controller import send_rpm, stop_rde
 from hardware.rotation_controller import send_rotation_text
 from workflow.config_loader import (
+    ConfigError,
     get_baud_rate,
     get_max_axis_command,
     get_motion_config,
@@ -22,6 +23,7 @@ from workflow.config_loader import (
     get_safe_z,
     get_serial_port,
     load_config,
+    set_gamry_mode,
 )
 from workflow.protocol_loader import (
     ProtocolError,
@@ -58,6 +60,17 @@ def config_payload() -> dict[str, Any]:
     config = load_config()
     rde = get_rde_limits()
     motion = get_motion_config()
+    gamry = config["gamry"]
+    real_command = gamry.get("real_worker_command", [])
+    real_runner_configured = bool(str(gamry.get("real_worker_script", "") or "").strip())
+
+    if isinstance(real_command, list):
+        real_runner_configured = real_runner_configured or any(
+            str(item).strip()
+            for item in real_command
+        )
+    else:
+        real_runner_configured = real_runner_configured or bool(str(real_command or "").strip())
 
     return {
         "baud_rate": get_baud_rate(),
@@ -73,7 +86,8 @@ def config_payload() -> dict[str, Any]:
         "max_axis_command": get_max_axis_command(),
         "axis_limits": motion["axis_limits"],
         "axis_mapping": motion["axis_mapping"],
-        "gamry_mode": config["gamry"]["mode"],
+        "gamry_mode": gamry["mode"],
+        "gamry_real_runner_configured": real_runner_configured,
     }
 
 
@@ -112,6 +126,30 @@ def api_config():
     return jsonify({"ok": True, "config": config_payload()})
 
 
+@app.post("/api/config/gamry-mode")
+def api_config_gamry_mode():
+    if automation_is_running():
+        return json_error("automation is running; Gamry mode cannot be changed.", 409)
+
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        mode = str(payload.get("mode", "") or "").strip().lower()
+        config = set_gamry_mode(mode)
+    except ConfigError as exc:
+        return json_error(str(exc), 400)
+    except Exception as exc:
+        return json_error(f"Unable to update Gamry mode: {exc}", 500)
+
+    return jsonify(
+        {
+            "ok": True,
+            "gamry_mode": config["gamry"]["mode"],
+            "config": config_payload(),
+        }
+    )
+
+
 @app.get("/api/status")
 def status():
     cfg = config_payload()
@@ -127,6 +165,7 @@ def status():
             "safe_z": cfg["safe_z"],
             "stop_rpm": cfg["stop_rpm"],
             "gamry_mode": cfg["gamry_mode"],
+            "gamry_real_runner_configured": cfg["gamry_real_runner_configured"],
         }
     )
     return jsonify(payload)
@@ -373,12 +412,15 @@ def protocols_list():
 
 @app.get("/api/protocol")
 def protocol_load():
-    name = request.args.get("name", "ocp_only")
+    name = str(request.args.get("name", "") or "").strip()
+
+    if not name:
+        return jsonify({"ok": True, **default_protocol_payload()})
 
     try:
         data = load_protocol(name)
-    except ProtocolError:
-        data = default_protocol_payload()
+    except ProtocolError as exc:
+        return json_error(str(exc), 404)
     except Exception as exc:
         return json_error(f"Unable to load protocol: {exc}", 500)
 

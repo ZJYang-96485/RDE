@@ -88,6 +88,10 @@ _DEFAULT_CONFIG = {
         "mode": "mock",
         "worker_python": "",
         "worker_script": "gamry_worker/worker.py",
+        "real_worker_python": "",
+        "real_worker_script": "",
+        "real_worker_command": [],
+        "real_timeout_s": 7200,
         "instrument_index": 0,
         "instrument_label": "",
         "default_file_extension": ".DTA"
@@ -128,6 +132,14 @@ def read_config_file() -> dict[str, Any]:
         raise ConfigError("config.json must contain a JSON object.")
 
     return payload
+
+
+def write_config_file(payload: dict[str, Any]) -> None:
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    with CONFIG_PATH.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+        f.write("\n")
 
 
 def validate_serial_config(config: dict[str, Any]) -> None:
@@ -317,6 +329,16 @@ def validate_gamry_config(config: dict[str, Any]) -> None:
     if not extension:
         raise ConfigError("gamry.default_file_extension cannot be empty.")
 
+    real_worker_command = gamry.get("real_worker_command", [])
+
+    if not isinstance(real_worker_command, (list, str)):
+        raise ConfigError("gamry.real_worker_command must be a list or string.")
+
+    real_timeout_s = float(gamry.get("real_timeout_s", 7200))
+
+    if real_timeout_s <= 0:
+        raise ConfigError("gamry.real_timeout_s must be > 0.")
+
 
 def validate_config(config: dict[str, Any]) -> None:
     validate_serial_config(config)
@@ -345,6 +367,26 @@ def load_config(refresh: bool = False) -> dict[str, Any]:
 
 def reload_config() -> dict[str, Any]:
     return load_config(refresh=True)
+
+
+def set_gamry_mode(mode: str) -> dict[str, Any]:
+    normalized = str(mode or "").strip().lower()
+
+    if normalized not in {"mock", "real", "toolkitpy", "gamry"}:
+        raise ConfigError("gamry.mode must be mock, real, toolkitpy, or gamry.")
+
+    user_config = read_config_file()
+    gamry = user_config.setdefault("gamry", {})
+
+    if not isinstance(gamry, dict):
+        raise ConfigError("gamry config must be an object.")
+
+    gamry["mode"] = normalized
+    merged = deep_merge(_DEFAULT_CONFIG, user_config)
+    validate_config(merged)
+    write_config_file(user_config)
+
+    return reload_config()
 
 
 def get_baud_rate() -> int:

@@ -188,7 +188,7 @@ lift back to safe Z
 
 ## Gamry mode
 
-The app currently supports mock Gamry mode:
+The app supports mock Gamry mode for local testing:
 
 ```json
 "gamry": {
@@ -198,15 +198,46 @@ The app currently supports mock Gamry mode:
 
 In mock mode, the app generates fake `.DTA` output files for testing the workflow.
 
-Real Gamry control is not implemented yet. Later, real ToolkitPy/Gamry code can be added inside:
+For the real Windows setup, keep the app worker as `gamry_worker/worker.py` and point real mode at a Windows runner script or command:
+
+```json
+"gamry": {
+  "mode": "real",
+  "worker_python": "",
+  "worker_script": "gamry_worker/worker.py",
+  "real_worker_python": "C:\\Path\\To\\Python\\python.exe",
+  "real_worker_script": "C:\\Path\\To\\your_gamry_runner.py",
+  "real_worker_command": [],
+  "real_timeout_s": 7200
+}
+```
+
+You can also use `real_worker_command` instead of `real_worker_python` and `real_worker_script`:
+
+```json
+"real_worker_command": [
+  "C:\\Path\\To\\Python\\python.exe",
+  "C:\\Path\\To\\your_gamry_runner.py"
+]
+```
+
+The real runner is launched with:
 
 ```text
-webui/gamry_worker/run_ocp.py
-webui/gamry_worker/run_ca.py
-webui/gamry_worker/run_cv.py
-webui/gamry_worker/run_lsv.py
-webui/gamry_worker/run_eis.py
+--job <job.json> --result <result.json>
 ```
+
+The runner must read the job JSON, run the requested technique (`ocp`, `ca`, `ca_staircase`, `cv`, `lsv`, or `eis`) with the local Gamry/ToolkitPy installation, create every file listed in `outputs`, and write a result JSON like:
+
+```json
+{
+  "ok": true,
+  "instrument": "Gamry Reference 600",
+  "details": {}
+}
+```
+
+If the runner writes `{"ok": false, "error": "..."}` or exits non-zero, the app stops the automation and records the error in the run manifest.
 
 ## Output files
 

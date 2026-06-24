@@ -61,7 +61,8 @@ label {
   font-weight: 600;
 }
 
-input {
+input,
+select {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -149,6 +150,18 @@ button.stop {
   grid-template-columns: 1fr;
   gap: 10px;
   margin-top: 4px;
+}
+
+.inline-control-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px;
+  gap: 10px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.inline-control-row button {
+  margin-top: 0;
 }
 
 .linear-row {

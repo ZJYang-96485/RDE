@@ -4,15 +4,28 @@
 
 This app controls an automated RDE electrochemistry workflow from a Flask web interface.
 
-Main functions:
+The web UI is organized around three main functions:
 
-* Manual RDE RPM control
-* Manual rotation control
-* Manual X/Y/Z motion control
-* Saved sample run plans
-* Selectable EChem protocols for each sample
-* Optional rinse after each sample by moving to a water beaker position and spinning
-* Mock Gamry mode for testing EChem output without the real potentiostat connection
+1. **Motor Control**
+   - Manual RDE RPM control
+   - Manual rotation control
+   - Manual X/Y/Z motion control
+   - Home axes command
+
+2. **Sample Run Plan**
+   - Create and save reusable sample run plans
+   - Define sample name, X/Y/Z position, RPM, stabilization time, rotation command, EChem protocol, and rinse behavior
+   - Start, monitor, and abort automated runs
+
+3. **EChem Protocol Builder**
+   - Create reusable electrochemistry protocols directly from the web app
+   - Start from a blank protocol
+   - Add, remove, reorder, duplicate, and edit EChem steps
+   - Supports OCP, CA, CA range, CA staircase, CV, LSV, and EIS
+   - Save protocols to `webui/protocols/`
+   - Saved protocols appear in each sample's EChem Protocol dropdown
+
+The app supports both mock testing and real Gamry/ToolkitPy execution.
 
 ## Current hardware mapping
 
@@ -20,20 +33,29 @@ The COM ports are configured in `webui/config.json`, not hardcoded in `app.py`.
 
 Default configuration:
 
-* RDE RPM controller: `COM10`
-* Rotation controller: `COM7`
-* Linear / Z axis: `COM9`
-* Horizontal / X axis: `COM4`
-* Vertical / Y axis: `COM5`
-* Baud rate: `115200`
+| Device | Port |
+|---|---|
+| RDE RPM controller | `COM10` |
+| Rotation controller | `COM7` |
+| Linear / Z axis | `COM9` |
+| Horizontal / X axis | `COM4` |
+| Vertical / Y axis | `COM5` |
+
+Serial baud rate:
+
+```text
+115200
+```
 
 RPM range:
 
-* Minimum RPM: `30`
-* Maximum RPM: `12000`
-* Stop RPM: `20`
+| Setting | Value |
+|---|---:|
+| Minimum RPM | `30` |
+| Maximum RPM | `12000` |
+| Stop RPM | `20` |
 
-For software-only development, `config.json` can enable:
+For software-only development, `config.json` can enable mock serial mode:
 
 ```json
 "hardware": {
@@ -55,13 +77,33 @@ RDE/
     ├── app.py
     ├── config.json
     ├── requirements.txt
+    ├── README.md
     ├── templates/
     │   └── index.html
     ├── static/
     │   └── styles.css
     ├── hardware/
+    │   ├── gamry_client.py
+    │   ├── motion_controller.py
+    │   ├── rde_controller.py
+    │   ├── rinse_controller.py
+    │   ├── rotation_controller.py
+    │   └── serial_base.py
     ├── workflow/
+    │   ├── config_loader.py
+    │   ├── data_manager.py
+    │   ├── protocol_loader.py
+    │   ├── recipe_runner.py
+    │   ├── run_plan_loader.py
+    │   ├── safety.py
+    │   └── state.py
     ├── gamry_worker/
+    │   ├── worker.py
+    │   ├── run_ocp.py
+    │   ├── run_ca.py
+    │   ├── run_cv.py
+    │   ├── run_lsv.py
+    │   └── run_eis.py
     ├── protocols/
     ├── run_plans/
     └── output/runs/
@@ -71,32 +113,47 @@ RDE/
 
 Open terminal in `webui`:
 
-```bash
-cd webui
+```powershell
+cd "C:\Users\zyang\Downloads\RDE data\RDE\webui"
 ```
 
 Install dependencies:
 
-```bash
-`& "$env:LOCALAPPDATA\miniforge3\python.exe" -m pip install -r requirements.txt`
+```powershell
+& "$env:LOCALAPPDATA\miniforge3\python.exe" -m pip install -r requirements.txt
 ```
 
 Start the server:
 
-```bash
-`& "$env:LOCALAPPDATA\miniforge3\python.exe" app.py`
+```powershell
+& "$env:LOCALAPPDATA\miniforge3\python.exe" .\app.py
 ```
 
 Open browser:
 
 ```text
-http://127.0.0.1:5000
+http://127.0.0.1:5055
 ```
 
-Run smoke tests:
+The default port is `5055`. You can override it by setting the `PORT` environment variable before starting the app.
 
-```bash
-python -B -m unittest discover -s tests
+Compile-check the main files:
+
+```powershell
+& "$env:LOCALAPPDATA\miniforge3\python.exe" -m py_compile .\app.py
+& "$env:LOCALAPPDATA\miniforge3\python.exe" -m py_compile .\workflow\protocol_loader.py
+& "$env:LOCALAPPDATA\miniforge3\python.exe" -m py_compile .\workflow\recipe_runner.py
+```
+
+Compile-check the real Gamry worker files with the Gamry 32-bit Python:
+
+```powershell
+& "C:\Program Files (x86)\Gamry Instruments\Python\Python37-32\python.exe" -m py_compile .\gamry_worker\worker.py
+& "C:\Program Files (x86)\Gamry Instruments\Python\Python37-32\python.exe" -m py_compile .\gamry_worker\run_ocp.py
+& "C:\Program Files (x86)\Gamry Instruments\Python\Python37-32\python.exe" -m py_compile .\gamry_worker\run_ca.py
+& "C:\Program Files (x86)\Gamry Instruments\Python\Python37-32\python.exe" -m py_compile .\gamry_worker\run_cv.py
+& "C:\Program Files (x86)\Gamry Instruments\Python\Python37-32\python.exe" -m py_compile .\gamry_worker\run_lsv.py
+& "C:\Program Files (x86)\Gamry Instruments\Python\Python37-32\python.exe" -m py_compile .\gamry_worker\run_eis.py
 ```
 
 ## How the workflow works
@@ -113,19 +170,23 @@ webui/run_plans/
 
 A run plan defines physical/sample information:
 
-* sample name
-* X/Y/Z position
-* RPM
-* stabilization time
-* selected EChem protocol
-* whether to rinse after the sample
+- sample name
+- X/Y/Z position
+- RPM
+- stabilization time
+- rotation command
+- selected EChem protocol
+- post-EChem wait time
+- whether to rinse after the sample
 
-Example:
+Example files:
 
 ```text
 single_sample_test.json
 multi_sample_test.json
 ```
+
+Each sample in a run plan selects one EChem protocol by name.
 
 ### 2. EChem protocol
 
@@ -135,24 +196,114 @@ Protocols are stored in:
 webui/protocols/
 ```
 
-A protocol defines the electrochemical sequence:
-
-* OCP
-* CA
-* CA staircase
-* CV
-* LSV
-* EIS
-
-Example:
+A protocol defines the electrochemical sequence. Supported real techniques are:
 
 ```text
-ca_steps_backward.json
-ocp_only.json
-lsv_orr.json
+ocp
+ca
+ca_staircase
+cv
+lsv
+eis
 ```
 
-Each sample in a run plan selects one protocol.
+The web UI also supports compact protocol-builder blocks such as `ca_range`. These are expanded by `workflow/protocol_loader.py` into normal executable CA steps before the run starts.
+
+Example protocol files:
+
+```text
+ocp_only.json
+lsv_orr.json
+ca_steps_backward.json
+bulk_electrode_ca_steps_with_backward_compact.json
+```
+
+## EChem Protocol Builder
+
+The EChem Protocol Builder is a flexible `.GSequence`-like builder inside the web app.
+
+It starts blank. Users can add steps such as:
+
+- OCP
+- EIS
+- CA
+- CA Range
+- LSV
+- CV
+
+For each step, users can adjust parameters such as:
+
+- duration
+- sample period
+- output file name
+- voltage
+- voltage range
+- scan rate
+- EIS frequency range
+- EIS AC voltage
+- estimated impedance
+- points per decade
+
+Users can also:
+
+- move steps up/down
+- duplicate steps
+- delete steps
+- preview the generated protocol
+- save the protocol
+- load/edit saved protocols
+
+A compact CA range block such as:
+
+```json
+{
+  "name": "ca_forward",
+  "type": "ca_range",
+  "direction_label": "forward",
+  "start_voltage_v": -0.1,
+  "end_voltage_v": -1.6,
+  "step_voltage_v": -0.1,
+  "duration_s": 300,
+  "sample_period_s": 1,
+  "output_prefix": "CA_forward",
+  "area_cm2": 1
+}
+```
+
+is expanded into individual CA steps such as:
+
+```text
+CA_forward_m0p1V.DTA
+CA_forward_m0p2V.DTA
+...
+CA_forward_m1p6V.DTA
+```
+
+This allows users to create protocols similar to Gamry `.GSequence` files without manually writing dozens of JSON steps.
+
+## Example GSequence-like protocol
+
+A typical bulk-electrode CA steps protocol can be built as:
+
+```text
+1. OCP before
+2. EIS before
+3. OCP between
+4. CA forward range: -0.1 V to -1.6 V
+5. CA backward range: -1.6 V to -0.1 V
+6. OCP after
+7. EIS after
+```
+
+For initial testing, use short durations first:
+
+```text
+OCP: 5 s
+CA range step duration: 3 s
+EIS: 10 kHz to 1 kHz
+```
+
+Do not start a full 300-second-per-step protocol until the saved protocol has been previewed and the output paths look correct.
 
 ## Rinse behavior
 
@@ -188,7 +339,7 @@ lift back to safe Z
 
 ## Gamry mode
 
-The app supports mock Gamry mode for local testing:
+The app supports two Gamry modes:
 
 ```json
 "gamry": {
@@ -196,48 +347,88 @@ The app supports mock Gamry mode for local testing:
 }
 ```
 
-In mock mode, the app generates fake `.DTA` output files for testing the workflow.
+or:
 
-For the real Windows setup, keep the app worker as `gamry_worker/worker.py` and point real mode at a Windows runner script or command:
+```json
+"gamry": {
+  "mode": "real"
+}
+```
+
+### Mock mode
+
+In mock mode, the app generates fake `.DTA` files for testing the workflow without the real potentiostat.
+
+Use mock mode for:
+
+- UI development
+- run-plan testing
+- file-output testing
+- motion/RDE workflow tests without electrochemistry
+
+### Real mode
+
+In real mode, the Flask app launches the worker script:
+
+```text
+gamry_worker/worker.py
+```
+
+The worker should be run using the Gamry-provided 32-bit Python with ToolkitPy installed.
+
+Example `config.json` Gamry section:
 
 ```json
 "gamry": {
   "mode": "real",
-  "worker_python": "",
+  "worker_python": "C:\\Program Files (x86)\\Gamry Instruments\\Python\\Python37-32\\python.exe",
   "worker_script": "gamry_worker/worker.py",
-  "real_worker_python": "C:\\Path\\To\\Python\\python.exe",
-  "real_worker_script": "C:\\Path\\To\\your_gamry_runner.py",
-  "real_worker_command": [],
-  "real_timeout_s": 7200
+  "instrument_index": 0,
+  "instrument_label": "IFC1010-36030",
+  "default_file_extension": ".DTA"
 }
 ```
 
-You can also use `real_worker_command` instead of `real_worker_python` and `real_worker_script`:
-
-```json
-"real_worker_command": [
-  "C:\\Path\\To\\Python\\python.exe",
-  "C:\\Path\\To\\your_gamry_runner.py"
-]
-```
-
-The real runner is launched with:
+The worker is launched with:
 
 ```text
 --job <job.json> --result <result.json>
 ```
 
-The runner must read the job JSON, run the requested technique (`ocp`, `ca`, `ca_staircase`, `cv`, `lsv`, or `eis`) with the local Gamry/ToolkitPy installation, create every file listed in `outputs`, and write a result JSON like:
+The worker reads the job JSON, runs the requested technique, creates every file listed in `outputs`, and writes a result JSON.
+
+Successful result example:
 
 ```json
 {
   "ok": true,
-  "instrument": "Gamry Reference 600",
-  "details": {}
+  "mode": "real",
+  "technique": "ocp",
+  "result": {
+    "ok": true,
+    "technique": "ocp",
+    "points": 20,
+    "pstat": "IFC1010-36030"
+  }
 }
 ```
 
-If the runner writes `{"ok": false, "error": "..."}` or exits non-zero, the app stops the automation and records the error in the run manifest.
+If the worker writes `{"ok": false, "error": "..."}` or exits non-zero, the app stops automation and records the error in the run manifest.
+
+## Real Gamry support status
+
+The real Gamry backend has been tested with ToolkitPy for:
+
+| Technique | Status |
+|---|---|
+| OCP | Working |
+| CA | Working |
+| CA staircase / CA range | Working through expanded CA steps |
+| LSV | Working |
+| CV | Working |
+| EIS | Working |
+
+For real EChem testing, close Gamry Framework or Instrument Manager before running direct ToolkitPy worker tests if the instrument is locked.
 
 ## Output files
 
@@ -260,10 +451,53 @@ samples/
 
 Mock or real Gamry `.DTA` files are saved inside the corresponding sample folder.
 
-## Notes
+Example sample output folder:
 
-* Keep Arduino sketches flashed before using real hardware.
-* Check and update COM ports in `config.json` before running with hardware.
-* Do not start full automation without confirming the X/Y/Z positions are safe.
-* Empty JSON files should not be kept inside `protocols/` or `run_plans/`.
-* `__init__.py` files can be empty.
+```text
+webui/output/runs/20260630T191016Z_default/
+└── samples/
+    └── 001_sample_001_Sample_1/
+        ├── OCP_before.DTA
+        ├── EIS_before.DTA
+        ├── CA_forward_m0p1V.DTA
+        ├── CA_forward_m0p2V.DTA
+        └── ...
+```
+
+## Recommended protocol cleanup
+
+Keep reusable protocols in:
+
+```text
+webui/protocols/
+```
+
+Archive one-off test protocols in:
+
+```text
+webui/archived_protocols/
+```
+
+Suggested reusable protocols to keep:
+
+```text
+ocp_only.json
+lsv_orr.json
+ca_steps_backward.json
+bulk_electrode_ca_steps_with_backward_compact.json
+full_real_gamry_smoke_test.json
+```
+
+Temporary smoke-test protocols such as single-technique OCP/CA/CV/LSV/EIS tests can be moved to `archived_protocols/` after validation.
+
+## Safety notes
+
+- Keep Arduino sketches flashed before using real hardware.
+- Check and update COM ports in `config.json` before running with hardware.
+- Use `mock_serial: true` for software-only testing.
+- Do not start full automation without confirming X/Y/Z positions are safe.
+- Do not run a full 300-second-per-step EChem sequence as the first test.
+- Use short OCP/CA/EIS timings for smoke tests.
+- Empty JSON files should not be kept inside `protocols/` or `run_plans/`.
+- `__init__.py` files can be empty.
+- Stop or abort the automation before manually moving hardware.

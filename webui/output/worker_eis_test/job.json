@@ -1,0 +1,17 @@
+{
+  "mode": "real",
+  "sample_id": "worker_eis_test",
+  "step": {
+    "technique": "eis",
+    "initial_freq_hz": 10000.0,
+    "final_freq_hz": 1000.0,
+    "points_per_decade": 3,
+    "estimated_z_ohm": 2000.0,
+    "dc_voltage_v": 0.0,
+    "ac_voltage_v": 0.005,
+    "settle_s": 1.0
+  },
+  "outputs": [
+    "output/worker_eis_test/worker_real_eis_10k_to_1kHz.DTA"
+  ]
+}

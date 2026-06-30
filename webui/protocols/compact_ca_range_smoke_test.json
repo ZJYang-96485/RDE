@@ -1,0 +1,42 @@
+{
+  "protocol_name": "compact_ca_range_smoke_test",
+  "display_name": "Compact CA Range Smoke Test",
+  "description": "Short test for compact CA range expansion.",
+  "source": {
+    "type": "custom"
+  },
+  "steps": [
+    {
+      "name": "ocp_before",
+      "technique": "ocp",
+      "enabled": true,
+      "output": "OCP_before.DTA",
+      "duration_s": 5,
+      "sample_period_s": 0.5
+    },
+    {
+      "name": "ca_forward_short",
+      "type": "ca_range",
+      "direction_label": "forward",
+      "start_voltage_v": -0.1,
+      "end_voltage_v": -0.3,
+      "step_voltage_v": -0.1,
+      "duration_s": 3,
+      "sample_period_s": 0.5,
+      "output_prefix": "CA_forward_short",
+      "area_cm2": 1
+    },
+    {
+      "name": "ca_backward_short",
+      "type": "ca_range",
+      "direction_label": "backward",
+      "start_voltage_v": -0.3,
+      "end_voltage_v": -0.1,
+      "step_voltage_v": 0.1,
+      "duration_s": 3,
+      "sample_period_s": 0.5,
+      "output_prefix": "CA_backward_short",
+      "area_cm2": 1
+    }
+  ]
+}

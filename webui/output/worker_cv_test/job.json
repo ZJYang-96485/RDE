@@ -1,0 +1,18 @@
+{
+  "mode": "real",
+  "sample_id": "worker_cv_test",
+  "step": {
+    "technique": "cv",
+    "initial_voltage_v": 0.0,
+    "apex1_voltage_v": 0.05,
+    "apex2_voltage_v": 0.0,
+    "final_voltage_v": 0.0,
+    "scan_rate_v_s": 0.05,
+    "step_size_v": 0.002,
+    "cycles": 1,
+    "precharge_s": 1.0
+  },
+  "outputs": [
+    "output/worker_cv_test/worker_real_cv_0_to_50mV.DTA"
+  ]
+}

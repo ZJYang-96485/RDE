@@ -1,0 +1,14 @@
+{
+  "mode": "real",
+  "sample_id": "worker_lsv_test",
+  "step": {
+    "technique": "lsv",
+    "initial_voltage_v": 0.0,
+    "final_voltage_v": 0.05,
+    "scan_rate_v_s": 0.05,
+    "step_size_v": 0.002
+  },
+  "outputs": [
+    "output/worker_lsv_test/worker_real_lsv_0_to_50mV.DTA"
+  ]
+}

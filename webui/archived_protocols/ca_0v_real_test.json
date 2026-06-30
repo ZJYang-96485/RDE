@@ -1,0 +1,21 @@
+{
+  "protocol_name": "ca_0v_real_test",
+  "display_name": "Real CA 0 V Test",
+  "description": "Short real Gamry chronoamperometry test at 0 V.",
+  "source": {
+    "type": "custom"
+  },
+  "steps": [
+    {
+      "name": "ca_0v_5s",
+      "technique": "ca",
+      "enabled": true,
+      "output": "CA_0V_5s.DTA",
+      "voltage_v": 0.0,
+      "duration_s": 5.0,
+      "sample_period_s": 0.05,
+      "expected_max_v": 1.0,
+      "area_cm2": 1
+    }
+  ]
+}

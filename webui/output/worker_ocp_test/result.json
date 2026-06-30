@@ -1,0 +1,22 @@
+{
+  "ok": true,
+  "job_id": null,
+  "mode": "real",
+  "sample_id": "worker_ocp_test",
+  "technique": "ocp",
+  "step_name": "",
+  "outputs": [
+    "output/worker_ocp_test/worker_real_ocp_10s.DTA"
+  ],
+  "result": {
+    "ok": true,
+    "technique": "ocp",
+    "output": "output\\worker_ocp_test\\worker_real_ocp_10s.DTA",
+    "duration_s": 10.0,
+    "sample_period_s": 0.5,
+    "points": 20,
+    "sample_id": "worker_ocp_test",
+    "pstat": "IFC1010-36030"
+  },
+  "finished_at": "2026-06-30T20:11:37.227034+00:00"
+}

@@ -1,0 +1,29 @@
+{
+  "ok": true,
+  "job_id": null,
+  "mode": "real",
+  "sample_id": "worker_cv_test",
+  "technique": "cv",
+  "step_name": "",
+  "outputs": [
+    "output/worker_cv_test/worker_real_cv_0_to_50mV.DTA"
+  ],
+  "result": {
+    "ok": true,
+    "technique": "cv",
+    "output": "output\\worker_cv_test\\worker_real_cv_0_to_50mV.DTA",
+    "initial_voltage_v": 0.0,
+    "apex1_voltage_v": 0.05,
+    "apex2_voltage_v": 0.0,
+    "final_voltage_v": 0.0,
+    "scan_rate_v_s": 0.05,
+    "step_size_v": 0.002,
+    "sample_period_s": 0.04,
+    "cycles": 1,
+    "estimated_time_s": 2.0,
+    "points": 52,
+    "sample_id": "worker_cv_test",
+    "pstat": "IFC1010-36030"
+  },
+  "finished_at": "2026-06-30T19:42:03.410908+00:00"
+}

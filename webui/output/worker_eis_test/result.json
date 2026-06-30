@@ -1,0 +1,28 @@
+{
+  "ok": true,
+  "job_id": null,
+  "mode": "real",
+  "sample_id": "worker_eis_test",
+  "technique": "eis",
+  "step_name": "",
+  "outputs": [
+    "output/worker_eis_test/worker_real_eis_10k_to_1kHz.DTA"
+  ],
+  "result": {
+    "ok": true,
+    "technique": "eis",
+    "output": "output\\worker_eis_test\\worker_real_eis_10k_to_1kHz.DTA",
+    "initial_freq_hz": 10000.0,
+    "final_freq_hz": 1000.0,
+    "ac_voltage_v": 0.005,
+    "dc_voltage_v": 0.0,
+    "estimated_z_ohm": 2000.0,
+    "points_per_decade": 3,
+    "points": 4,
+    "bad_points": 0,
+    "max_points": 4,
+    "sample_id": "worker_eis_test",
+    "pstat": "IFC1010-36030"
+  },
+  "finished_at": "2026-06-30T19:58:47.427251+00:00"
+}

@@ -1,0 +1,92 @@
+{
+  "protocol_name": "bulk_electrode_ca_steps_with_backward_compact",
+  "display_name": "Bulk Electrode CA Steps with Backward Compact",
+  "description": "Compact protocol equivalent to the uploaded Gamry sequence: OCP/EIS, forward CA range, backward CA range, OCP/EIS.",
+  "source": {
+    "type": "custom",
+    "format": "compact_ca_range"
+  },
+  "steps": [
+    {
+      "name": "ocp_before",
+      "technique": "ocp",
+      "enabled": true,
+      "output": "OCP_before.DTA",
+      "duration_s": 300,
+      "sample_period_s": 0.5,
+      "area_cm2": 1
+    },
+    {
+      "name": "eis_before",
+      "technique": "eis",
+      "enabled": true,
+      "output": "EIS_before.DTA",
+      "initial_frequency_hz": 100000,
+      "final_frequency_hz": 0.1,
+      "points_per_decade": 10,
+      "ac_voltage_mv_rms": 10,
+      "dc_voltage_v": 0,
+      "estimated_z_ohm": 100,
+      "speed": 1,
+      "drift_correction": false,
+      "area_cm2": 1
+    },
+    {
+      "name": "ocp_between",
+      "technique": "ocp",
+      "enabled": true,
+      "output": "OCP_between.DTA",
+      "duration_s": 300,
+      "sample_period_s": 0.5,
+      "area_cm2": 1
+    },
+    {
+      "name": "ca_forward",
+      "type": "ca_range",
+      "direction_label": "forward",
+      "start_voltage_v": -0.1,
+      "end_voltage_v": -1.6,
+      "step_voltage_v": -0.1,
+      "duration_s": 300,
+      "sample_period_s": 1,
+      "output_prefix": "CA_forward",
+      "area_cm2": 1
+    },
+    {
+      "name": "ca_backward",
+      "type": "ca_range",
+      "direction_label": "backward",
+      "start_voltage_v": -1.6,
+      "end_voltage_v": -0.1,
+      "step_voltage_v": 0.1,
+      "duration_s": 300,
+      "sample_period_s": 1,
+      "output_prefix": "CA_backward",
+      "area_cm2": 1
+    },
+    {
+      "name": "ocp_after",
+      "technique": "ocp",
+      "enabled": true,
+      "output": "OCP_after.DTA",
+      "duration_s": 300,
+      "sample_period_s": 0.5,
+      "area_cm2": 1
+    },
+    {
+      "name": "eis_after",
+      "technique": "eis",
+      "enabled": true,
+      "output": "EIS_after.DTA",
+      "initial_frequency_hz": 100000,
+      "final_frequency_hz": 0.1,
+      "points_per_decade": 10,
+      "ac_voltage_mv_rms": 10,
+      "dc_voltage_v": 0,
+      "estimated_z_ohm": 100,
+      "speed": 1,
+      "drift_correction": false,
+      "area_cm2": 1
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "protocol_name": "lsv_0_to_50mv_real_test",
+  "display_name": "Real LSV 0 to 50 mV Test",
+  "description": "Short real Gamry linear sweep voltammetry test from 0 V to 50 mV.",
+  "source": {
+    "type": "custom"
+  },
+  "steps": [
+    {
+      "name": "lsv_0_to_50mv",
+      "technique": "lsv",
+      "enabled": true,
+      "output": "LSV_0_to_50mV.DTA",
+      "initial_voltage_v": 0.0,
+      "final_voltage_v": 0.05,
+      "scan_rate_v_s": 0.05,
+      "step_size_v": 0.002,
+      "area_cm2": 1
+    }
+  ]
+}

@@ -5,10 +5,107 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>RDE EChem Automation</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+
+    <style>
+      body {
+        overflow-y: auto;
+      }
+
+      .workspace-tabs {
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        max-width: 1500px;
+        margin: 0 auto;
+        padding: 12px 16px;
+        background: rgba(239, 244, 248, 0.96);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid #d7e4ee;
+      }
+
+      .workspace-tab {
+        border: 1px solid #2f638f;
+        border-radius: 12px;
+        background: #ffffff;
+        color: #234a68;
+        font-size: 16px;
+        font-weight: 700;
+        padding: 12px 10px;
+        cursor: pointer;
+      }
+
+      .workspace-tab.active {
+        background: #2f638f;
+        color: #ffffff;
+      }
+
+      .compact-workspace {
+        display: block;
+        max-width: 1500px;
+        margin: 16px auto 32px;
+        padding: 0 16px;
+      }
+
+      .workspace-panel {
+        display: none;
+      }
+
+      .workspace-panel.active {
+        display: block;
+      }
+
+      .workspace-panel.panel {
+        width: 100%;
+        max-width: none;
+        box-sizing: border-box;
+      }
+
+      .automation-panel .cmd-buttons,
+      .echem-builder-panel .cmd-buttons {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 8px;
+      }
+
+      .automation-panel .cmd-buttons button,
+      .echem-builder-panel .cmd-buttons button {
+        width: 100%;
+        margin: 0;
+      }
+
+      .echem-builder-panel .protocol-builder-grid,
+      .echem-builder-panel .builder-grid,
+      .echem-builder-panel .echem-builder-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 12px;
+      }
+
+      .recipe-step,
+      .echem-builder-panel .automation-block,
+      .echem-step-block {
+        margin-bottom: 12px;
+      }
+
+      @media (max-width: 760px) {
+        .workspace-tabs {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div class="page-grid">
-      <main class="panel">
+    <nav class="workspace-tabs" aria-label="Main workspace tabs">
+      <button class="workspace-tab active" type="button" data-workspace="motor">Motor Control</button>
+      <button class="workspace-tab" type="button" data-workspace="runplan">Sample Run Plan</button>
+      <button class="workspace-tab" type="button" data-workspace="echem">EChem Protocol Builder</button>
+    </nav>
+
+    <div class="page-grid compact-workspace">
+      <main class="panel workspace-panel active" data-workspace-panel="motor">
         <h1>Motor Control</h1>
         <p class="meta">RPM: {{ com_port }} | Rotation: {{ rotation_com_port }} | Linear/Z: {{ linear_com_port }} | Horizontal/X: {{ horizontal_com_port }} | Vertical/Y: {{ vertical_com_port }}</p>
 
@@ -91,7 +188,7 @@
         <p id="error" class="error" hidden></p>
       </main>
 
-      <section class="panel automation-panel">
+      <section class="panel automation-panel workspace-panel" data-workspace-panel="runplan">
         <h2>Sample Run Plan</h2>
         <p class="hint">Add samples or physical positions. Each sample can move to X/Y/Z, rotate the RDE arm, set RPM, stabilize, run a selected EChem protocol, and optionally rinse afterward.</p>
 
@@ -128,6 +225,57 @@
         <p id="automationStatus" class="hint">Idle</p>
         <p id="automationError" class="error" hidden></p>
       </section>
+
+      <section class="panel echem-builder-panel workspace-panel" data-workspace-panel="echem">
+        <h2>EChem Protocol Builder</h2>
+        <p class="hint">Start from a blank EChem recipe. Add, remove, reorder, and edit individual EChem steps or compact CA voltage ranges. Saved protocols appear in each sample's EChem Protocol dropdown.</p>
+
+        <label for="echemSavedProtocolSelect">Saved EChem Protocols</label>
+        <select id="echemSavedProtocolSelect"></select>
+
+        <div class="cmd-buttons">
+          <button id="newBlankEchemProtocolBtn" class="home-btn" type="button">New Blank Protocol</button>
+          <button id="loadEchemProtocolBtn" class="home-btn" type="button">Load Protocol</button>
+          <button id="refreshEchemProtocolBtn" class="home-btn" type="button">Refresh Protocols</button>
+          <button id="deleteEchemProtocolBtn" class="abort-btn" type="button">Delete Protocol</button>
+        </div>
+
+        <label for="echemProtocolNameInput">Protocol File Name</label>
+        <input id="echemProtocolNameInput" type="text" value="" placeholder="e.g. bulk_electrode_ca_steps_with_backward" />
+
+        <label for="echemProtocolDisplayInput">Display Name</label>
+        <input id="echemProtocolDisplayInput" type="text" value="" placeholder="e.g. Bulk Electrode CA Steps with Backward" />
+
+        <label for="echemProtocolDescriptionInput">Description</label>
+        <input id="echemProtocolDescriptionInput" type="text" value="" placeholder="Optional description" />
+
+        <div class="automation-block">
+          <h3>Add EChem Step</h3>
+          <div class="cmd-buttons">
+            <button id="addEchemOcpBtn" class="home-btn" type="button">Add OCP</button>
+            <button id="addEchemEisBtn" class="home-btn" type="button">Add EIS</button>
+            <button id="addEchemCaBtn" class="home-btn" type="button">Add CA</button>
+            <button id="addEchemCaRangeBtn" class="home-btn" type="button">Add CA Range</button>
+            <button id="addEchemLsvBtn" class="home-btn" type="button">Add LSV</button>
+            <button id="addEchemCvBtn" class="home-btn" type="button">Add CV</button>
+          </div>
+          <p class="hint">Use CA Range for sequences like -0.1, -0.2, ... -1.6 V. Use individual CA for a single fixed-potential step.</p>
+        </div>
+
+        <div id="echemStepList"></div>
+
+        <div class="cmd-buttons">
+          <button id="previewEchemProtocolBtn" class="home-btn" type="button">Preview EChem Protocol</button>
+          <button id="saveEchemProtocolBtn" class="home-btn" type="button">Save EChem Protocol</button>
+        </div>
+
+        <p id="echemProtocolStatus" class="hint">Blank protocol ready. Add EChem steps to begin.</p>
+        <p id="echemProtocolError" class="error" hidden></p>
+
+        <label for="echemProtocolPreview">Protocol Preview</label>
+        <textarea id="echemProtocolPreview" rows="16" spellcheck="false"></textarea>
+      </section>
+
     </div>
 
     <template id="recipeStepTemplate">
@@ -220,6 +368,52 @@
       const automationErrorEl = document.getElementById("automationError");
       const automationRepetitionsInput = document.getElementById("automationRepetitions");
 
+      const echemSavedProtocolSelect = document.getElementById("echemSavedProtocolSelect");
+      const newBlankEchemProtocolBtn = document.getElementById("newBlankEchemProtocolBtn");
+      const loadEchemProtocolBtn = document.getElementById("loadEchemProtocolBtn");
+      const refreshEchemProtocolBtn = document.getElementById("refreshEchemProtocolBtn");
+      const deleteEchemProtocolBtn = document.getElementById("deleteEchemProtocolBtn");
+      const echemProtocolNameInput = document.getElementById("echemProtocolNameInput");
+      const echemProtocolDisplayInput = document.getElementById("echemProtocolDisplayInput");
+      const echemProtocolDescriptionInput = document.getElementById("echemProtocolDescriptionInput");
+      const addEchemOcpBtn = document.getElementById("addEchemOcpBtn");
+      const addEchemEisBtn = document.getElementById("addEchemEisBtn");
+      const addEchemCaBtn = document.getElementById("addEchemCaBtn");
+      const addEchemCaRangeBtn = document.getElementById("addEchemCaRangeBtn");
+      const addEchemLsvBtn = document.getElementById("addEchemLsvBtn");
+      const addEchemCvBtn = document.getElementById("addEchemCvBtn");
+      const echemStepListEl = document.getElementById("echemStepList");
+      const previewEchemProtocolBtn = document.getElementById("previewEchemProtocolBtn");
+      const saveEchemProtocolBtn = document.getElementById("saveEchemProtocolBtn");
+      const echemProtocolStatusEl = document.getElementById("echemProtocolStatus");
+      const echemProtocolErrorEl = document.getElementById("echemProtocolError");
+      const echemProtocolPreviewEl = document.getElementById("echemProtocolPreview");
+
+      const workspaceTabs = Array.from(document.querySelectorAll(".workspace-tab"));
+      const workspacePanels = Array.from(document.querySelectorAll(".workspace-panel"));
+
+      function setWorkspace(name) {
+        const activeName = name || "runplan";
+
+        for (const tab of workspaceTabs) {
+          const active = tab.dataset.workspace === activeName;
+          tab.classList.toggle("active", active);
+          tab.setAttribute("aria-selected", active ? "true" : "false");
+        }
+
+        for (const panel of workspacePanels) {
+          panel.classList.toggle("active", panel.dataset.workspacePanel === activeName);
+        }
+
+        localStorage.setItem("rdeActiveWorkspace", activeName);
+      }
+
+      for (const tab of workspaceTabs) {
+        tab.addEventListener("click", () => setWorkspace(tab.dataset.workspace));
+      }
+
+      setWorkspace(localStorage.getItem("rdeActiveWorkspace") || "runplan");
+
       let running = false;
       let endsAt = null;
       let automationRunning = false;
@@ -273,6 +467,36 @@
         deleteRecipeBtn.disabled = disabled;
         recipeNameInput.disabled = disabled;
         recipeSelect.disabled = disabled;
+      }
+
+      function setProtocolBuilderDisabled(disabled) {
+        const builderElements = [
+          echemSavedProtocolSelect,
+          newBlankEchemProtocolBtn,
+          loadEchemProtocolBtn,
+          refreshEchemProtocolBtn,
+          deleteEchemProtocolBtn,
+          echemProtocolNameInput,
+          echemProtocolDisplayInput,
+          echemProtocolDescriptionInput,
+          addEchemOcpBtn,
+          addEchemEisBtn,
+          addEchemCaBtn,
+          addEchemCaRangeBtn,
+          addEchemLsvBtn,
+          addEchemCvBtn,
+          previewEchemProtocolBtn,
+          saveEchemProtocolBtn,
+          echemProtocolPreviewEl
+        ];
+
+        for (const el of builderElements) {
+          el.disabled = disabled;
+        }
+
+        for (const el of echemStepListEl.querySelectorAll("input, button, select")) {
+          el.disabled = disabled;
+        }
       }
 
       function renderGamryModeStatus(mode, runnerConfigured = gamryRealRunnerConfigured) {
@@ -363,6 +587,7 @@
           gamryModeSelect.disabled = automationRunning;
           saveGamryModeBtn.disabled = automationRunning;
           setRecipeDisabled(automationRunning);
+          setProtocolBuilderDisabled(automationRunning);
           setError(data.last_error || "");
           updateButton();
           updateStatusText();
@@ -602,6 +827,10 @@
         for (const select of recipeStepsEl.querySelectorAll(".step-protocol")) {
           const current = select.value || "ca_steps_backward";
           fillProtocolSelect(select, current);
+        }
+
+        if (typeof refreshEchemProtocolSelect === "function") {
+          refreshEchemProtocolSelect();
         }
 
         return true;
@@ -849,6 +1078,480 @@
         return true;
       }
 
+
+      function setEchemProtocolError(message) {
+        echemProtocolErrorEl.hidden = !message;
+        echemProtocolErrorEl.textContent = message || "";
+      }
+
+      function numberValueFromElement(inputEl, fieldName) {
+        const value = Number(inputEl.value);
+        if (!Number.isFinite(value)) {
+          throw new Error(`${fieldName} must be a number.`);
+        }
+        return value;
+      }
+
+      function positiveNumberFromElement(inputEl, fieldName) {
+        const value = numberValueFromElement(inputEl, fieldName);
+        if (value <= 0) {
+          throw new Error(`${fieldName} must be > 0.`);
+        }
+        return value;
+      }
+
+      function intFromElement(inputEl, fieldName) {
+        const value = Math.round(numberValueFromElement(inputEl, fieldName));
+        if (value <= 0) {
+          throw new Error(`${fieldName} must be a positive integer.`);
+        }
+        return value;
+      }
+
+      const echemStepDefinitions = {
+        ocp: {
+          label: "OCP",
+          defaultName: "ocp",
+          defaultOutput: "OCP.DTA",
+          fields: [
+            { key: "duration_s", label: "Duration (s)", type: "number", value: 300, positive: true, step: "0.1" },
+            { key: "sample_period_s", label: "Sample period (s)", type: "number", value: 0.5, positive: true, step: "0.01" },
+            { key: "stability_mv_s", label: "Stability limit (mV/s), 0 to ignore", type: "number", value: 0, min: 0, step: "0.01" },
+            { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
+          ]
+        },
+        eis: {
+          label: "EIS",
+          defaultName: "eis",
+          defaultOutput: "EIS.DTA",
+          fields: [
+            { key: "initial_frequency_hz", label: "Initial frequency (Hz)", type: "number", value: 100000, positive: true, step: "0.1" },
+            { key: "final_frequency_hz", label: "Final frequency (Hz)", type: "number", value: 0.1, positive: true, step: "0.1" },
+            { key: "points_per_decade", label: "Points per decade", type: "integer", value: 10, positive: true, step: "1" },
+            { key: "ac_voltage_mv_rms", label: "AC voltage (mV RMS)", type: "number", value: 10, positive: true, step: "0.001" },
+            { key: "dc_voltage_v", label: "DC voltage (V)", type: "number", value: 0, step: "0.001" },
+            { key: "estimated_z_ohm", label: "Estimated Z (Ω)", type: "number", value: 100, positive: true, step: "0.1" },
+            { key: "settle_s", label: "Settle time (s)", type: "number", value: 1, min: 0, step: "0.1" },
+            { key: "speed", label: "Speed", type: "text", value: "normal" },
+            { key: "drift_correction", label: "Drift correction", type: "checkbox", value: false },
+            { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
+          ]
+        },
+        ca: {
+          label: "CA",
+          defaultName: "ca",
+          defaultOutput: "CA.DTA",
+          fields: [
+            { key: "voltage_v", label: "Voltage (V)", type: "number", value: 0, step: "0.001" },
+            { key: "duration_s", label: "Duration (s)", type: "number", value: 300, positive: true, step: "0.1" },
+            { key: "sample_period_s", label: "Sample period (s)", type: "number", value: 1, positive: true, step: "0.01" },
+            { key: "expected_max_v", label: "Expected max |V|", type: "number", value: 1, positive: true, step: "0.1" },
+            { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
+          ]
+        },
+        ca_range: {
+          label: "CA Range",
+          defaultName: "ca_range",
+          defaultOutput: "",
+          fields: [
+            { key: "direction_label", label: "Direction label", type: "text", value: "forward" },
+            { key: "start_voltage_v", label: "Start voltage (V)", type: "number", value: -0.1, step: "0.001" },
+            { key: "end_voltage_v", label: "End voltage (V)", type: "number", value: -1.6, step: "0.001" },
+            { key: "step_voltage_v", label: "Step voltage (V)", type: "number", value: -0.1, step: "0.001" },
+            { key: "duration_s", label: "Duration per step (s)", type: "number", value: 300, positive: true, step: "0.1" },
+            { key: "sample_period_s", label: "Sample period (s)", type: "number", value: 1, positive: true, step: "0.01" },
+            { key: "output_prefix", label: "Output prefix", type: "text", value: "CA_forward" },
+            { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
+          ]
+        },
+        lsv: {
+          label: "LSV",
+          defaultName: "lsv",
+          defaultOutput: "LSV.DTA",
+          fields: [
+            { key: "start_voltage_v", label: "Start voltage (V)", type: "number", value: 0, step: "0.001" },
+            { key: "end_voltage_v", label: "End voltage (V)", type: "number", value: 0.05, step: "0.001" },
+            { key: "scan_rate_v_s", label: "Scan rate (V/s)", type: "number", value: 0.05, positive: true, step: "0.001" },
+            { key: "step_size_v", label: "Step size (V)", type: "number", value: 0.002, positive: true, step: "0.0001" },
+            { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
+          ]
+        },
+        cv: {
+          label: "CV",
+          defaultName: "cv",
+          defaultOutput: "CV.DTA",
+          fields: [
+            { key: "initial_voltage_v", label: "Initial voltage (V)", type: "number", value: 0, step: "0.001" },
+            { key: "apex1_voltage_v", label: "Apex 1 voltage (V)", type: "number", value: 0.05, step: "0.001" },
+            { key: "apex2_voltage_v", label: "Apex 2 voltage (V)", type: "number", value: 0, step: "0.001" },
+            { key: "final_voltage_v", label: "Final voltage (V)", type: "number", value: 0, step: "0.001" },
+            { key: "scan_rate_v_s", label: "Scan rate (V/s)", type: "number", value: 0.05, positive: true, step: "0.001" },
+            { key: "step_size_v", label: "Step size (V)", type: "number", value: 0.002, positive: true, step: "0.0001" },
+            { key: "cycles", label: "Cycles", type: "integer", value: 1, positive: true, step: "1" },
+            { key: "precharge_s", label: "Precharge time (s)", type: "number", value: 1, min: 0, step: "0.1" },
+            { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
+          ]
+        }
+      };
+
+      function clearEchemSteps() {
+        echemStepListEl.innerHTML = "";
+      }
+
+      function echemStepBlocks() {
+        return Array.from(echemStepListEl.querySelectorAll(".echem-step"));
+      }
+
+      function getEchemFieldValues(block) {
+        const values = {};
+        for (const field of block.querySelectorAll(".echem-field")) {
+          const key = field.dataset.key;
+          const type = field.dataset.type;
+          if (!key) {
+            continue;
+          }
+          if (type === "checkbox") {
+            values[key] = field.checked;
+          } else {
+            values[key] = field.value;
+          }
+        }
+        return values;
+      }
+
+      function renderEchemStepFields(block, kind, values = {}) {
+        const definition = echemStepDefinitions[kind] || echemStepDefinitions.ocp;
+        const fieldWrap = block.querySelector(".echem-step-fields");
+        fieldWrap.innerHTML = "";
+
+        if (kind !== "ca_range") {
+          const outputLabel = document.createElement("label");
+          outputLabel.textContent = "Output DTA filename";
+          const outputInput = document.createElement("input");
+          outputInput.className = "echem-output";
+          outputInput.type = "text";
+          outputInput.value = values.output ?? definition.defaultOutput;
+          fieldWrap.appendChild(outputLabel);
+          fieldWrap.appendChild(outputInput);
+        }
+
+        for (const spec of definition.fields) {
+          const label = document.createElement("label");
+          label.textContent = spec.label;
+          const input = document.createElement("input");
+          input.className = "echem-field";
+          input.dataset.key = spec.key;
+          input.dataset.type = spec.type;
+
+          if (spec.type === "checkbox") {
+            input.type = "checkbox";
+            input.checked = Boolean(values[spec.key] ?? spec.value);
+            label.className = "check-label";
+            label.innerHTML = "";
+            label.appendChild(input);
+            const span = document.createElement("span");
+            span.textContent = ` ${spec.label}`;
+            label.appendChild(span);
+            fieldWrap.appendChild(label);
+            continue;
+          }
+
+          input.type = spec.type === "text" ? "text" : "number";
+          input.value = values[spec.key] ?? spec.value;
+          if (spec.step) input.step = spec.step;
+          if (spec.min !== undefined) input.min = spec.min;
+          if (spec.positive) input.min = "0.000000001";
+          fieldWrap.appendChild(label);
+          fieldWrap.appendChild(input);
+        }
+      }
+
+      function updateEchemStepTitles() {
+        echemStepBlocks().forEach((block, index) => {
+          const kind = block.querySelector(".echem-step-kind").value;
+          const label = echemStepDefinitions[kind]?.label || kind;
+          block.querySelector(".echem-step-title").textContent = `${index + 1}. ${label}`;
+        });
+      }
+
+      function addEchemStep(kind = "ocp", values = {}) {
+        const definition = echemStepDefinitions[kind] || echemStepDefinitions.ocp;
+        const block = document.createElement("div");
+        block.className = "automation-block echem-step";
+
+        block.innerHTML = `
+          <label class="check-label"><input class="echem-enabled" type="checkbox" checked /> <span class="echem-step-title">${definition.label}</span></label>
+          <label>Step type</label>
+          <select class="echem-step-kind">
+            <option value="ocp">OCP</option>
+            <option value="eis">EIS</option>
+            <option value="ca">CA</option>
+            <option value="ca_range">CA Range</option>
+            <option value="lsv">LSV</option>
+            <option value="cv">CV</option>
+          </select>
+          <label>Step name</label>
+          <input class="echem-step-name" type="text" />
+          <div class="echem-step-fields"></div>
+          <div class="cmd-buttons">
+            <button class="echem-step-up home-btn" type="button">Move Up</button>
+            <button class="echem-step-down home-btn" type="button">Move Down</button>
+            <button class="echem-step-duplicate home-btn" type="button">Duplicate</button>
+            <button class="echem-step-delete abort-btn" type="button">Delete</button>
+          </div>
+        `;
+
+        block.querySelector(".echem-enabled").checked = values.enabled ?? true;
+        block.querySelector(".echem-step-kind").value = kind;
+        block.querySelector(".echem-step-name").value = values.name ?? definition.defaultName;
+        renderEchemStepFields(block, kind, values);
+
+        block.querySelector(".echem-step-kind").addEventListener("change", () => {
+          const currentValues = getEchemFieldValues(block);
+          const nextKind = block.querySelector(".echem-step-kind").value;
+          block.querySelector(".echem-step-name").value = echemStepDefinitions[nextKind]?.defaultName || nextKind;
+          renderEchemStepFields(block, nextKind, currentValues);
+          updateEchemStepTitles();
+        });
+
+        block.querySelector(".echem-step-delete").addEventListener("click", () => {
+          block.remove();
+          updateEchemStepTitles();
+        });
+
+        block.querySelector(".echem-step-up").addEventListener("click", () => {
+          const previous = block.previousElementSibling;
+          if (previous) {
+            echemStepListEl.insertBefore(block, previous);
+            updateEchemStepTitles();
+          }
+        });
+
+        block.querySelector(".echem-step-down").addEventListener("click", () => {
+          const next = block.nextElementSibling;
+          if (next) {
+            echemStepListEl.insertBefore(next, block);
+            updateEchemStepTitles();
+          }
+        });
+
+        block.querySelector(".echem-step-duplicate").addEventListener("click", () => {
+          addEchemStepFromPayload(getEchemStepPayload(block));
+        });
+
+        echemStepListEl.appendChild(block);
+        updateEchemStepTitles();
+        return block;
+      }
+
+      function numberValueFromInput(input, fieldName, positive = false, integer = false) {
+        const value = Number(input.value);
+        if (!Number.isFinite(value)) {
+          throw new Error(`${fieldName} must be a number.`);
+        }
+        if (positive && value <= 0) {
+          throw new Error(`${fieldName} must be > 0.`);
+        }
+        return integer ? Math.round(value) : value;
+      }
+
+      function getEchemStepPayload(block) {
+        const kind = block.querySelector(".echem-step-kind").value;
+        const definition = echemStepDefinitions[kind] || echemStepDefinitions.ocp;
+        const name = block.querySelector(".echem-step-name").value.trim() || definition.defaultName;
+        const payload = {
+          name,
+          enabled: block.querySelector(".echem-enabled").checked
+        };
+
+        if (kind === "ca_range") {
+          payload.type = "ca_range";
+        } else {
+          payload.technique = kind;
+          payload.output = block.querySelector(".echem-output")?.value.trim() || definition.defaultOutput;
+        }
+
+        for (const spec of definition.fields) {
+          const input = block.querySelector(`.echem-field[data-key="${spec.key}"]`);
+          if (!input) continue;
+
+          if (spec.type === "checkbox") {
+            payload[spec.key] = input.checked;
+          } else if (spec.type === "text") {
+            payload[spec.key] = input.value.trim();
+          } else if (spec.type === "integer") {
+            payload[spec.key] = numberValueFromInput(input, `${name}: ${spec.label}`, Boolean(spec.positive), true);
+          } else {
+            payload[spec.key] = numberValueFromInput(input, `${name}: ${spec.label}`, Boolean(spec.positive), false);
+          }
+        }
+
+        return payload;
+      }
+
+      function addEchemStepFromPayload(step) {
+        const kind = step.type === "ca_range" || step.technique === "ca_range" ? "ca_range" : (step.technique || "ocp");
+        return addEchemStep(kind, step);
+      }
+
+      function buildEchemProtocolPayload() {
+        const protocolName = echemProtocolNameInput.value.trim();
+        const displayName = echemProtocolDisplayInput.value.trim() || protocolName;
+
+        if (!protocolName) {
+          throw new Error("Protocol file name cannot be empty.");
+        }
+
+        const steps = echemStepBlocks().map(getEchemStepPayload);
+
+        if (steps.length === 0) {
+          throw new Error("Protocol must contain at least one EChem step.");
+        }
+
+        return {
+          protocol_name: protocolName,
+          display_name: displayName,
+          description: echemProtocolDescriptionInput.value.trim(),
+          source: {
+            type: "ui_flexible_builder",
+            created_by: "RDE EChem Automation"
+          },
+          steps
+        };
+      }
+
+      function previewEchemProtocol() {
+        setEchemProtocolError("");
+
+        try {
+          const payload = buildEchemProtocolPayload();
+          echemProtocolPreviewEl.value = JSON.stringify(payload, null, 2);
+          echemProtocolStatusEl.textContent = `Preview ready: ${payload.steps.length} builder step/block(s).`;
+          return payload;
+        } catch (err) {
+          setEchemProtocolError(err.message);
+          echemProtocolStatusEl.textContent = "Protocol preview failed.";
+          throw err;
+        }
+      }
+
+      async function saveEchemProtocol() {
+        setEchemProtocolError("");
+        echemProtocolStatusEl.textContent = "Saving EChem protocol...";
+
+        let payload;
+        try {
+          payload = previewEchemProtocol();
+        } catch (err) {
+          return false;
+        }
+
+        const res = await fetch("/api/protocol/compact", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          setEchemProtocolError(data.error || "Unable to save EChem protocol.");
+          echemProtocolStatusEl.textContent = "EChem protocol save failed.";
+          return false;
+        }
+
+        await refreshProtocolList();
+        refreshEchemProtocolSelect(data.protocol_name);
+        echemProtocolStatusEl.textContent = `Saved EChem protocol '${data.protocol_name}' with ${data.step_count} expanded step(s).`;
+        return true;
+      }
+
+      function refreshEchemProtocolSelect(selectedName = "") {
+        const current = selectedName || echemSavedProtocolSelect.value || "";
+        echemSavedProtocolSelect.innerHTML = "";
+        for (const protocol of availableProtocols) {
+          const name = protocol.protocol_name || protocol.name;
+          const label = protocol.display_name || name;
+          if (!name) continue;
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = label;
+          if (name === current) option.selected = true;
+          echemSavedProtocolSelect.appendChild(option);
+        }
+      }
+
+      function newBlankEchemProtocol() {
+        echemProtocolNameInput.value = "";
+        echemProtocolDisplayInput.value = "";
+        echemProtocolDescriptionInput.value = "";
+        echemProtocolPreviewEl.value = "";
+        clearEchemSteps();
+        echemProtocolStatusEl.textContent = "Blank protocol ready. Add EChem steps to begin.";
+        setEchemProtocolError("");
+      }
+
+      async function loadEchemProtocolForBuilder() {
+        const name = echemSavedProtocolSelect.value;
+        if (!name) {
+          setEchemProtocolError("Select a protocol first.");
+          return false;
+        }
+
+        const res = await fetch(`/api/protocol/raw?name=${encodeURIComponent(name)}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+          setEchemProtocolError(data.error || "Unable to load EChem protocol.");
+          return false;
+        }
+
+        echemProtocolNameInput.value = data.protocol_name || name;
+        echemProtocolDisplayInput.value = data.display_name || data.protocol_name || name;
+        echemProtocolDescriptionInput.value = data.description || "";
+        clearEchemSteps();
+
+        const steps = Array.isArray(data.steps) ? data.steps : [];
+        for (const step of steps) {
+          addEchemStepFromPayload(step);
+        }
+
+        echemProtocolPreviewEl.value = JSON.stringify({
+          protocol_name: echemProtocolNameInput.value,
+          display_name: echemProtocolDisplayInput.value,
+          description: echemProtocolDescriptionInput.value,
+          source: data.source || { type: "ui_flexible_builder" },
+          steps
+        }, null, 2);
+        echemProtocolStatusEl.textContent = `Loaded '${echemProtocolNameInput.value}' with ${steps.length} builder step/block(s).`;
+        setEchemProtocolError("");
+        return true;
+      }
+
+      async function deleteEchemProtocolFromBuilder() {
+        const name = echemSavedProtocolSelect.value || echemProtocolNameInput.value.trim();
+        if (!name) {
+          setEchemProtocolError("Select or enter a protocol name first.");
+          return false;
+        }
+        if (!confirm(`Delete EChem protocol '${name}'?`)) {
+          return false;
+        }
+
+        const res = await fetch(`/api/protocol?name=${encodeURIComponent(name)}`, { method: "DELETE" });
+        const data = await res.json();
+
+        if (!res.ok) {
+          setEchemProtocolError(data.error || "Unable to delete EChem protocol.");
+          return false;
+        }
+
+        await refreshProtocolList();
+        refreshEchemProtocolSelect();
+        newBlankEchemProtocol();
+        echemProtocolStatusEl.textContent = `Deleted EChem protocol '${data.protocol_name || name}'.`;
+        return true;
+      }
+
       btn.addEventListener("click", async () => {
         btn.disabled = true;
         try {
@@ -1093,6 +1796,74 @@
         }
       });
 
+
+      newBlankEchemProtocolBtn.addEventListener("click", () => {
+        newBlankEchemProtocol();
+      });
+
+      loadEchemProtocolBtn.addEventListener("click", async () => {
+        loadEchemProtocolBtn.disabled = true;
+        try {
+          await loadEchemProtocolForBuilder();
+        } catch (err) {
+          setEchemProtocolError(err.message);
+        } finally {
+          loadEchemProtocolBtn.disabled = automationRunning;
+        }
+      });
+
+      refreshEchemProtocolBtn.addEventListener("click", async () => {
+        refreshEchemProtocolBtn.disabled = true;
+        try {
+          await refreshProtocolList();
+          refreshEchemProtocolSelect();
+          echemProtocolStatusEl.textContent = "EChem protocol list refreshed.";
+        } catch (err) {
+          setEchemProtocolError(err.message);
+        } finally {
+          refreshEchemProtocolBtn.disabled = automationRunning;
+        }
+      });
+
+      deleteEchemProtocolBtn.addEventListener("click", async () => {
+        deleteEchemProtocolBtn.disabled = true;
+        try {
+          await deleteEchemProtocolFromBuilder();
+        } catch (err) {
+          setEchemProtocolError(err.message);
+        } finally {
+          deleteEchemProtocolBtn.disabled = automationRunning;
+        }
+      });
+
+      addEchemOcpBtn.addEventListener("click", () => addEchemStep("ocp", { name: "ocp" }));
+      addEchemEisBtn.addEventListener("click", () => addEchemStep("eis", { name: "eis" }));
+      addEchemCaBtn.addEventListener("click", () => addEchemStep("ca", { name: "ca" }));
+      addEchemCaRangeBtn.addEventListener("click", () => addEchemStep("ca_range", { name: "ca_range" }));
+      addEchemLsvBtn.addEventListener("click", () => addEchemStep("lsv", { name: "lsv" }));
+      addEchemCvBtn.addEventListener("click", () => addEchemStep("cv", { name: "cv" }));
+
+      previewEchemProtocolBtn.addEventListener("click", () => {
+        try {
+          previewEchemProtocol();
+        } catch (err) {
+          setEchemProtocolError(err.message);
+        }
+      });
+
+      saveEchemProtocolBtn.addEventListener("click", async () => {
+        saveEchemProtocolBtn.disabled = true;
+
+        try {
+          await saveEchemProtocol();
+        } catch (err) {
+          setEchemProtocolError(err.message);
+          echemProtocolStatusEl.textContent = "EChem protocol save failed.";
+        } finally {
+          saveEchemProtocolBtn.disabled = automationRunning;
+        }
+      });
+
       fetchConfig()
         .then(() => refreshProtocolList())
         .then(() => refreshRecipeList("default"))
@@ -1121,6 +1892,7 @@
       updateFromSlider(linearStepsSlider, linearStepsInput, linearStepsValue);
       updateFromSlider(horizontalStepsSlider, horizontalStepsInput, horizontalStepsValue);
       updateFromSlider(verticalStepsSlider, verticalStepsInput, verticalStepsValue);
+      newBlankEchemProtocol();
       fetchStatus();
     </script>
   </body>

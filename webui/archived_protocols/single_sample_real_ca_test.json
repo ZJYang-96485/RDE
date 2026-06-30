@@ -1,0 +1,24 @@
+{
+  "run_name": "single_sample_real_ca_test",
+  "display_name": "Single Sample Real CA Test",
+  "description": "One-sample real Gamry CA test. Motion/RDE should stay mocked for this first web test.",
+  "repetitions": 1,
+  "samples": [
+    {
+      "sample_id": "sample_001",
+      "label": "Sample 1",
+      "enabled": true,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rpm": 1600,
+      "stabilization_s": 0,
+      "protocol": "ca_0v_real_test",
+      "rotation_command": "",
+      "post_echem_wait_s": 0,
+      "rinse_after": false
+    }
+  ]
+}

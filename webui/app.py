@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 import threading
+from datetime import datetime, timezone
 from typing import Any
 
 from flask import Flask, jsonify, render_template, request
@@ -31,7 +33,10 @@ from workflow.protocol_loader import (
     delete_protocol,
     list_protocols,
     load_protocol,
+    normalize_protocol_name,
+    protocol_path_for_name,
     save_protocol,
+    validate_protocol_payload,
 )
 from workflow.recipe_runner import RecipeRunnerError, abort_automation, run_plan_payload_background
 from workflow.run_plan_loader import (
@@ -439,6 +444,84 @@ def protocol_save():
         return json_error(f"Unable to save protocol: {exc}", 500)
 
     return jsonify(result)
+
+
+@app.post("/api/protocols")
+def protocols_save_alias():
+    return protocol_save()
+
+
+@app.post("/api/echem-recipe")
+def echem_recipe_save_alias():
+    return protocol_save()
+
+
+@app.post("/api/protocol/compact")
+def protocol_save_compact():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        validated = validate_protocol_payload(payload)
+        raw_payload = dict(payload)
+        raw_payload["protocol_name"] = validated["protocol_name"]
+        raw_payload["display_name"] = validated["display_name"]
+        raw_payload["description"] = validated["description"]
+        raw_payload["saved_at"] = datetime.now(timezone.utc).isoformat()
+
+        path = protocol_path_for_name(validated["protocol_name"])
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(raw_payload, f, indent=2)
+            f.write("\n")
+
+    except ProtocolError as exc:
+        return json_error(str(exc), 400)
+    except Exception as exc:
+        return json_error(f"Unable to save compact protocol: {exc}", 500)
+
+    return jsonify(
+        {
+            "ok": True,
+            "protocol_name": validated["protocol_name"],
+            "display_name": validated["display_name"],
+            "step_count": len(validated["steps"]),
+            "builder_step_count": len(raw_payload.get("steps", [])),
+            "path": str(path),
+            "saved_at": raw_payload["saved_at"],
+        }
+    )
+
+
+@app.get("/api/protocol/raw")
+def protocol_load_raw():
+    name = str(request.args.get("name", "") or "").strip()
+
+    if not name:
+        return jsonify({"ok": True, **default_protocol_payload()})
+
+    try:
+        protocol_name = normalize_protocol_name(name)
+        path = protocol_path_for_name(protocol_name)
+
+        if not path.exists():
+            raise ProtocolError(f"protocol '{protocol_name}' does not exist.")
+
+        with path.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+
+        validated = validate_protocol_payload(payload)
+
+    except ProtocolError as exc:
+        return json_error(str(exc), 404)
+    except Exception as exc:
+        return json_error(f"Unable to load raw protocol: {exc}", 500)
+
+    return jsonify(
+        {
+            "ok": True,
+            **payload,
+            "expanded_step_count": len(validated["steps"]),
+        }
+    )
 
 
 @app.delete("/api/protocol")

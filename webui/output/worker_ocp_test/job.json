@@ -1,0 +1,12 @@
+{
+  "mode": "real",
+  "sample_id": "worker_ocp_test",
+  "step": {
+    "technique": "ocp",
+    "duration_s": 10.0,
+    "sample_period_s": 0.5
+  },
+  "outputs": [
+    "output/worker_ocp_test/worker_real_ocp_10s.DTA"
+  ]
+}

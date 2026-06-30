@@ -1,0 +1,25 @@
+{
+  "protocol_name": "cv_0_to_50mv_real_test",
+  "display_name": "Real CV 0 to 50 mV Test",
+  "description": "Short real Gamry cyclic voltammetry test from 0 V to 50 mV and back.",
+  "source": {
+    "type": "custom"
+  },
+  "steps": [
+    {
+      "name": "cv_0_to_50mv",
+      "technique": "cv",
+      "enabled": true,
+      "output": "CV_0_to_50mV.DTA",
+      "initial_voltage_v": 0.0,
+      "apex1_voltage_v": 0.05,
+      "apex2_voltage_v": 0.0,
+      "final_voltage_v": 0.0,
+      "scan_rate_v_s": 0.05,
+      "step_size_v": 0.002,
+      "cycles": 1,
+      "precharge_s": 1.0,
+      "area_cm2": 1
+    }
+  ]
+}

@@ -78,13 +78,13 @@ cd webui
 Install dependencies:
 
 ```bash
-pip install -r requirements.txt
+`& "$env:LOCALAPPDATA\miniforge3\python.exe" -m pip install -r requirements.txt`
 ```
 
 Start the server:
 
 ```bash
-python app.py
+`& "$env:LOCALAPPDATA\miniforge3\python.exe" app.py`
 ```
 
 Open browser:

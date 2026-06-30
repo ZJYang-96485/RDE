@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "technique": "ca",
+  "output": "output\\worker_test\\worker_real_ca_0V_5s.DTA",
+  "voltage_v": 0.0,
+  "duration_s": 5.0,
+  "sample_period_s": 0.05,
+  "points": 102,
+  "sample_id": "worker_ca_test",
+  "pstat": "IFC1010-36030",
+  "mode": "real"
+}

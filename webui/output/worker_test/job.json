@@ -1,0 +1,14 @@
+{
+  "mode": "real",
+  "sample_id": "worker_ca_test",
+  "step": {
+    "technique": "ca",
+    "voltage_v": 0.0,
+    "duration_s": 5.0,
+    "sample_period_s": 0.05,
+    "expected_max_v": 1.0
+  },
+  "outputs": [
+    "output/worker_test/worker_real_ca_0V_5s.DTA"
+  ]
+}

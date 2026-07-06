@@ -1,118 +1,22 @@
+
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RDE EChem Automation</title>
+    <title>RDE Gamry Integration Test</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
-
-    <style>
-      body {
-        overflow-y: auto;
-      }
-
-      .workspace-tabs {
-        position: sticky;
-        top: 0;
-        z-index: 1000;
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 10px;
-        max-width: 1500px;
-        margin: 0 auto;
-        padding: 12px 16px;
-        background: rgba(239, 244, 248, 0.96);
-        backdrop-filter: blur(8px);
-        border-bottom: 1px solid #d7e4ee;
-      }
-
-      .workspace-tab {
-        border: 1px solid #2f638f;
-        border-radius: 12px;
-        background: #ffffff;
-        color: #234a68;
-        font-size: 16px;
-        font-weight: 700;
-        padding: 12px 10px;
-        cursor: pointer;
-      }
-
-      .workspace-tab.active {
-        background: #2f638f;
-        color: #ffffff;
-      }
-
-      .compact-workspace {
-        display: block;
-        max-width: 1500px;
-        margin: 16px auto 32px;
-        padding: 0 16px;
-      }
-
-      .workspace-panel {
-        display: none;
-      }
-
-      .workspace-panel.active {
-        display: block;
-      }
-
-      .workspace-panel.panel {
-        width: 100%;
-        max-width: none;
-        box-sizing: border-box;
-      }
-
-      .automation-panel .cmd-buttons,
-      .echem-builder-panel .cmd-buttons {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-        gap: 8px;
-      }
-
-      .automation-panel .cmd-buttons button,
-      .echem-builder-panel .cmd-buttons button {
-        width: 100%;
-        margin: 0;
-      }
-
-      .echem-builder-panel .protocol-builder-grid,
-      .echem-builder-panel .builder-grid,
-      .echem-builder-panel .echem-builder-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-        gap: 12px;
-      }
-
-      .recipe-step,
-      .echem-builder-panel .automation-block,
-      .echem-step-block {
-        margin-bottom: 12px;
-      }
-
-      @media (max-width: 760px) {
-        .workspace-tabs {
-          grid-template-columns: 1fr;
-        }
-      }
-    </style>
   </head>
   <body>
-    <nav class="workspace-tabs" aria-label="Main workspace tabs">
-      <button class="workspace-tab active" type="button" data-workspace="motor">Motor Control</button>
-      <button class="workspace-tab" type="button" data-workspace="runplan">Sample Run Plan</button>
-      <button class="workspace-tab" type="button" data-workspace="echem">EChem Protocol Builder</button>
-    </nav>
-
-    <div class="page-grid compact-workspace">
-      <main class="panel workspace-panel active" data-workspace-panel="motor">
+    <div class="page-grid">
+      <main class="panel">
         <h1>Motor Control</h1>
-        <p class="meta">RPM: {{ com_port }} | Rotation: {{ rotation_com_port }} | Linear/Z: {{ linear_com_port }} | Horizontal/X: {{ horizontal_com_port }} | Vertical/Y: {{ vertical_com_port }}</p>
+        <p class="meta">RPM: {{ com_port }} | Rotation: {{ rotation_com_port }} | Z/Linear: {{ linear_com_port }} | X/Horizontal: {{ horizontal_com_port }}</p>
 
         <label for="rpm">RPM ({{ rpm_min }} to {{ rpm_max }})</label>
         <input id="rpm" type="number" min="{{ rpm_min }}" max="{{ rpm_max }}" value="1000" />
 
-        <label for="seconds">Run Time (seconds)</label>
+        <label for="seconds">Manual Run Time (seconds)</label>
         <input id="seconds" type="number" min="1" value="10" />
 
         <button id="startStopBtn" class="start">Start</button>
@@ -124,15 +28,15 @@
         </div>
         <p id="rotationStatus" class="hint"></p>
 
-        <label for="linearStepsSlider">Linear / Z Movement ({{ linear_com_port }})</label>
+        <label for="linearStepsSlider">Z / Linear Movement ({{ linear_com_port }})</label>
         <div class="linear-row">
           <div class="linear-slider-wrap">
             <div class="slider-input-row">
               <input id="linearStepsSlider" type="range" min="0" max="1000" value="0" />
-              <input id="linearStepsInput" class="step-input" type="number" min="1" max="300000" step="1" value="1" />
+              <input id="linearStepsInput" class="step-input" type="number" min="1" max="100000" step="1" value="1" />
             </div>
             <p id="linearStepsValue" class="hint">Steps: 1</p>
-            <p class="hint range-hint">Input range: 1 to 300000. Values outside this range will not run.</p>
+            <p class="hint range-hint">Input range: 1 to 100000. Values outside this range will not run.</p>
           </div>
           <div class="linear-arrow-buttons">
             <button id="linearUpBtn" class="icon-btn up" title="Send -steps">&#9650;</button>
@@ -141,15 +45,15 @@
         </div>
         <p id="linearStatus" class="hint"></p>
 
-        <label for="horizontalStepsSlider">Horizontal / X Movement ({{ horizontal_com_port }})</label>
+        <label for="horizontalStepsSlider">X / Horizontal Movement ({{ horizontal_com_port }})</label>
         <div class="linear-row">
           <div class="linear-slider-wrap">
             <div class="slider-input-row">
               <input id="horizontalStepsSlider" type="range" min="0" max="1000" value="0" />
-              <input id="horizontalStepsInput" class="step-input" type="number" min="1" max="300000" step="1" value="1" />
+              <input id="horizontalStepsInput" class="step-input" type="number" min="1" max="100000" step="1" value="1" />
             </div>
             <p id="horizontalStepsValue" class="hint">Steps: 1</p>
-            <p class="hint range-hint">Input range: 1 to 300000. Values outside this range will not run.</p>
+            <p class="hint range-hint">Input range: 1 to 100000. Values outside this range will not run.</p>
           </div>
           <div class="horizontal-arrow-buttons">
             <button id="horizontalLeftBtn" class="icon-btn down" title="Send +steps">&#9664;</button>
@@ -157,23 +61,6 @@
           </div>
         </div>
         <p id="horizontalStatus" class="hint"></p>
-
-        <label for="verticalStepsSlider">Vertical / Y Movement ({{ vertical_com_port }})</label>
-        <div class="linear-row">
-          <div class="linear-slider-wrap">
-            <div class="slider-input-row">
-              <input id="verticalStepsSlider" type="range" min="0" max="1000" value="0" />
-              <input id="verticalStepsInput" class="step-input" type="number" min="1" max="300000" step="1" value="1" />
-            </div>
-            <p id="verticalStepsValue" class="hint">Steps: 1</p>
-            <p class="hint range-hint">Input range: 1 to 300000. Values outside this range will not run.</p>
-          </div>
-          <div class="linear-arrow-buttons">
-            <button id="verticalUpBtn" class="icon-btn up" title="Send +steps">&#9650;</button>
-            <button id="verticalDownBtn" class="icon-btn down" title="Send -steps">&#9660;</button>
-          </div>
-        </div>
-        <p id="verticalStatus" class="hint"></p>
 
         <button id="axesHomeBtn" class="home-btn">Home Axes</button>
         <p id="axesHomeStatus" class="hint"></p>
@@ -188,136 +75,54 @@
         <p id="error" class="error" hidden></p>
       </main>
 
-      <section class="panel automation-panel workspace-panel" data-workspace-panel="runplan">
-        <h2>Sample Run Plan</h2>
-        <p class="hint">Add samples or physical positions. Each sample can move to X/Y/Z, rotate the RDE arm, set RPM, stabilize, run a selected EChem protocol, and optionally rinse afterward.</p>
-
-        <label for="gamryModeSelect">Gamry Backend</label>
-        <div class="inline-control-row">
-          <select id="gamryModeSelect">
-            <option value="mock">Mock</option>
-            <option value="real">Real / Windows</option>
-          </select>
-          <button id="saveGamryModeBtn" class="home-btn" type="button">Apply</button>
-        </div>
-        <p id="gamryModeStatus" class="hint"></p>
-
-        <label for="recipeNameInput">Run Plan Name</label>
-        <input id="recipeNameInput" type="text" value="default" placeholder="e.g. AuNW ORR sample map" />
-
-        <label for="recipeSelect">Saved Run Plans</label>
-        <select id="recipeSelect"></select>
+      <section class="panel automation-panel">
+        <h2>Real Integration Automation</h2>
+        <p class="hint">Same physical motion sequence as the serial-only sample app, but each sample now runs a selected Gamry EChem protocol while RDE is spinning.</p>
 
         <label for="automationRepetitions">Repetitions</label>
         <input id="automationRepetitions" type="number" min="1" max="100" value="1" />
 
-        <div id="recipeSteps"></div>
+        <div id="sample1Block" class="automation-block">
+          <label class="check-label"><input id="sample1Enabled" type="checkbox" checked /> Sample 1</label>
+          <label for="sample1Rpm">RPM, use 0 for no spin</label>
+          <input id="sample1Rpm" type="number" min="0" max="{{ rpm_max }}" value="1000" />
+          <label for="sample1Stabilization">Stabilization before EChem (seconds)</label>
+          <input id="sample1Stabilization" type="number" min="0" value="5" />
+          <label for="sample1Protocol">Gamry EChem Protocol</label>
+          <select id="sample1Protocol" class="sample-protocol"></select>
+        </div>
+
+        <div id="sample2Block" class="automation-block">
+          <label class="check-label"><input id="sample2Enabled" type="checkbox" checked /> Sample 2</label>
+          <label for="sample2Rpm">RPM, use 0 for no spin</label>
+          <input id="sample2Rpm" type="number" min="0" max="{{ rpm_max }}" value="1000" />
+          <label for="sample2Stabilization">Stabilization before EChem (seconds)</label>
+          <input id="sample2Stabilization" type="number" min="0" value="5" />
+          <label for="sample2Protocol">Gamry EChem Protocol</label>
+          <select id="sample2Protocol" class="sample-protocol"></select>
+        </div>
+
+        <div id="sample3Block" class="automation-block">
+          <label class="check-label"><input id="sample3Enabled" type="checkbox" checked /> Sample 3</label>
+          <label for="sample3Rpm">RPM, use 0 for no spin</label>
+          <input id="sample3Rpm" type="number" min="0" max="{{ rpm_max }}" value="1000" />
+          <label for="sample3Stabilization">Stabilization before EChem (seconds)</label>
+          <input id="sample3Stabilization" type="number" min="0" value="5" />
+          <label for="sample3Protocol">Gamry EChem Protocol</label>
+          <select id="sample3Protocol" class="sample-protocol"></select>
+        </div>
 
         <div class="cmd-buttons">
-          <button id="addStepBtn" class="home-btn" type="button">Add Sample</button>
-          <button id="saveRecipeBtn" class="home-btn" type="button">Save Run Plan</button>
-          <button id="loadRecipeBtn" class="home-btn" type="button">Load Run Plan</button>
-          <button id="refreshRecipesBtn" class="home-btn" type="button">Refresh Run Plans</button>
-          <button id="deleteRecipeBtn" class="abort-btn" type="button">Delete Run Plan</button>
+          <button id="refreshProtocolsBtn" class="home-btn" type="button">Refresh Protocols</button>
           <button id="startExperimentBtn" class="home-btn" type="button">Start Experiment</button>
         </div>
         <button id="abortHomeBtn" class="abort-btn" type="button">Abort Then Go Home</button>
+
         <p id="automationStatus" class="hint">Idle</p>
+        <p id="automationRunDir" class="hint"></p>
         <p id="automationError" class="error" hidden></p>
       </section>
-
-      <section class="panel echem-builder-panel workspace-panel" data-workspace-panel="echem">
-        <h2>EChem Protocol Builder</h2>
-        <p class="hint">Start from a blank EChem recipe. Add, remove, reorder, and edit individual EChem steps or compact CA voltage ranges. Saved protocols appear in each sample's EChem Protocol dropdown.</p>
-
-        <label for="echemSavedProtocolSelect">Saved EChem Protocols</label>
-        <select id="echemSavedProtocolSelect"></select>
-
-        <div class="cmd-buttons">
-          <button id="newBlankEchemProtocolBtn" class="home-btn" type="button">New Blank Protocol</button>
-          <button id="loadEchemProtocolBtn" class="home-btn" type="button">Load Protocol</button>
-          <button id="refreshEchemProtocolBtn" class="home-btn" type="button">Refresh Protocols</button>
-          <button id="deleteEchemProtocolBtn" class="abort-btn" type="button">Delete Protocol</button>
-        </div>
-
-        <label for="echemProtocolNameInput">Protocol File Name</label>
-        <input id="echemProtocolNameInput" type="text" value="" placeholder="e.g. bulk_electrode_ca_steps_with_backward" />
-
-        <label for="echemProtocolDisplayInput">Display Name</label>
-        <input id="echemProtocolDisplayInput" type="text" value="" placeholder="e.g. Bulk Electrode CA Steps with Backward" />
-
-        <label for="echemProtocolDescriptionInput">Description</label>
-        <input id="echemProtocolDescriptionInput" type="text" value="" placeholder="Optional description" />
-
-        <div class="automation-block">
-          <h3>Add EChem Step</h3>
-          <div class="cmd-buttons">
-            <button id="addEchemOcpBtn" class="home-btn" type="button">Add OCP</button>
-            <button id="addEchemEisBtn" class="home-btn" type="button">Add EIS</button>
-            <button id="addEchemCaBtn" class="home-btn" type="button">Add CA</button>
-            <button id="addEchemCaRangeBtn" class="home-btn" type="button">Add CA Range</button>
-            <button id="addEchemLsvBtn" class="home-btn" type="button">Add LSV</button>
-            <button id="addEchemCvBtn" class="home-btn" type="button">Add CV</button>
-          </div>
-          <p class="hint">Use CA Range for sequences like -0.1, -0.2, ... -1.6 V. Use individual CA for a single fixed-potential step.</p>
-        </div>
-
-        <div id="echemStepList"></div>
-
-        <div class="cmd-buttons">
-          <button id="previewEchemProtocolBtn" class="home-btn" type="button">Preview EChem Protocol</button>
-          <button id="saveEchemProtocolBtn" class="home-btn" type="button">Save EChem Protocol</button>
-        </div>
-
-        <p id="echemProtocolStatus" class="hint">Blank protocol ready. Add EChem steps to begin.</p>
-        <p id="echemProtocolError" class="error" hidden></p>
-
-        <label for="echemProtocolPreview">Protocol Preview</label>
-        <textarea id="echemProtocolPreview" rows="16" spellcheck="false"></textarea>
-      </section>
-
     </div>
-
-    <template id="recipeStepTemplate">
-      <div class="automation-block recipe-step">
-        <label class="check-label"><input class="step-enabled" type="checkbox" checked /> <span class="step-title">Sample</span></label>
-
-        <label>Name</label>
-        <input class="step-name" type="text" value="Sample" />
-
-        <label>X / Horizontal position</label>
-        <input class="step-x" type="number" step="1" value="0" />
-
-        <label>Y / Vertical position</label>
-        <input class="step-vertical" type="number" step="1" value="0" />
-
-        <label>Z / Linear position</label>
-        <input class="step-z" type="number" step="1" value="50000" />
-
-        <label>RPM, use 0 for no spin</label>
-        <input class="step-rpm" type="number" min="0" max="{{ rpm_max }}" value="1000" />
-
-        <label>Stabilization Time (seconds)</label>
-        <input class="step-seconds" type="number" min="0" value="10" />
-
-        <label>Rotation command, blank for none</label>
-        <input class="step-rotation" type="text" value="" placeholder="0 or 1" />
-
-        <label>EChem Protocol</label>
-        <select class="step-protocol"></select>
-
-        <label class="check-label">
-          <input class="step-rinse" type="checkbox" />
-          <span>Rinse after this sample</span>
-        </label>
-
-        <div class="cmd-buttons">
-          <button class="step-up home-btn" type="button">Move Up</button>
-          <button class="step-down home-btn" type="button">Move Down</button>
-          <button class="step-delete abort-btn" type="button">Delete</button>
-        </div>
-      </div>
-    </template>
 
     <script>
       const btn = document.getElementById("startStopBtn");
@@ -327,101 +132,67 @@
       const countdownEl = document.getElementById("countdown");
       const errorEl = document.getElementById("error");
       const positionStatusEl = document.getElementById("positionStatus");
+
       const sendOneBtn = document.getElementById("sendOneBtn");
       const sendZeroBtn = document.getElementById("sendZeroBtn");
       const rotationStatusEl = document.getElementById("rotationStatus");
+
       const linearStepsSlider = document.getElementById("linearStepsSlider");
       const linearStepsInput = document.getElementById("linearStepsInput");
       const linearStepsValue = document.getElementById("linearStepsValue");
       const linearUpBtn = document.getElementById("linearUpBtn");
       const linearDownBtn = document.getElementById("linearDownBtn");
       const linearStatusEl = document.getElementById("linearStatus");
+
       const horizontalStepsSlider = document.getElementById("horizontalStepsSlider");
       const horizontalStepsInput = document.getElementById("horizontalStepsInput");
       const horizontalStepsValue = document.getElementById("horizontalStepsValue");
       const horizontalLeftBtn = document.getElementById("horizontalLeftBtn");
       const horizontalRightBtn = document.getElementById("horizontalRightBtn");
       const horizontalStatusEl = document.getElementById("horizontalStatus");
-      const verticalStepsSlider = document.getElementById("verticalStepsSlider");
-      const verticalStepsInput = document.getElementById("verticalStepsInput");
-      const verticalStepsValue = document.getElementById("verticalStepsValue");
-      const verticalUpBtn = document.getElementById("verticalUpBtn");
-      const verticalDownBtn = document.getElementById("verticalDownBtn");
-      const verticalStatusEl = document.getElementById("verticalStatus");
+
       const axesHomeBtn = document.getElementById("axesHomeBtn");
       const axesHomeStatusEl = document.getElementById("axesHomeStatus");
+
       const startExperimentBtn = document.getElementById("startExperimentBtn");
       const abortHomeBtn = document.getElementById("abortHomeBtn");
-      const addStepBtn = document.getElementById("addStepBtn");
-      const saveRecipeBtn = document.getElementById("saveRecipeBtn");
-      const loadRecipeBtn = document.getElementById("loadRecipeBtn");
-      const refreshRecipesBtn = document.getElementById("refreshRecipesBtn");
-      const deleteRecipeBtn = document.getElementById("deleteRecipeBtn");
-      const gamryModeSelect = document.getElementById("gamryModeSelect");
-      const saveGamryModeBtn = document.getElementById("saveGamryModeBtn");
-      const gamryModeStatusEl = document.getElementById("gamryModeStatus");
-      const recipeNameInput = document.getElementById("recipeNameInput");
-      const recipeSelect = document.getElementById("recipeSelect");
-      const recipeStepsEl = document.getElementById("recipeSteps");
-      const recipeStepTemplate = document.getElementById("recipeStepTemplate");
+      const refreshProtocolsBtn = document.getElementById("refreshProtocolsBtn");
       const automationStatusEl = document.getElementById("automationStatus");
+      const automationRunDirEl = document.getElementById("automationRunDir");
       const automationErrorEl = document.getElementById("automationError");
       const automationRepetitionsInput = document.getElementById("automationRepetitions");
 
-      const echemSavedProtocolSelect = document.getElementById("echemSavedProtocolSelect");
-      const newBlankEchemProtocolBtn = document.getElementById("newBlankEchemProtocolBtn");
-      const loadEchemProtocolBtn = document.getElementById("loadEchemProtocolBtn");
-      const refreshEchemProtocolBtn = document.getElementById("refreshEchemProtocolBtn");
-      const deleteEchemProtocolBtn = document.getElementById("deleteEchemProtocolBtn");
-      const echemProtocolNameInput = document.getElementById("echemProtocolNameInput");
-      const echemProtocolDisplayInput = document.getElementById("echemProtocolDisplayInput");
-      const echemProtocolDescriptionInput = document.getElementById("echemProtocolDescriptionInput");
-      const addEchemOcpBtn = document.getElementById("addEchemOcpBtn");
-      const addEchemEisBtn = document.getElementById("addEchemEisBtn");
-      const addEchemCaBtn = document.getElementById("addEchemCaBtn");
-      const addEchemCaRangeBtn = document.getElementById("addEchemCaRangeBtn");
-      const addEchemLsvBtn = document.getElementById("addEchemLsvBtn");
-      const addEchemCvBtn = document.getElementById("addEchemCvBtn");
-      const echemStepListEl = document.getElementById("echemStepList");
-      const previewEchemProtocolBtn = document.getElementById("previewEchemProtocolBtn");
-      const saveEchemProtocolBtn = document.getElementById("saveEchemProtocolBtn");
-      const echemProtocolStatusEl = document.getElementById("echemProtocolStatus");
-      const echemProtocolErrorEl = document.getElementById("echemProtocolError");
-      const echemProtocolPreviewEl = document.getElementById("echemProtocolPreview");
-
-      const workspaceTabs = Array.from(document.querySelectorAll(".workspace-tab"));
-      const workspacePanels = Array.from(document.querySelectorAll(".workspace-panel"));
-
-      function setWorkspace(name) {
-        const activeName = name || "runplan";
-
-        for (const tab of workspaceTabs) {
-          const active = tab.dataset.workspace === activeName;
-          tab.classList.toggle("active", active);
-          tab.setAttribute("aria-selected", active ? "true" : "false");
-        }
-
-        for (const panel of workspacePanels) {
-          panel.classList.toggle("active", panel.dataset.workspacePanel === activeName);
-        }
-
-        localStorage.setItem("rdeActiveWorkspace", activeName);
-      }
-
-      for (const tab of workspaceTabs) {
-        tab.addEventListener("click", () => setWorkspace(tab.dataset.workspace));
-      }
-
-      setWorkspace(localStorage.getItem("rdeActiveWorkspace") || "runplan");
+      const sampleBlocks = [
+        {
+          block: document.getElementById("sample1Block"),
+          enabled: document.getElementById("sample1Enabled"),
+          rpm: document.getElementById("sample1Rpm"),
+          stabilization: document.getElementById("sample1Stabilization"),
+          protocol: document.getElementById("sample1Protocol"),
+        },
+        {
+          block: document.getElementById("sample2Block"),
+          enabled: document.getElementById("sample2Enabled"),
+          rpm: document.getElementById("sample2Rpm"),
+          stabilization: document.getElementById("sample2Stabilization"),
+          protocol: document.getElementById("sample2Protocol"),
+        },
+        {
+          block: document.getElementById("sample3Block"),
+          enabled: document.getElementById("sample3Enabled"),
+          rpm: document.getElementById("sample3Rpm"),
+          stabilization: document.getElementById("sample3Stabilization"),
+          protocol: document.getElementById("sample3Protocol"),
+        },
+      ];
 
       let running = false;
       let endsAt = null;
       let automationRunning = false;
-      let gamryRealRunnerConfigured = false;
-      let gamryModeDirty = false;
       let availableProtocols = [];
+
       const MIN_STEPS = 1;
-      const MAX_STEPS = 300000;
+      const MAX_STEPS = 100000;
 
       function setError(message) {
         errorEl.hidden = !message;
@@ -448,152 +219,121 @@
         statusEl.textContent = `Running at ${rpmInput.value} RPM`;
 
         if (!endsAt) {
-          countdownEl.textContent = "";
+          countdownEl.textContent = "Holding RPM for automation";
           return;
         }
 
-        const remaining = Math.max(0, Math.ceil((endsAt - new Date()) / 1000));
+        const now = new Date();
+        const remainingMs = endsAt - now;
+        const remaining = Math.max(0, Math.ceil(remainingMs / 1000));
         countdownEl.textContent = `Remaining: ${remaining}s`;
       }
 
-      function setRecipeDisabled(disabled) {
-        for (const el of recipeStepsEl.querySelectorAll("input, button, select")) {
-          el.disabled = disabled;
+      function setFormDisabled(disabled) {
+        btn.disabled = disabled;
+        sendOneBtn.disabled = disabled;
+        sendZeroBtn.disabled = disabled;
+        linearUpBtn.disabled = disabled;
+        linearDownBtn.disabled = disabled;
+        horizontalLeftBtn.disabled = disabled;
+        horizontalRightBtn.disabled = disabled;
+        axesHomeBtn.disabled = disabled;
+        rpmInput.disabled = disabled;
+        secondsInput.disabled = disabled;
+        linearStepsSlider.disabled = disabled;
+        linearStepsInput.disabled = disabled;
+        horizontalStepsSlider.disabled = disabled;
+        horizontalStepsInput.disabled = disabled;
+        automationRepetitionsInput.disabled = disabled;
+        refreshProtocolsBtn.disabled = disabled;
+
+        for (const sample of sampleBlocks) {
+          sample.enabled.disabled = disabled;
+          sample.rpm.disabled = disabled || !sample.enabled.checked;
+          sample.stabilization.disabled = disabled || !sample.enabled.checked;
+          sample.protocol.disabled = disabled || !sample.enabled.checked;
         }
-        addStepBtn.disabled = disabled;
-        saveRecipeBtn.disabled = disabled;
-        loadRecipeBtn.disabled = disabled;
-        refreshRecipesBtn.disabled = disabled;
-        deleteRecipeBtn.disabled = disabled;
-        recipeNameInput.disabled = disabled;
-        recipeSelect.disabled = disabled;
-      }
-
-      function setProtocolBuilderDisabled(disabled) {
-        const builderElements = [
-          echemSavedProtocolSelect,
-          newBlankEchemProtocolBtn,
-          loadEchemProtocolBtn,
-          refreshEchemProtocolBtn,
-          deleteEchemProtocolBtn,
-          echemProtocolNameInput,
-          echemProtocolDisplayInput,
-          echemProtocolDescriptionInput,
-          addEchemOcpBtn,
-          addEchemEisBtn,
-          addEchemCaBtn,
-          addEchemCaRangeBtn,
-          addEchemLsvBtn,
-          addEchemCvBtn,
-          previewEchemProtocolBtn,
-          saveEchemProtocolBtn,
-          echemProtocolPreviewEl
-        ];
-
-        for (const el of builderElements) {
-          el.disabled = disabled;
-        }
-
-        for (const el of echemStepListEl.querySelectorAll("input, button, select")) {
-          el.disabled = disabled;
-        }
-      }
-
-      function renderGamryModeStatus(mode, runnerConfigured = gamryRealRunnerConfigured) {
-        const normalized = (mode || "mock").toLowerCase();
-        gamryModeSelect.value = normalized === "mock" ? "mock" : "real";
-        gamryRealRunnerConfigured = Boolean(runnerConfigured);
-        gamryModeDirty = false;
-
-        if (gamryModeSelect.value === "real" && !gamryRealRunnerConfigured) {
-          gamryModeStatusEl.textContent = "Gamry backend: real (runner path not configured yet)";
-        } else {
-          gamryModeStatusEl.textContent = `Gamry backend: ${gamryModeSelect.value}`;
-        }
-      }
-
-      async function fetchConfig() {
-        const res = await fetch("/api/config");
-        const data = await res.json();
-
-        if (!res.ok) {
-          setAutomationError(data.error || "Unable to load app config.");
-          return false;
-        }
-
-        const config = data.config || {};
-        renderGamryModeStatus(config.gamry_mode, config.gamry_real_runner_configured);
-        return true;
-      }
-
-      async function saveGamryMode() {
-        setAutomationError("");
-        gamryModeStatusEl.textContent = "Updating Gamry backend...";
-
-        const res = await fetch("/api/config/gamry-mode", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode: gamryModeSelect.value }),
-        });
-        const data = await res.json();
-
-        if (!res.ok) {
-          setAutomationError(data.error || "Unable to update Gamry backend.");
-          await fetchConfig();
-          return false;
-        }
-
-        const config = data.config || {};
-        renderGamryModeStatus(config.gamry_mode || data.gamry_mode, config.gamry_real_runner_configured);
-        return true;
       }
 
       async function fetchStatus() {
         try {
           const res = await fetch("/api/status");
           const data = await res.json();
-          running = data.running;
+
+          running = Boolean(data.running);
           endsAt = data.ends_at ? new Date(data.ends_at) : null;
           automationRunning = Boolean(data.automation_running);
-          if (data.gamry_mode && !gamryModeDirty) {
-            renderGamryModeStatus(data.gamry_mode, data.gamry_real_runner_configured);
-          }
+
           automationStatusEl.textContent = automationRunning
             ? `Running: ${data.automation_step || "working..."}`
             : data.automation_step || "Idle";
-          positionStatusEl.textContent = `Position: X ${data.horizontal_position ?? 0}, Y ${data.vertical_position ?? 0}, Z ${data.linear_position ?? 0}`;
+
+          automationRunDirEl.textContent = data.automation_run_dir ? `Run folder: ${data.automation_run_dir}` : "";
+          positionStatusEl.textContent = `Position: X ${data.horizontal_position ?? 0}, Z ${data.linear_position ?? 0}`;
+
           setAutomationError(data.automation_error || "");
+          setError(data.last_error || "");
+
           startExperimentBtn.disabled = automationRunning;
           abortHomeBtn.disabled = !automationRunning;
-          btn.disabled = automationRunning;
-          sendOneBtn.disabled = automationRunning;
-          sendZeroBtn.disabled = automationRunning;
-          linearUpBtn.disabled = automationRunning;
-          linearDownBtn.disabled = automationRunning;
-          horizontalLeftBtn.disabled = automationRunning;
-          horizontalRightBtn.disabled = automationRunning;
-          verticalUpBtn.disabled = automationRunning;
-          verticalDownBtn.disabled = automationRunning;
-          axesHomeBtn.disabled = automationRunning;
-          rpmInput.disabled = automationRunning;
-          secondsInput.disabled = automationRunning;
-          linearStepsSlider.disabled = automationRunning;
-          linearStepsInput.disabled = automationRunning;
-          horizontalStepsSlider.disabled = automationRunning;
-          horizontalStepsInput.disabled = automationRunning;
-          verticalStepsSlider.disabled = automationRunning;
-          verticalStepsInput.disabled = automationRunning;
-          automationRepetitionsInput.disabled = automationRunning;
-          gamryModeSelect.disabled = automationRunning;
-          saveGamryModeBtn.disabled = automationRunning;
-          setRecipeDisabled(automationRunning);
-          setProtocolBuilderDisabled(automationRunning);
-          setError(data.last_error || "");
+          setFormDisabled(automationRunning);
+
           updateButton();
           updateStatusText();
         } catch (err) {
           setError(`Status error: ${err.message}`);
         }
+      }
+
+      function fillProtocolSelect(select, selectedName = "") {
+        select.innerHTML = "";
+
+        for (const protocol of availableProtocols) {
+          const name = protocol.protocol_name || protocol.name;
+          const label = protocol.display_name || name;
+
+          if (!name) {
+            continue;
+          }
+
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = label;
+
+          if (name === selectedName) {
+            option.selected = true;
+          }
+
+          select.appendChild(option);
+        }
+
+        if (select.options.length === 0) {
+          const option = document.createElement("option");
+          option.value = "ocp_only";
+          option.textContent = "OCP Only";
+          select.appendChild(option);
+        }
+      }
+
+      async function refreshProtocolList() {
+        setAutomationError("");
+        const res = await fetch("/api/protocols");
+        const data = await res.json();
+
+        if (!res.ok) {
+          setAutomationError(data.error || "Unable to list protocols.");
+          return false;
+        }
+
+        availableProtocols = Array.isArray(data.protocols) ? data.protocols : [];
+
+        for (const sample of sampleBlocks) {
+          const current = sample.protocol.value || "ocp_only";
+          fillProtocolSelect(sample.protocol, current);
+        }
+
+        automationStatusEl.textContent = `Loaded ${availableProtocols.length} protocol(s).`;
+        return true;
       }
 
       async function startMotor() {
@@ -632,6 +372,7 @@
 
       async function stopMotor() {
         setError("");
+
         const res = await fetch("/api/stop", { method: "POST" });
         const data = await res.json();
 
@@ -649,6 +390,7 @@
       async function sendRotation(command) {
         setError("");
         rotationStatusEl.textContent = "";
+
         const res = await fetch("/api/rotation/send", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -667,9 +409,10 @@
         }
       }
 
-      async function sendAxis(axis, command) {
+      async function sendLinear(command) {
         setError("");
-        const res = await fetch(`/api/${axis}/send`, {
+
+        const res = await fetch("/api/linear/send", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ command }),
@@ -677,18 +420,36 @@
         const data = await res.json();
 
         if (!res.ok) {
-          setError(data.error || `Unable to send ${axis} command.`);
+          setError(data.error || "Unable to send Z/linear command.");
           return false;
         }
 
-        const statusMap = {
-          linear: linearStatusEl,
-          horizontal: horizontalStatusEl,
-          vertical: verticalStatusEl,
-        };
-        statusMap[axis].textContent = `Sent '${data.command}' to ${data.com_port}`;
+        linearStatusEl.textContent = `Sent '${data.command}' to ${data.com_port}`;
         if (data.ack) {
-          statusMap[axis].textContent += ` | Board: ${data.ack}`;
+          linearStatusEl.textContent += ` | Board: ${data.ack}`;
+        }
+        await fetchStatus();
+        return true;
+      }
+
+      async function sendHorizontal(command) {
+        setError("");
+
+        const res = await fetch("/api/horizontal/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ command }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          setError(data.error || "Unable to send X/horizontal command.");
+          return false;
+        }
+
+        horizontalStatusEl.textContent = `Sent '${data.command}' to ${data.com_port}`;
+        if (data.ack) {
+          horizontalStatusEl.textContent += ` | Board: ${data.ack}`;
         }
         await fetchStatus();
         return true;
@@ -707,16 +468,75 @@
         }
 
         axesHomeStatusEl.textContent =
-          `Homed sequence: Linear ${data.linear_command} (${data.linear_com_port}) -> ` +
+          `Homed sequence: Z ${data.linear_command} (${data.linear_com_port}) -> ` +
           `Rotation ${data.rotation_command} (${data.rotation_com_port}) -> ` +
-          `Horizontal ${data.horizontal_command} (${data.horizontal_com_port}) -> ` +
-          `Vertical ${data.vertical_command} (${data.vertical_com_port})`;
+          `X ${data.horizontal_command} (${data.horizontal_com_port})`;
+
         if (data.rotation_ack) {
           axesHomeStatusEl.textContent += ` | Rotation board: ${data.rotation_ack}`;
         }
+
         linearStatusEl.textContent = `At home position (${data.linear_com_port})`;
         horizontalStatusEl.textContent = `At home position (${data.horizontal_com_port})`;
-        verticalStatusEl.textContent = `At home position (${data.vertical_com_port})`;
+        await fetchStatus();
+        return true;
+      }
+
+      function updateSampleBlockState(sample) {
+        const enabled = sample.enabled.checked;
+        sample.block.classList.toggle("disabled", !enabled);
+        sample.rpm.disabled = automationRunning || !enabled;
+        sample.stabilization.disabled = automationRunning || !enabled;
+        sample.protocol.disabled = automationRunning || !enabled;
+      }
+
+      function getAutomationSamplesPayload() {
+        return sampleBlocks.map((sample) => ({
+          enabled: sample.enabled.checked,
+          rpm: Number(sample.rpm.value),
+          stabilization_seconds: Number(sample.stabilization.value),
+          protocol: sample.protocol.value,
+        }));
+      }
+
+      async function startAutomation() {
+        setAutomationError("");
+        automationStatusEl.textContent = "Starting automation...";
+
+        const res = await fetch("/api/automation/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            samples: getAutomationSamplesPayload(),
+            repetitions: Number(automationRepetitionsInput.value),
+          }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          setAutomationError(data.error || "Unable to start automation.");
+          automationStatusEl.textContent = "Idle";
+          return false;
+        }
+
+        automationStatusEl.textContent =
+          `Started samples: ${data.selected_samples.join(", ")} | ` +
+          `Protocols: ${data.protocols.join(", ")} | Repetitions: ${data.repetitions}`;
+        await fetchStatus();
+        return true;
+      }
+
+      async function abortAutomationAndHome() {
+        setAutomationError("");
+        const res = await fetch("/api/automation/abort-home", { method: "POST" });
+        const data = await res.json();
+
+        if (!res.ok) {
+          setAutomationError(data.error || "Unable to abort automation.");
+          return false;
+        }
+
+        automationStatusEl.textContent = data.message || "Abort requested.";
         await fetchStatus();
         return true;
       }
@@ -753,9 +573,11 @@
         const parsed = Number(input.value);
         const fallback = sliderToSteps(slider.value);
         const steps = Number.isFinite(parsed) ? Math.abs(Math.round(parsed)) : fallback;
+
         if (steps >= MIN_STEPS && steps <= MAX_STEPS) {
           slider.value = String(stepsToSliderValue(steps));
         }
+
         syncStepDisplay(input, label, steps);
         return steps;
       }
@@ -767,789 +589,6 @@
         inputEl.addEventListener("click", () => {
           inputEl.select();
         });
-      }
-
-      function clearRecipeSteps() {
-        recipeStepsEl.innerHTML = "";
-      }
-
-      function fillProtocolSelect(select, selectedName = "ca_steps_backward") {
-        select.innerHTML = "";
-
-        for (const protocol of availableProtocols) {
-          const name = protocol.protocol_name || protocol.name;
-          const label = protocol.display_name || name;
-
-          if (!name) {
-            continue;
-          }
-
-          const option = document.createElement("option");
-          option.value = name;
-          option.textContent = label;
-
-          if (name === selectedName) {
-            option.selected = true;
-          }
-
-          select.appendChild(option);
-        }
-
-        if (select.options.length === 0) {
-          const option = document.createElement("option");
-          option.value = "ca_steps_backward";
-          option.textContent = "CA Steps with Backward Scan";
-          option.selected = true;
-          select.appendChild(option);
-        }
-      }
-
-      async function refreshProtocolList() {
-        const res = await fetch("/api/protocols");
-        const data = await res.json();
-
-        if (!res.ok) {
-          setAutomationError(data.error || "Unable to list EChem protocols.");
-          return false;
-        }
-
-        availableProtocols = Array.isArray(data.protocols) ? data.protocols : [];
-
-        if (availableProtocols.length === 0) {
-          availableProtocols = [
-            {
-              protocol_name: "ca_steps_backward",
-              display_name: "CA Steps with Backward Scan"
-            }
-          ];
-        }
-
-        for (const select of recipeStepsEl.querySelectorAll(".step-protocol")) {
-          const current = select.value || "ca_steps_backward";
-          fillProtocolSelect(select, current);
-        }
-
-        if (typeof refreshEchemProtocolSelect === "function") {
-          refreshEchemProtocolSelect();
-        }
-
-        return true;
-      }
-
-      function updateStepTitles() {
-        const steps = Array.from(recipeStepsEl.querySelectorAll(".recipe-step"));
-        steps.forEach((step, index) => {
-          step.querySelector(".step-title").textContent = `Sample ${index + 1}`;
-        });
-      }
-
-      function addRecipeStep(values = {}) {
-        const fragment = recipeStepTemplate.content.cloneNode(true);
-        const block = fragment.querySelector(".recipe-step");
-
-        block.querySelector(".step-name").value = values.name ?? "Sample";
-        block.querySelector(".step-enabled").checked = values.enabled ?? true;
-        block.querySelector(".step-x").value = values.x ?? 0;
-        block.querySelector(".step-vertical").value = values.vertical ?? 0;
-        block.querySelector(".step-z").value = values.z ?? 50000;
-        block.querySelector(".step-rpm").value = values.rpm ?? 1000;
-        block.querySelector(".step-seconds").value = values.duration_seconds ?? 10;
-        block.querySelector(".step-rotation").value = values.rotation_command ?? "";
-        fillProtocolSelect(block.querySelector(".step-protocol"), values.protocol ?? "ca_steps_backward");
-        block.querySelector(".step-rinse").checked = Boolean(values.rinse_after ?? false);
-
-        block.querySelector(".step-delete").addEventListener("click", () => {
-          block.remove();
-          updateStepTitles();
-        });
-
-        block.querySelector(".step-up").addEventListener("click", () => {
-          const previous = block.previousElementSibling;
-          if (previous) {
-            recipeStepsEl.insertBefore(block, previous);
-            updateStepTitles();
-          }
-        });
-
-        block.querySelector(".step-down").addEventListener("click", () => {
-          const next = block.nextElementSibling;
-          if (next) {
-            recipeStepsEl.insertBefore(next, block);
-            updateStepTitles();
-          }
-        });
-
-        recipeStepsEl.appendChild(fragment);
-        updateStepTitles();
-      }
-
-      function getRecipeStepsPayload() {
-        return Array.from(recipeStepsEl.querySelectorAll(".recipe-step")).map((step) => ({
-          enabled: step.querySelector(".step-enabled").checked,
-          name: step.querySelector(".step-name").value,
-          x: Number(step.querySelector(".step-x").value),
-          vertical: Number(step.querySelector(".step-vertical").value),
-          z: Number(step.querySelector(".step-z").value),
-          rpm: Number(step.querySelector(".step-rpm").value),
-          duration_seconds: Number(step.querySelector(".step-seconds").value),
-          rotation_command: step.querySelector(".step-rotation").value,
-          protocol: step.querySelector(".step-protocol").value,
-          rinse_after: step.querySelector(".step-rinse").checked,
-        }));
-      }
-
-      function selectedRecipeName() {
-        const typedName = recipeNameInput.value.trim();
-        const selectedName = recipeSelect.value.trim();
-        return typedName || selectedName || "default";
-      }
-
-      async function refreshRecipeList(selectedName = "") {
-        const res = await fetch("/api/recipes");
-        const data = await res.json();
-
-        if (!res.ok) {
-          setAutomationError(data.error || "Unable to list run plans.");
-          return false;
-        }
-
-        const currentName = selectedName || selectedRecipeName();
-        recipeSelect.innerHTML = "";
-        let selectedFound = false;
-
-        const recipes = Array.isArray(data.recipes) ? data.recipes : [];
-        for (const recipe of recipes) {
-          const option = document.createElement("option");
-          option.value = recipe.name;
-          option.textContent = `${recipe.name} (${recipe.step_count} sample${recipe.step_count === 1 ? "" : "s"})`;
-          if (recipe.name === currentName) {
-            option.selected = true;
-            selectedFound = true;
-          }
-          recipeSelect.appendChild(option);
-        }
-
-        if (recipeSelect.options.length === 0) {
-          const option = document.createElement("option");
-          option.value = "default";
-          option.textContent = "default";
-          recipeSelect.appendChild(option);
-          selectedFound = true;
-        }
-
-        if (!selectedFound && recipeSelect.options.length > 0) {
-          recipeSelect.selectedIndex = 0;
-        }
-
-        recipeNameInput.value = recipeSelect.value || currentName || "default";
-
-        return true;
-      }
-
-      async function saveRecipe() {
-        setAutomationError("");
-        automationStatusEl.textContent = "Saving run plan...";
-
-        const recipeName = selectedRecipeName();
-        const res = await fetch("/api/recipe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: recipeName,
-            repetitions: Number(automationRepetitionsInput.value),
-            steps: getRecipeStepsPayload(),
-          }),
-        });
-        const data = await res.json();
-
-        if (!res.ok) {
-          setAutomationError(data.error || "Unable to save run plan.");
-          automationStatusEl.textContent = "Run plan save failed.";
-          return false;
-        }
-
-        recipeNameInput.value = data.name || recipeName;
-        await refreshRecipeList(recipeNameInput.value);
-        automationStatusEl.textContent = `Run plan '${recipeNameInput.value}' saved: ${data.count} sample(s), ${data.repetitions} repetition(s).`;
-        return true;
-      }
-
-      async function loadRecipe() {
-        setAutomationError("");
-        automationStatusEl.textContent = "Loading run plan...";
-
-        const recipeName = selectedRecipeName();
-        const res = await fetch(`/api/recipe?name=${encodeURIComponent(recipeName)}`);
-        const data = await res.json();
-
-        if (!res.ok) {
-          setAutomationError(data.error || "Unable to load run plan.");
-          automationStatusEl.textContent = "Run plan load failed.";
-          return false;
-        }
-
-        recipeNameInput.value = data.name || recipeName;
-        automationRepetitionsInput.value = String(data.repetitions || 1);
-        clearRecipeSteps();
-
-        const steps = Array.isArray(data.steps) ? data.steps : [];
-        for (const step of steps) {
-          addRecipeStep(step);
-        }
-
-        if (recipeStepsEl.children.length === 0) {
-          addRecipeStep({
-            name: "Sample 1",
-            rpm: 0,
-            duration_seconds: 0,
-            z: 0,
-            protocol: "ca_steps_backward",
-            rinse_after: false
-          });
-        }
-
-        automationStatusEl.textContent = `Loaded run plan '${recipeNameInput.value}': ${recipeStepsEl.children.length} sample(s).`;
-        return true;
-      }
-
-      async function deleteRecipe() {
-        setAutomationError("");
-        const recipeName = selectedRecipeName();
-
-        if (!confirm(`Delete run plan '${recipeName}'?`)) {
-          return false;
-        }
-
-        automationStatusEl.textContent = "Deleting run plan...";
-        const res = await fetch(`/api/recipe?name=${encodeURIComponent(recipeName)}`, { method: "DELETE" });
-        const data = await res.json();
-
-        if (!res.ok) {
-          setAutomationError(data.error || "Unable to delete run plan.");
-          automationStatusEl.textContent = "Run plan delete failed.";
-          return false;
-        }
-
-        automationStatusEl.textContent = `Deleted run plan '${data.name}'.`;
-        recipeNameInput.value = "default";
-        await refreshRecipeList("default");
-        await loadRecipe();
-        return true;
-      }
-
-      async function startAutomation() {
-        setAutomationError("");
-        automationStatusEl.textContent = "Starting automation...";
-
-        const res = await fetch("/api/automation/start", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            steps: getRecipeStepsPayload(),
-            repetitions: Number(automationRepetitionsInput.value),
-          }),
-        });
-        const data = await res.json();
-
-        if (!res.ok) {
-          setAutomationError(data.error || "Unable to start automation.");
-          automationStatusEl.textContent = "Idle";
-          return false;
-        }
-
-        const selected = data.selected_samples || data.selected_steps || [];
-        automationStatusEl.textContent = `Started samples: ${selected.join(", ")} | Repetitions: ${data.repetitions}`;
-        await fetchStatus();
-        return true;
-      }
-
-      async function abortAutomationAndHome() {
-        setAutomationError("");
-        const res = await fetch("/api/automation/abort-home", { method: "POST" });
-        const data = await res.json();
-
-        if (!res.ok) {
-          setAutomationError(data.error || "Unable to abort automation.");
-          return false;
-        }
-
-        automationStatusEl.textContent = data.message || "Abort requested.";
-        await fetchStatus();
-        return true;
-      }
-
-
-      function setEchemProtocolError(message) {
-        echemProtocolErrorEl.hidden = !message;
-        echemProtocolErrorEl.textContent = message || "";
-      }
-
-      function numberValueFromElement(inputEl, fieldName) {
-        const value = Number(inputEl.value);
-        if (!Number.isFinite(value)) {
-          throw new Error(`${fieldName} must be a number.`);
-        }
-        return value;
-      }
-
-      function positiveNumberFromElement(inputEl, fieldName) {
-        const value = numberValueFromElement(inputEl, fieldName);
-        if (value <= 0) {
-          throw new Error(`${fieldName} must be > 0.`);
-        }
-        return value;
-      }
-
-      function intFromElement(inputEl, fieldName) {
-        const value = Math.round(numberValueFromElement(inputEl, fieldName));
-        if (value <= 0) {
-          throw new Error(`${fieldName} must be a positive integer.`);
-        }
-        return value;
-      }
-
-      const echemStepDefinitions = {
-        ocp: {
-          label: "OCP",
-          defaultName: "ocp",
-          defaultOutput: "OCP.DTA",
-          fields: [
-            { key: "duration_s", label: "Duration (s)", type: "number", value: 300, positive: true, step: "0.1" },
-            { key: "sample_period_s", label: "Sample period (s)", type: "number", value: 0.5, positive: true, step: "0.01" },
-            { key: "stability_mv_s", label: "Stability limit (mV/s), 0 to ignore", type: "number", value: 0, min: 0, step: "0.01" },
-            { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
-          ]
-        },
-        eis: {
-          label: "EIS",
-          defaultName: "eis",
-          defaultOutput: "EIS.DTA",
-          fields: [
-            { key: "initial_frequency_hz", label: "Initial frequency (Hz)", type: "number", value: 100000, positive: true, step: "0.1" },
-            { key: "final_frequency_hz", label: "Final frequency (Hz)", type: "number", value: 0.1, positive: true, step: "0.1" },
-            { key: "points_per_decade", label: "Points per decade", type: "integer", value: 10, positive: true, step: "1" },
-            { key: "ac_voltage_mv_rms", label: "AC voltage (mV RMS)", type: "number", value: 10, positive: true, step: "0.001" },
-            { key: "dc_voltage_v", label: "DC voltage (V)", type: "number", value: 0, step: "0.001" },
-            { key: "estimated_z_ohm", label: "Estimated Z (Ω)", type: "number", value: 100, positive: true, step: "0.1" },
-            { key: "settle_s", label: "Settle time (s)", type: "number", value: 1, min: 0, step: "0.1" },
-            { key: "speed", label: "Speed", type: "text", value: "normal" },
-            { key: "drift_correction", label: "Drift correction", type: "checkbox", value: false },
-            { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
-          ]
-        },
-        ca: {
-          label: "CA",
-          defaultName: "ca",
-          defaultOutput: "CA.DTA",
-          fields: [
-            { key: "voltage_v", label: "Voltage (V)", type: "number", value: 0, step: "0.001" },
-            { key: "duration_s", label: "Duration (s)", type: "number", value: 300, positive: true, step: "0.1" },
-            { key: "sample_period_s", label: "Sample period (s)", type: "number", value: 1, positive: true, step: "0.01" },
-            { key: "expected_max_v", label: "Expected max |V|", type: "number", value: 1, positive: true, step: "0.1" },
-            { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
-          ]
-        },
-        ca_range: {
-          label: "CA Range",
-          defaultName: "ca_range",
-          defaultOutput: "",
-          fields: [
-            { key: "direction_label", label: "Direction label", type: "text", value: "forward" },
-            { key: "start_voltage_v", label: "Start voltage (V)", type: "number", value: -0.1, step: "0.001" },
-            { key: "end_voltage_v", label: "End voltage (V)", type: "number", value: -1.6, step: "0.001" },
-            { key: "step_voltage_v", label: "Step voltage (V)", type: "number", value: -0.1, step: "0.001" },
-            { key: "duration_s", label: "Duration per step (s)", type: "number", value: 300, positive: true, step: "0.1" },
-            { key: "sample_period_s", label: "Sample period (s)", type: "number", value: 1, positive: true, step: "0.01" },
-            { key: "output_prefix", label: "Output prefix", type: "text", value: "CA_forward" },
-            { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
-          ]
-        },
-        lsv: {
-          label: "LSV",
-          defaultName: "lsv",
-          defaultOutput: "LSV.DTA",
-          fields: [
-            { key: "start_voltage_v", label: "Start voltage (V)", type: "number", value: 0, step: "0.001" },
-            { key: "end_voltage_v", label: "End voltage (V)", type: "number", value: 0.05, step: "0.001" },
-            { key: "scan_rate_v_s", label: "Scan rate (V/s)", type: "number", value: 0.05, positive: true, step: "0.001" },
-            { key: "step_size_v", label: "Step size (V)", type: "number", value: 0.002, positive: true, step: "0.0001" },
-            { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
-          ]
-        },
-        cv: {
-          label: "CV",
-          defaultName: "cv",
-          defaultOutput: "CV.DTA",
-          fields: [
-            { key: "initial_voltage_v", label: "Initial voltage (V)", type: "number", value: 0, step: "0.001" },
-            { key: "apex1_voltage_v", label: "Apex 1 voltage (V)", type: "number", value: 0.05, step: "0.001" },
-            { key: "apex2_voltage_v", label: "Apex 2 voltage (V)", type: "number", value: 0, step: "0.001" },
-            { key: "final_voltage_v", label: "Final voltage (V)", type: "number", value: 0, step: "0.001" },
-            { key: "scan_rate_v_s", label: "Scan rate (V/s)", type: "number", value: 0.05, positive: true, step: "0.001" },
-            { key: "step_size_v", label: "Step size (V)", type: "number", value: 0.002, positive: true, step: "0.0001" },
-            { key: "cycles", label: "Cycles", type: "integer", value: 1, positive: true, step: "1" },
-            { key: "precharge_s", label: "Precharge time (s)", type: "number", value: 1, min: 0, step: "0.1" },
-            { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
-          ]
-        }
-      };
-
-      function clearEchemSteps() {
-        echemStepListEl.innerHTML = "";
-      }
-
-      function echemStepBlocks() {
-        return Array.from(echemStepListEl.querySelectorAll(".echem-step"));
-      }
-
-      function getEchemFieldValues(block) {
-        const values = {};
-        for (const field of block.querySelectorAll(".echem-field")) {
-          const key = field.dataset.key;
-          const type = field.dataset.type;
-          if (!key) {
-            continue;
-          }
-          if (type === "checkbox") {
-            values[key] = field.checked;
-          } else {
-            values[key] = field.value;
-          }
-        }
-        return values;
-      }
-
-      function renderEchemStepFields(block, kind, values = {}) {
-        const definition = echemStepDefinitions[kind] || echemStepDefinitions.ocp;
-        const fieldWrap = block.querySelector(".echem-step-fields");
-        fieldWrap.innerHTML = "";
-
-        if (kind !== "ca_range") {
-          const outputLabel = document.createElement("label");
-          outputLabel.textContent = "Output DTA filename";
-          const outputInput = document.createElement("input");
-          outputInput.className = "echem-output";
-          outputInput.type = "text";
-          outputInput.value = values.output ?? definition.defaultOutput;
-          fieldWrap.appendChild(outputLabel);
-          fieldWrap.appendChild(outputInput);
-        }
-
-        for (const spec of definition.fields) {
-          const label = document.createElement("label");
-          label.textContent = spec.label;
-          const input = document.createElement("input");
-          input.className = "echem-field";
-          input.dataset.key = spec.key;
-          input.dataset.type = spec.type;
-
-          if (spec.type === "checkbox") {
-            input.type = "checkbox";
-            input.checked = Boolean(values[spec.key] ?? spec.value);
-            label.className = "check-label";
-            label.innerHTML = "";
-            label.appendChild(input);
-            const span = document.createElement("span");
-            span.textContent = ` ${spec.label}`;
-            label.appendChild(span);
-            fieldWrap.appendChild(label);
-            continue;
-          }
-
-          input.type = spec.type === "text" ? "text" : "number";
-          input.value = values[spec.key] ?? spec.value;
-          if (spec.step) input.step = spec.step;
-          if (spec.min !== undefined) input.min = spec.min;
-          if (spec.positive) input.min = "0.000000001";
-          fieldWrap.appendChild(label);
-          fieldWrap.appendChild(input);
-        }
-      }
-
-      function updateEchemStepTitles() {
-        echemStepBlocks().forEach((block, index) => {
-          const kind = block.querySelector(".echem-step-kind").value;
-          const label = echemStepDefinitions[kind]?.label || kind;
-          block.querySelector(".echem-step-title").textContent = `${index + 1}. ${label}`;
-        });
-      }
-
-      function addEchemStep(kind = "ocp", values = {}) {
-        const definition = echemStepDefinitions[kind] || echemStepDefinitions.ocp;
-        const block = document.createElement("div");
-        block.className = "automation-block echem-step";
-
-        block.innerHTML = `
-          <label class="check-label"><input class="echem-enabled" type="checkbox" checked /> <span class="echem-step-title">${definition.label}</span></label>
-          <label>Step type</label>
-          <select class="echem-step-kind">
-            <option value="ocp">OCP</option>
-            <option value="eis">EIS</option>
-            <option value="ca">CA</option>
-            <option value="ca_range">CA Range</option>
-            <option value="lsv">LSV</option>
-            <option value="cv">CV</option>
-          </select>
-          <label>Step name</label>
-          <input class="echem-step-name" type="text" />
-          <div class="echem-step-fields"></div>
-          <div class="cmd-buttons">
-            <button class="echem-step-up home-btn" type="button">Move Up</button>
-            <button class="echem-step-down home-btn" type="button">Move Down</button>
-            <button class="echem-step-duplicate home-btn" type="button">Duplicate</button>
-            <button class="echem-step-delete abort-btn" type="button">Delete</button>
-          </div>
-        `;
-
-        block.querySelector(".echem-enabled").checked = values.enabled ?? true;
-        block.querySelector(".echem-step-kind").value = kind;
-        block.querySelector(".echem-step-name").value = values.name ?? definition.defaultName;
-        renderEchemStepFields(block, kind, values);
-
-        block.querySelector(".echem-step-kind").addEventListener("change", () => {
-          const currentValues = getEchemFieldValues(block);
-          const nextKind = block.querySelector(".echem-step-kind").value;
-          block.querySelector(".echem-step-name").value = echemStepDefinitions[nextKind]?.defaultName || nextKind;
-          renderEchemStepFields(block, nextKind, currentValues);
-          updateEchemStepTitles();
-        });
-
-        block.querySelector(".echem-step-delete").addEventListener("click", () => {
-          block.remove();
-          updateEchemStepTitles();
-        });
-
-        block.querySelector(".echem-step-up").addEventListener("click", () => {
-          const previous = block.previousElementSibling;
-          if (previous) {
-            echemStepListEl.insertBefore(block, previous);
-            updateEchemStepTitles();
-          }
-        });
-
-        block.querySelector(".echem-step-down").addEventListener("click", () => {
-          const next = block.nextElementSibling;
-          if (next) {
-            echemStepListEl.insertBefore(next, block);
-            updateEchemStepTitles();
-          }
-        });
-
-        block.querySelector(".echem-step-duplicate").addEventListener("click", () => {
-          addEchemStepFromPayload(getEchemStepPayload(block));
-        });
-
-        echemStepListEl.appendChild(block);
-        updateEchemStepTitles();
-        return block;
-      }
-
-      function numberValueFromInput(input, fieldName, positive = false, integer = false) {
-        const value = Number(input.value);
-        if (!Number.isFinite(value)) {
-          throw new Error(`${fieldName} must be a number.`);
-        }
-        if (positive && value <= 0) {
-          throw new Error(`${fieldName} must be > 0.`);
-        }
-        return integer ? Math.round(value) : value;
-      }
-
-      function getEchemStepPayload(block) {
-        const kind = block.querySelector(".echem-step-kind").value;
-        const definition = echemStepDefinitions[kind] || echemStepDefinitions.ocp;
-        const name = block.querySelector(".echem-step-name").value.trim() || definition.defaultName;
-        const payload = {
-          name,
-          enabled: block.querySelector(".echem-enabled").checked
-        };
-
-        if (kind === "ca_range") {
-          payload.type = "ca_range";
-        } else {
-          payload.technique = kind;
-          payload.output = block.querySelector(".echem-output")?.value.trim() || definition.defaultOutput;
-        }
-
-        for (const spec of definition.fields) {
-          const input = block.querySelector(`.echem-field[data-key="${spec.key}"]`);
-          if (!input) continue;
-
-          if (spec.type === "checkbox") {
-            payload[spec.key] = input.checked;
-          } else if (spec.type === "text") {
-            payload[spec.key] = input.value.trim();
-          } else if (spec.type === "integer") {
-            payload[spec.key] = numberValueFromInput(input, `${name}: ${spec.label}`, Boolean(spec.positive), true);
-          } else {
-            payload[spec.key] = numberValueFromInput(input, `${name}: ${spec.label}`, Boolean(spec.positive), false);
-          }
-        }
-
-        return payload;
-      }
-
-      function addEchemStepFromPayload(step) {
-        const kind = step.type === "ca_range" || step.technique === "ca_range" ? "ca_range" : (step.technique || "ocp");
-        return addEchemStep(kind, step);
-      }
-
-      function buildEchemProtocolPayload() {
-        const protocolName = echemProtocolNameInput.value.trim();
-        const displayName = echemProtocolDisplayInput.value.trim() || protocolName;
-
-        if (!protocolName) {
-          throw new Error("Protocol file name cannot be empty.");
-        }
-
-        const steps = echemStepBlocks().map(getEchemStepPayload);
-
-        if (steps.length === 0) {
-          throw new Error("Protocol must contain at least one EChem step.");
-        }
-
-        return {
-          protocol_name: protocolName,
-          display_name: displayName,
-          description: echemProtocolDescriptionInput.value.trim(),
-          source: {
-            type: "ui_flexible_builder",
-            created_by: "RDE EChem Automation"
-          },
-          steps
-        };
-      }
-
-      function previewEchemProtocol() {
-        setEchemProtocolError("");
-
-        try {
-          const payload = buildEchemProtocolPayload();
-          echemProtocolPreviewEl.value = JSON.stringify(payload, null, 2);
-          echemProtocolStatusEl.textContent = `Preview ready: ${payload.steps.length} builder step/block(s).`;
-          return payload;
-        } catch (err) {
-          setEchemProtocolError(err.message);
-          echemProtocolStatusEl.textContent = "Protocol preview failed.";
-          throw err;
-        }
-      }
-
-      async function saveEchemProtocol() {
-        setEchemProtocolError("");
-        echemProtocolStatusEl.textContent = "Saving EChem protocol...";
-
-        let payload;
-        try {
-          payload = previewEchemProtocol();
-        } catch (err) {
-          return false;
-        }
-
-        const res = await fetch("/api/protocol/compact", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-
-        if (!res.ok) {
-          setEchemProtocolError(data.error || "Unable to save EChem protocol.");
-          echemProtocolStatusEl.textContent = "EChem protocol save failed.";
-          return false;
-        }
-
-        await refreshProtocolList();
-        refreshEchemProtocolSelect(data.protocol_name);
-        echemProtocolStatusEl.textContent = `Saved EChem protocol '${data.protocol_name}' with ${data.step_count} expanded step(s).`;
-        return true;
-      }
-
-      function refreshEchemProtocolSelect(selectedName = "") {
-        const current = selectedName || echemSavedProtocolSelect.value || "";
-        echemSavedProtocolSelect.innerHTML = "";
-        for (const protocol of availableProtocols) {
-          const name = protocol.protocol_name || protocol.name;
-          const label = protocol.display_name || name;
-          if (!name) continue;
-          const option = document.createElement("option");
-          option.value = name;
-          option.textContent = label;
-          if (name === current) option.selected = true;
-          echemSavedProtocolSelect.appendChild(option);
-        }
-      }
-
-      function newBlankEchemProtocol() {
-        echemProtocolNameInput.value = "";
-        echemProtocolDisplayInput.value = "";
-        echemProtocolDescriptionInput.value = "";
-        echemProtocolPreviewEl.value = "";
-        clearEchemSteps();
-        echemProtocolStatusEl.textContent = "Blank protocol ready. Add EChem steps to begin.";
-        setEchemProtocolError("");
-      }
-
-      async function loadEchemProtocolForBuilder() {
-        const name = echemSavedProtocolSelect.value;
-        if (!name) {
-          setEchemProtocolError("Select a protocol first.");
-          return false;
-        }
-
-        const res = await fetch(`/api/protocol/raw?name=${encodeURIComponent(name)}`);
-        const data = await res.json();
-
-        if (!res.ok) {
-          setEchemProtocolError(data.error || "Unable to load EChem protocol.");
-          return false;
-        }
-
-        echemProtocolNameInput.value = data.protocol_name || name;
-        echemProtocolDisplayInput.value = data.display_name || data.protocol_name || name;
-        echemProtocolDescriptionInput.value = data.description || "";
-        clearEchemSteps();
-
-        const steps = Array.isArray(data.steps) ? data.steps : [];
-        for (const step of steps) {
-          addEchemStepFromPayload(step);
-        }
-
-        echemProtocolPreviewEl.value = JSON.stringify({
-          protocol_name: echemProtocolNameInput.value,
-          display_name: echemProtocolDisplayInput.value,
-          description: echemProtocolDescriptionInput.value,
-          source: data.source || { type: "ui_flexible_builder" },
-          steps
-        }, null, 2);
-        echemProtocolStatusEl.textContent = `Loaded '${echemProtocolNameInput.value}' with ${steps.length} builder step/block(s).`;
-        setEchemProtocolError("");
-        return true;
-      }
-
-      async function deleteEchemProtocolFromBuilder() {
-        const name = echemSavedProtocolSelect.value || echemProtocolNameInput.value.trim();
-        if (!name) {
-          setEchemProtocolError("Select or enter a protocol name first.");
-          return false;
-        }
-        if (!confirm(`Delete EChem protocol '${name}'?`)) {
-          return false;
-        }
-
-        const res = await fetch(`/api/protocol?name=${encodeURIComponent(name)}`, { method: "DELETE" });
-        const data = await res.json();
-
-        if (!res.ok) {
-          setEchemProtocolError(data.error || "Unable to delete EChem protocol.");
-          return false;
-        }
-
-        await refreshProtocolList();
-        refreshEchemProtocolSelect();
-        newBlankEchemProtocol();
-        echemProtocolStatusEl.textContent = `Deleted EChem protocol '${data.protocol_name || name}'.`;
-        return true;
       }
 
       btn.addEventListener("click", async () => {
@@ -1591,19 +630,16 @@
 
       linearStepsSlider.addEventListener("input", () => updateFromSlider(linearStepsSlider, linearStepsInput, linearStepsValue));
       horizontalStepsSlider.addEventListener("input", () => updateFromSlider(horizontalStepsSlider, horizontalStepsInput, horizontalStepsValue));
-      verticalStepsSlider.addEventListener("input", () => updateFromSlider(verticalStepsSlider, verticalStepsInput, verticalStepsValue));
       linearStepsInput.addEventListener("input", () => updateFromInput(linearStepsSlider, linearStepsInput, linearStepsValue));
       horizontalStepsInput.addEventListener("input", () => updateFromInput(horizontalStepsSlider, horizontalStepsInput, horizontalStepsValue));
-      verticalStepsInput.addEventListener("input", () => updateFromInput(verticalStepsSlider, verticalStepsInput, verticalStepsValue));
       enableOverwriteOnFocus(linearStepsInput);
       enableOverwriteOnFocus(horizontalStepsInput);
-      enableOverwriteOnFocus(verticalStepsInput);
 
       linearUpBtn.addEventListener("click", async () => {
         linearUpBtn.disabled = true;
         try {
           const steps = updateFromInput(linearStepsSlider, linearStepsInput, linearStepsValue);
-          await sendAxis("linear", String(-steps));
+          await sendLinear(String(-steps));
         } catch (err) {
           setError(err.message);
         } finally {
@@ -1615,7 +651,7 @@
         linearDownBtn.disabled = true;
         try {
           const steps = updateFromInput(linearStepsSlider, linearStepsInput, linearStepsValue);
-          await sendAxis("linear", String(steps));
+          await sendLinear(String(steps));
         } catch (err) {
           setError(err.message);
         } finally {
@@ -1627,7 +663,7 @@
         horizontalLeftBtn.disabled = true;
         try {
           const steps = updateFromInput(horizontalStepsSlider, horizontalStepsInput, horizontalStepsValue);
-          await sendAxis("horizontal", String(steps));
+          await sendHorizontal(String(steps));
         } catch (err) {
           setError(err.message);
         } finally {
@@ -1639,35 +675,11 @@
         horizontalRightBtn.disabled = true;
         try {
           const steps = updateFromInput(horizontalStepsSlider, horizontalStepsInput, horizontalStepsValue);
-          await sendAxis("horizontal", String(-steps));
+          await sendHorizontal(String(-steps));
         } catch (err) {
           setError(err.message);
         } finally {
           horizontalRightBtn.disabled = false;
-        }
-      });
-
-      verticalUpBtn.addEventListener("click", async () => {
-        verticalUpBtn.disabled = true;
-        try {
-          const steps = updateFromInput(verticalStepsSlider, verticalStepsInput, verticalStepsValue);
-          await sendAxis("vertical", String(steps));
-        } catch (err) {
-          setError(err.message);
-        } finally {
-          verticalUpBtn.disabled = false;
-        }
-      });
-
-      verticalDownBtn.addEventListener("click", async () => {
-        verticalDownBtn.disabled = true;
-        try {
-          const steps = updateFromInput(verticalStepsSlider, verticalStepsInput, verticalStepsValue);
-          await sendAxis("vertical", String(-steps));
-        } catch (err) {
-          setError(err.message);
-        } finally {
-          verticalDownBtn.disabled = false;
         }
       });
 
@@ -1682,95 +694,14 @@
         }
       });
 
-      addStepBtn.addEventListener("click", () => {
-        addRecipeStep({
-          name: `Sample ${recipeStepsEl.children.length + 1}`,
-          rpm: 0,
-          duration_seconds: 0,
-          z: 0,
-          protocol: "ca_steps_backward",
-          rinse_after: false
-        });
-      });
-
-      saveRecipeBtn.addEventListener("click", async () => {
-        saveRecipeBtn.disabled = true;
-        try {
-          await saveRecipe();
-        } catch (err) {
-          setAutomationError(err.message);
-          automationStatusEl.textContent = "Run plan save failed.";
-        } finally {
-          saveRecipeBtn.disabled = automationRunning;
-        }
-      });
-
-      loadRecipeBtn.addEventListener("click", async () => {
-        loadRecipeBtn.disabled = true;
-        try {
-          await loadRecipe();
-        } catch (err) {
-          setAutomationError(err.message);
-          automationStatusEl.textContent = "Run plan load failed.";
-        } finally {
-          loadRecipeBtn.disabled = automationRunning;
-        }
-      });
-
-      refreshRecipesBtn.addEventListener("click", async () => {
-        refreshRecipesBtn.disabled = true;
+      refreshProtocolsBtn.addEventListener("click", async () => {
+        refreshProtocolsBtn.disabled = true;
         try {
           await refreshProtocolList();
-          await refreshRecipeList();
-          automationStatusEl.textContent = "Run plan and protocol lists refreshed.";
-        } catch (err) {
-          setAutomationError(err.message);
-          automationStatusEl.textContent = "List refresh failed.";
-        } finally {
-          refreshRecipesBtn.disabled = automationRunning;
-        }
-      });
-
-      deleteRecipeBtn.addEventListener("click", async () => {
-        deleteRecipeBtn.disabled = true;
-        try {
-          await deleteRecipe();
-        } catch (err) {
-          setAutomationError(err.message);
-          automationStatusEl.textContent = "Run plan delete failed.";
-        } finally {
-          deleteRecipeBtn.disabled = automationRunning;
-        }
-      });
-
-      saveGamryModeBtn.addEventListener("click", async () => {
-        saveGamryModeBtn.disabled = true;
-        try {
-          await saveGamryMode();
         } catch (err) {
           setAutomationError(err.message);
         } finally {
-          saveGamryModeBtn.disabled = automationRunning;
-        }
-      });
-
-      gamryModeSelect.addEventListener("change", () => {
-        gamryModeDirty = true;
-      });
-
-      recipeSelect.addEventListener("change", async () => {
-        if (recipeSelect.value) {
-          recipeNameInput.value = recipeSelect.value;
-        }
-
-        loadRecipeBtn.disabled = true;
-        try {
-          await loadRecipe();
-        } catch (err) {
-          setAutomationError(err.message);
-          automationStatusEl.textContent = "Run plan load failed.";
-        } finally {
-          loadRecipeBtn.disabled = automationRunning;
+          refreshProtocolsBtn.disabled = automationRunning;
         }
       });
 
@@ -1796,89 +727,10 @@
         }
       });
 
-
-      newBlankEchemProtocolBtn.addEventListener("click", () => {
-        newBlankEchemProtocol();
-      });
-
-      loadEchemProtocolBtn.addEventListener("click", async () => {
-        loadEchemProtocolBtn.disabled = true;
-        try {
-          await loadEchemProtocolForBuilder();
-        } catch (err) {
-          setEchemProtocolError(err.message);
-        } finally {
-          loadEchemProtocolBtn.disabled = automationRunning;
-        }
-      });
-
-      refreshEchemProtocolBtn.addEventListener("click", async () => {
-        refreshEchemProtocolBtn.disabled = true;
-        try {
-          await refreshProtocolList();
-          refreshEchemProtocolSelect();
-          echemProtocolStatusEl.textContent = "EChem protocol list refreshed.";
-        } catch (err) {
-          setEchemProtocolError(err.message);
-        } finally {
-          refreshEchemProtocolBtn.disabled = automationRunning;
-        }
-      });
-
-      deleteEchemProtocolBtn.addEventListener("click", async () => {
-        deleteEchemProtocolBtn.disabled = true;
-        try {
-          await deleteEchemProtocolFromBuilder();
-        } catch (err) {
-          setEchemProtocolError(err.message);
-        } finally {
-          deleteEchemProtocolBtn.disabled = automationRunning;
-        }
-      });
-
-      addEchemOcpBtn.addEventListener("click", () => addEchemStep("ocp", { name: "ocp" }));
-      addEchemEisBtn.addEventListener("click", () => addEchemStep("eis", { name: "eis" }));
-      addEchemCaBtn.addEventListener("click", () => addEchemStep("ca", { name: "ca" }));
-      addEchemCaRangeBtn.addEventListener("click", () => addEchemStep("ca_range", { name: "ca_range" }));
-      addEchemLsvBtn.addEventListener("click", () => addEchemStep("lsv", { name: "lsv" }));
-      addEchemCvBtn.addEventListener("click", () => addEchemStep("cv", { name: "cv" }));
-
-      previewEchemProtocolBtn.addEventListener("click", () => {
-        try {
-          previewEchemProtocol();
-        } catch (err) {
-          setEchemProtocolError(err.message);
-        }
-      });
-
-      saveEchemProtocolBtn.addEventListener("click", async () => {
-        saveEchemProtocolBtn.disabled = true;
-
-        try {
-          await saveEchemProtocol();
-        } catch (err) {
-          setEchemProtocolError(err.message);
-          echemProtocolStatusEl.textContent = "EChem protocol save failed.";
-        } finally {
-          saveEchemProtocolBtn.disabled = automationRunning;
-        }
-      });
-
-      fetchConfig()
-        .then(() => refreshProtocolList())
-        .then(() => refreshRecipeList("default"))
-        .then(() => loadRecipe())
-        .catch((err) => {
-          setAutomationError(err.message);
-          clearRecipeSteps();
-          recipeNameInput.value = "default";
-          addRecipeStep({ name: "Sample 1", x: 0, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10, protocol: "ca_steps_backward", rinse_after: true });
-          addRecipeStep({ name: "Sample 2", x: 80000, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10, protocol: "ca_steps_backward", rinse_after: true });
-          addRecipeStep({ name: "Sample 3", x: 160000, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10, protocol: "ca_steps_backward", rinse_after: true });
-          addRecipeStep({ name: "DI Water", x: 120000, vertical: 60000, z: 50000, rpm: 0, duration_seconds: 5, protocol: "ca_steps_backward", rinse_after: false });
-          addRecipeStep({ name: "Blank Electrode", x: 180000, vertical: 60000, z: 50000, rpm: 1000, duration_seconds: 10, protocol: "ca_steps_backward", rinse_after: true });
-          addRecipeStep({ name: "Empty Rotation", x: 240000, vertical: 60000, z: 0, rpm: 0, duration_seconds: 0, rotation_command: "1", protocol: "ca_steps_backward", rinse_after: false });
-        });
+      for (const sample of sampleBlocks) {
+        sample.enabled.addEventListener("change", () => updateSampleBlockState(sample));
+        updateSampleBlockState(sample);
+      }
 
       setInterval(() => {
         updateStatusText();
@@ -1891,9 +743,13 @@
 
       updateFromSlider(linearStepsSlider, linearStepsInput, linearStepsValue);
       updateFromSlider(horizontalStepsSlider, horizontalStepsInput, horizontalStepsValue);
-      updateFromSlider(verticalStepsSlider, verticalStepsInput, verticalStepsValue);
-      newBlankEchemProtocol();
-      fetchStatus();
+
+      refreshProtocolList()
+        .then(() => fetchStatus())
+        .catch((err) => {
+          setAutomationError(err.message);
+          fetchStatus();
+        });
     </script>
   </body>
 </html>

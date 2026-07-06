@@ -20,10 +20,10 @@ except ImportError:  # pragma: no cover
     serial = None
 
 
-COM_PORT = "COM"             # RDE RPM controller
-ROTATION_COM_PORT = "COM"     # RDE arm rotation
-LINEAR_COM_PORT = "COM"       # Z axis
-HORIZONTAL_COM_PORT = "COM"   # X axis
+COM_PORT = "COM6"             # RDE RPM controller
+ROTATION_COM_PORT = "COM5"     # RDE arm rotation
+LINEAR_COM_PORT = "COM4"       # Z axis
+HORIZONTAL_COM_PORT = "COM8"   # X axis
 
 BAUD_RATE = 115200
 RPM_MIN = 30

@@ -2,14 +2,14 @@
   "serial": {
     "baud_rate": 115200,
     "ports": {
-      "rde": "COM10",
-      "rotation": "COM7",
-      "linear": "COM9",
-      "horizontal": "COM4",
+      "rde": "COM6",
+      "rotation": "COM3",
+      "linear": "COM4",
+      "horizontal": "COM8",
       "vertical": "COM5"
     },
     "hardware": {
-      "mock_serial": true
+      "mock_serial": false
     },
     "timeouts": {
       "rde_s": 1.0,
@@ -84,11 +84,11 @@
     "legacy_recipes_dir": "recipes"
   },
   "gamry": {
-  "mode": "real",
-  "worker_python": "C:\\Program Files (x86)\\Gamry Instruments\\Python\\Python37-32\\python.exe",
-  "worker_script": "gamry_worker/worker.py",
-  "instrument_index": 0,
-  "instrument_label": "IFC1010-36030",
-  "default_file_extension": ".DTA"
-}
+    "mode": "real",
+    "worker_python": "C:\\Program Files (x86)\\Gamry Instruments\\Python\\Python37-32\\python.exe",
+    "worker_script": "gamry_worker/worker.py",
+    "instrument_index": 0,
+    "instrument_label": "IFC1010-36030",
+    "default_file_extension": ".DTA"
+  }
 }

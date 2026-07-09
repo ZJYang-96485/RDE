@@ -940,7 +940,7 @@
           note.textContent =
             "This sends the exact same signed step command as Motor Control. " +
             "Example: +1000 and -1000 move in the same directions as the manual buttons.";
-          fields.appendChild(note);
+          container.appendChild(note);
         } else if (action === "rotation") {
           const input = document.createElement("input");
           input.type = "text";

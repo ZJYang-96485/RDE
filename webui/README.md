@@ -35,11 +35,11 @@ Default configuration:
 
 | Device | Port |
 |---|---|
-| RDE RPM controller | `COM10` |
-| Rotation controller | `COM7` |
-| Linear / Z axis | `COM9` |
-| Horizontal / X axis | `COM4` |
-| Vertical / Y axis | `COM5` |
+| RDE RPM controller | `COM_` |
+| Rotation controller | `COM_` |
+| Linear / Z axis | `COM_` |
+| Horizontal / X axis | `COM_` |
+| Vertical / Y axis | `COM_` |
 
 Serial baud rate:
 
@@ -64,6 +64,12 @@ For software-only development, `config.json` can enable mock serial mode:
 ```
 
 When enabled, serial commands return mock ACK responses instead of opening real COM ports.
+
+```json
+"hardware": {
+  "mock_serial": false
+}
+```
 
 ## Project structure
 
@@ -114,10 +120,10 @@ RDE/
 Open terminal in `webui`:
 
 ```powershell
-cd "C:\Users\zyang\Downloads\RDE data\RDE\webui"
+cd "C:\YOUR FOLDER\RDE data\RDE\webui"
 ```
 
-Install dependencies:
+Install dependencies: (Install Conda through BAM)
 
 ```powershell
 & "$env:LOCALAPPDATA\miniforge3\python.exe" -m pip install -r requirements.txt
@@ -145,7 +151,7 @@ Compile-check the main files:
 & "$env:LOCALAPPDATA\miniforge3\python.exe" -m py_compile .\workflow\recipe_runner.py
 ```
 
-Compile-check the real Gamry worker files with the Gamry 32-bit Python:
+Compile-check the real Gamry worker files with the Gamry 32-bit Python: (Might be different)
 
 ```powershell
 & "C:\Program Files (x86)\Gamry Instruments\Python\Python37-32\python.exe" -m py_compile .\gamry_worker\worker.py

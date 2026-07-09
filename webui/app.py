@@ -590,71 +590,141 @@ def run_plan_delete():
     return jsonify(result)
 
 
-def legacy_step_to_sample(step: dict[str, Any], index: int) -> dict[str, Any]:
-    protocol = str(step.get("protocol", "ca_steps_backward") or "ca_steps_backward").strip()
-
-    return {
-        "sample_id": f"sample_{index:03d}",
-        "label": str(step.get("name") or f"Sample {index}"),
-        "enabled": bool(step.get("enabled", True)),
-        "position": {
-            "x": int(step.get("x", step.get("horizontal", 0)) or 0),
-            "y": int(step.get("vertical", step.get("y", 0)) or 0),
-            "z": int(step.get("z", step.get("linear", 0)) or 0),
-        },
-        "rpm": int(step.get("rpm", 0) or 0),
-        "stabilization_s": float(step.get("duration_seconds", step.get("seconds", 0)) or 0),
-        "protocol": protocol,
-        "rotation_command": str(step.get("rotation_command", "") or "").strip(),
-        "post_echem_wait_s": 0,
-        "rinse_after": bool(step.get("rinse_after", False)),
-    }
-
-
-def sample_to_legacy_step(sample: dict[str, Any]) -> dict[str, Any]:
+def sample_to_atomic_group(sample: dict[str, Any], index: int) -> dict[str, Any]:
+    """Migrate an older all-in-one sample block into atomic grouped steps."""
     position = sample.get("position", {})
-
-    return {
-        "name": sample.get("label", sample.get("sample_id", "Sample")),
-        "enabled": bool(sample.get("enabled", True)),
-        "x": int(position.get("x", 0)),
-        "vertical": int(position.get("y", 0)),
-        "z": int(position.get("z", 0)),
-        "rpm": int(sample.get("rpm", 0)),
-        "duration_seconds": int(float(sample.get("stabilization_s", 0))),
-        "rotation_command": sample.get("rotation_command", ""),
-        "protocol": sample.get("protocol", "ca_steps_backward"),
-        "rinse_after": bool(sample.get("rinse_after", False)),
-    }
-
-
-def legacy_payload_to_run_plan(payload: dict[str, Any]) -> dict[str, Any]:
-    name = str(payload.get("name", "default") or "default").strip()
-    raw_steps = payload.get("steps", [])
-
-    if not isinstance(raw_steps, list):
-        raise RunPlanError("steps must be a list.")
-
-    samples = [
-        legacy_step_to_sample(step, index)
-        for index, step in enumerate(raw_steps, start=1)
-        if isinstance(step, dict)
+    label = str(sample.get("label") or sample.get("sample_id") or f"Sample {index}")
+    steps: list[dict[str, Any]] = [
+        {
+            "name": "Move X",
+            "action": "move_x",
+            "enabled": True,
+            "position": int(position.get("x", 0)),
+        },
+        {
+            "name": "Move Z",
+            "action": "move_z",
+            "enabled": True,
+            "position": int(position.get("z", 0)),
+        },
     ]
 
+    rotation_command = str(sample.get("rotation_command", "") or "").strip()
+    if rotation_command:
+        steps.append(
+            {
+                "name": "Rotate RDE Arm",
+                "action": "rotation",
+                "enabled": True,
+                "command": rotation_command,
+            }
+        )
+
+    rpm = int(sample.get("rpm", 0) or 0)
+    if rpm > 0:
+        steps.append(
+            {
+                "name": "Set RDE RPM",
+                "action": "set_rpm",
+                "enabled": True,
+                "rpm": rpm,
+            }
+        )
+
+    stabilization_s = float(sample.get("stabilization_s", 0) or 0)
+    if stabilization_s > 0:
+        steps.append(
+            {
+                "name": "Stabilization Wait",
+                "action": "wait",
+                "enabled": True,
+                "duration_s": stabilization_s,
+            }
+        )
+
+    protocol_name = str(sample.get("protocol", "ocp_only") or "ocp_only")
+    steps.append(
+        {
+            "name": "EChem Measurement",
+            "action": "echem",
+            "enabled": True,
+            "protocol": protocol_name,
+        }
+    )
+
+    post_wait = float(sample.get("post_echem_wait_s", 0) or 0)
+    if post_wait > 0:
+        steps.append(
+            {
+                "name": "Post-EChem Wait",
+                "action": "wait",
+                "enabled": True,
+                "duration_s": post_wait,
+            }
+        )
+
+    if rpm > 0:
+        steps.append(
+            {
+                "name": "Stop RDE",
+                "action": "stop_rpm",
+                "enabled": True,
+            }
+        )
+
+    if bool(sample.get("rinse_after", False)):
+        steps.append(
+            {
+                "name": "Rinse",
+                "action": "rinse",
+                "enabled": True,
+            }
+        )
+
     return {
-        "run_name": name,
-        "display_name": name,
-        "description": "Compatibility run plan created from the original Automation Recipe panel.",
-        "repetitions": int(payload.get("repetitions", 1) or 1),
-        "samples": samples,
+        "group_id": str(sample.get("sample_id") or f"group_{index:03d}"),
+        "label": label,
+        "enabled": bool(sample.get("enabled", True)),
+        "steps": steps,
     }
 
 
-def run_plan_to_legacy_payload(run_plan: dict[str, Any]) -> dict[str, Any]:
+def grouped_payload_to_run_plan(payload: dict[str, Any]) -> dict[str, Any]:
+    name = str(payload.get("name") or payload.get("run_name") or "default").strip()
+    groups = payload.get("groups", [])
+
+    if not isinstance(groups, list):
+        raise RunPlanError("groups must be a list.")
+
+    return {
+        "schema_version": 2,
+        "run_name": name,
+        "display_name": str(payload.get("display_name") or name),
+        "description": str(payload.get("description") or "Grouped atomic-step run plan created in the web app."),
+        "repetitions": int(payload.get("repetitions", 1) or 1),
+        "home_before_run": bool(payload.get("home_before_run", True)),
+        "home_after_run": bool(payload.get("home_after_run", True)),
+        "groups": groups,
+    }
+
+
+def run_plan_to_ui_payload(run_plan: dict[str, Any]) -> dict[str, Any]:
+    if "groups" in run_plan:
+        groups = run_plan.get("groups", [])
+    else:
+        groups = [
+            sample_to_atomic_group(sample, index)
+            for index, sample in enumerate(run_plan.get("samples", []), start=1)
+        ]
+
     return {
         "name": run_plan.get("run_name", "default"),
+        "display_name": run_plan.get("display_name", run_plan.get("run_name", "default")),
+        "description": run_plan.get("description", ""),
         "repetitions": run_plan.get("repetitions", 1),
-        "steps": [sample_to_legacy_step(sample) for sample in run_plan.get("samples", [])],
+        "home_before_run": bool(run_plan.get("home_before_run", True)),
+        "home_after_run": bool(run_plan.get("home_after_run", True)),
+        "groups": groups,
         "saved_at": run_plan.get("saved_at"),
     }
 
@@ -664,11 +734,13 @@ def list_recipes():
     recipes = []
 
     for plan in list_run_plans():
+        group_count = int(plan.get("group_count", plan.get("sample_count", 0)) or 0)
         recipes.append(
             {
                 "name": plan["run_name"],
                 "repetitions": plan["repetitions"],
-                "step_count": plan["sample_count"],
+                "group_count": group_count,
+                "step_count": int(plan.get("step_count", 0) or 0),
                 "saved_at": plan.get("saved_at"),
             }
         )
@@ -678,7 +750,7 @@ def list_recipes():
 
 @app.get("/api/recipe")
 def load_recipe():
-    name = request.args.get("name", "single_sample_test")
+    name = request.args.get("name", "default")
 
     try:
         run_plan = load_run_plan(name)
@@ -686,9 +758,9 @@ def load_recipe():
         run_plan = default_run_plan_payload()
         run_plan["run_name"] = name
     except Exception as exc:
-        return json_error(f"Unable to load recipe: {exc}", 500)
+        return json_error(f"Unable to load run plan: {exc}", 500)
 
-    return jsonify({"ok": True, **run_plan_to_legacy_payload(run_plan)})
+    return jsonify({"ok": True, **run_plan_to_ui_payload(run_plan)})
 
 
 @app.post("/api/recipe")
@@ -696,7 +768,7 @@ def save_recipe():
     payload = request.get_json(silent=True) or {}
 
     try:
-        run_plan = legacy_payload_to_run_plan(payload)
+        run_plan = grouped_payload_to_run_plan(payload)
         result = save_run_plan(run_plan)
     except Exception as exc:
         return json_error(str(exc), 400)
@@ -705,7 +777,8 @@ def save_recipe():
         {
             "ok": True,
             "name": result["run_name"],
-            "count": result["sample_count"],
+            "group_count": result.get("group_count", result.get("sample_count", 0)),
+            "step_count": result.get("step_count", 0),
             "repetitions": run_plan["repetitions"],
         }
     )
@@ -720,7 +793,7 @@ def delete_recipe():
     except RunPlanError as exc:
         return json_error(str(exc), 404)
     except Exception as exc:
-        return json_error(f"Unable to delete recipe: {exc}", 500)
+        return json_error(f"Unable to delete run plan: {exc}", 500)
 
     return jsonify({"ok": True, "name": result["run_name"]})
 
@@ -744,7 +817,6 @@ def automation_start():
         return json_error("automation is already running.", 409)
 
     rde_state = get_rde_state()
-
     if rde_state["running"]:
         return json_error("motor is currently running; stop it before automation.", 409)
 
@@ -753,10 +825,12 @@ def automation_start():
     try:
         if "run_plan_name" in payload:
             run_plan = load_run_plan(str(payload["run_plan_name"]))
+        elif "groups" in payload:
+            run_plan = validate_run_plan_payload(grouped_payload_to_run_plan(payload))
         elif "samples" in payload:
             run_plan = validate_run_plan_payload(payload)
         else:
-            run_plan = validate_run_plan_payload(legacy_payload_to_run_plan(payload))
+            raise RunPlanError("automation request must contain groups, samples, or run_plan_name.")
     except Exception as exc:
         return json_error(str(exc), 400)
 
@@ -765,17 +839,17 @@ def automation_start():
     except RecipeRunnerError as exc:
         return json_error(str(exc), 409)
 
-    selected_samples = [
-        sample["label"]
-        for sample in run_plan["samples"]
-        if bool(sample.get("enabled", True))
-    ]
+    if "groups" in run_plan:
+        selected = [group["label"] for group in run_plan["groups"] if bool(group.get("enabled", True))]
+    else:
+        selected = [sample["label"] for sample in run_plan["samples"] if bool(sample.get("enabled", True))]
 
     return jsonify(
         {
             "ok": True,
-            "selected_steps": selected_samples,
-            "selected_samples": selected_samples,
+            "selected_steps": selected,
+            "selected_groups": selected,
+            "selected_samples": selected,
             "repetitions": run_plan["repetitions"],
         }
     )

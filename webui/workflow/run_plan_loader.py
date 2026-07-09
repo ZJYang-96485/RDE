@@ -7,11 +7,20 @@ from pathlib import Path
 from typing import Any
 
 from workflow.config_loader import get_path, load_config
-from workflow.protocol_loader import normalize_protocol_name
-from workflow.safety import validate_xyz_position, validate_rpm
-
 
 MAX_RUN_NAME_LENGTH = 80
+
+ATOMIC_ACTIONS = {
+    "move_x",
+    "move_z",
+    "rotation",
+    "set_rpm",
+    "wait",
+    "echem",
+    "stop_rpm",
+    "rinse",
+    "home",
+}
 
 
 class RunPlanError(ValueError):
@@ -24,12 +33,12 @@ def run_plans_dir() -> Path:
     return path
 
 
-def max_repetitions() -> int:
-    return int(load_config()["automation"]["max_repetitions"])
-
-
-def max_samples() -> int:
-    return int(load_config()["automation"]["max_samples"])
+def automation_limits() -> tuple[int, int]:
+    config = load_config()
+    automation = config.get("automation", {})
+    max_groups = int(automation.get("max_samples", automation.get("max_groups", 100)))
+    max_steps = int(automation.get("max_run_steps", 1000))
+    return max_groups, max_steps
 
 
 def normalize_run_name(raw_name: Any) -> str:
@@ -51,8 +60,7 @@ def normalize_run_name(raw_name: Any) -> str:
 
 
 def run_plan_file_name(raw_name: Any) -> str:
-    name = normalize_run_name(raw_name)
-    return name.replace(" ", "_") + ".json"
+    return normalize_run_name(raw_name).replace(" ", "_") + ".json"
 
 
 def run_plan_path_for_name(raw_name: Any) -> Path:
@@ -62,7 +70,6 @@ def run_plan_path_for_name(raw_name: Any) -> Path:
 def optional_string(value: Any, default: str = "") -> str:
     if value is None:
         return default
-
     return str(value).strip()
 
 
@@ -80,121 +87,168 @@ def parse_float(value: Any, field_name: str) -> float:
         raise RunPlanError(f"{field_name} must be a number.") from exc
 
 
-def parse_bool(value: Any) -> bool:
-    return bool(value)
-
-
-def default_sample_z() -> int:
-    config = load_config()
-    return int(config["motion"]["default_positions"].get("sample_z", 0))
-
-
-def validate_repetitions(value: Any) -> int:
-    repetitions = parse_int(value, "repetitions")
-
-    if repetitions <= 0:
-        raise RunPlanError("repetitions must be > 0.")
-
-    limit = max_repetitions()
-
-    if repetitions > limit:
-        raise RunPlanError(f"repetitions cannot exceed {limit}.")
-
-    return repetitions
-
-
-def validate_rpm_or_zero(value: Any, field_name: str = "rpm") -> int:
-    rpm = parse_int(value, field_name)
-
-    if rpm < 0:
+def parse_nonnegative_float(value: Any, field_name: str) -> float:
+    result = parse_float(value, field_name)
+    if result < 0:
         raise RunPlanError(f"{field_name} cannot be negative.")
-
-    if rpm == 0:
-        return 0
-
-    try:
-        validate_rpm(rpm)
-    except Exception as exc:
-        raise RunPlanError(str(exc)) from exc
-
-    return rpm
+    return result
 
 
-def normalize_protocol_reference(value: Any) -> str:
-    protocol = optional_string(value, "ocp_only")
+def validate_atomic_step(raw_step: dict[str, Any], group_label: str, index: int) -> dict[str, Any]:
+    if not isinstance(raw_step, dict):
+        raise RunPlanError(f"{group_label}: step {index} must be an object.")
 
-    if not protocol:
-        protocol = "ocp_only"
+    action = optional_string(raw_step.get("action") or raw_step.get("type")).lower()
+    name = optional_string(raw_step.get("name"), f"Step {index}")
 
-    try:
-        return normalize_protocol_name(protocol)
-    except Exception as exc:
-        raise RunPlanError(f"invalid protocol name: {exc}") from exc
+    if action not in ATOMIC_ACTIONS:
+        raise RunPlanError(f"{group_label}: step {index} has unsupported action '{action}'.")
+
+    step: dict[str, Any] = {
+        "name": name or f"Step {index}",
+        "action": action,
+        "enabled": bool(raw_step.get("enabled", True)),
+    }
+
+    if action in {"move_x", "move_z"}:
+        step["position"] = parse_int(raw_step.get("position", 0), f"{group_label}/{name}: position")
+
+    elif action == "rotation":
+        command = optional_string(raw_step.get("command"))
+        if not command:
+            raise RunPlanError(f"{group_label}/{name}: rotation command cannot be empty.")
+        step["command"] = command
+
+    elif action == "set_rpm":
+        rpm = parse_int(raw_step.get("rpm", 0), f"{group_label}/{name}: rpm")
+        if rpm < 0:
+            raise RunPlanError(f"{group_label}/{name}: rpm cannot be negative.")
+        step["rpm"] = rpm
+
+    elif action == "wait":
+        step["duration_s"] = parse_nonnegative_float(
+            raw_step.get("duration_s", 0),
+            f"{group_label}/{name}: duration_s",
+        )
+
+    elif action == "echem":
+        protocol = optional_string(raw_step.get("protocol"))
+        if not protocol:
+            raise RunPlanError(f"{group_label}/{name}: protocol cannot be empty.")
+        step["protocol"] = protocol
+
+    return step
 
 
-def validate_position(raw_position: Any, sample_label: str) -> dict[str, int]:
-    if raw_position is None:
-        raw_position = {}
+def validate_group(raw_group: dict[str, Any], index: int) -> dict[str, Any]:
+    if not isinstance(raw_group, dict):
+        raise RunPlanError(f"group {index} must be an object.")
 
-    if not isinstance(raw_position, dict):
-        raise RunPlanError(f"{sample_label}: position must be an object.")
+    label = optional_string(raw_group.get("label") or raw_group.get("name"), f"Group {index}")
+    group_id = optional_string(raw_group.get("group_id"), f"group_{index:03d}")
+    raw_steps = raw_group.get("steps", [])
 
-    x = parse_int(raw_position.get("x", 0), f"{sample_label}: position.x")
-    y = parse_int(raw_position.get("y", 0), f"{sample_label}: position.y")
-    z = parse_int(raw_position.get("z", default_sample_z()), f"{sample_label}: position.z")
+    if not isinstance(raw_steps, list):
+        raise RunPlanError(f"{label}: steps must be a list.")
 
-    try:
-        validate_xyz_position(x, y, z)
-    except Exception as exc:
-        raise RunPlanError(f"{sample_label}: {exc}") from exc
+    steps = [validate_atomic_step(step, label, step_index) for step_index, step in enumerate(raw_steps, start=1)]
 
     return {
-        "x": x,
-        "y": y,
-        "z": z
+        "group_id": group_id,
+        "label": label,
+        "enabled": bool(raw_group.get("enabled", True)),
+        "steps": steps,
     }
 
 
-def validate_sample(raw_sample: Any, sample_index: int) -> dict[str, Any]:
-    if not isinstance(raw_sample, dict):
-        raise RunPlanError(f"sample {sample_index} must be an object.")
+def validate_grouped_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    run_name = normalize_run_name(payload.get("run_name") or payload.get("name"))
+    display_name = optional_string(payload.get("display_name"), run_name)
+    description = optional_string(payload.get("description"), "")
+    repetitions = parse_int(payload.get("repetitions", 1), "repetitions")
 
-    sample_id = optional_string(raw_sample.get("sample_id"), f"sample_{sample_index:03d}")
-    label = optional_string(raw_sample.get("label"), f"Sample {sample_index}")
+    if repetitions < 1 or repetitions > 100:
+        raise RunPlanError("repetitions must be between 1 and 100.")
 
-    if not sample_id:
-        sample_id = f"sample_{sample_index:03d}"
+    raw_groups = payload.get("groups")
+    if not isinstance(raw_groups, list):
+        raise RunPlanError("groups must be a list.")
 
-    if not label:
-        label = sample_id
+    max_groups, max_steps = automation_limits()
+    if len(raw_groups) > max_groups:
+        raise RunPlanError(f"run plan cannot contain more than {max_groups} groups.")
 
-    sample_label = f"sample {sample_index} ({label})"
+    groups = [validate_group(group, index) for index, group in enumerate(raw_groups, start=1)]
+    total_steps = sum(len(group["steps"]) for group in groups)
 
-    position = validate_position(raw_sample.get("position", {}), sample_label)
-
-    rpm = validate_rpm_or_zero(raw_sample.get("rpm", 0), f"{sample_label}: rpm")
-    stabilization_s = parse_float(raw_sample.get("stabilization_s", 0), f"{sample_label}: stabilization_s")
-    post_echem_wait_s = parse_float(raw_sample.get("post_echem_wait_s", 0), f"{sample_label}: post_echem_wait_s")
-
-    if stabilization_s < 0:
-        raise RunPlanError(f"{sample_label}: stabilization_s cannot be negative.")
-
-    if post_echem_wait_s < 0:
-        raise RunPlanError(f"{sample_label}: post_echem_wait_s cannot be negative.")
-
-    protocol = normalize_protocol_reference(raw_sample.get("protocol", "ocp_only"))
+    if total_steps > max_steps:
+        raise RunPlanError(f"run plan cannot contain more than {max_steps} atomic steps.")
 
     return {
-        "sample_id": sample_id,
+        "schema_version": 2,
+        "run_name": run_name,
+        "display_name": display_name,
+        "description": description,
+        "repetitions": repetitions,
+        "home_before_run": bool(payload.get("home_before_run", True)),
+        "home_after_run": bool(payload.get("home_after_run", True)),
+        "groups": groups,
+        "saved_at": payload.get("saved_at"),
+    }
+
+
+def validate_sample(raw_sample: dict[str, Any], index: int) -> dict[str, Any]:
+    if not isinstance(raw_sample, dict):
+        raise RunPlanError(f"sample {index} must be an object.")
+
+    label = optional_string(raw_sample.get("label") or raw_sample.get("sample_id"), f"Sample {index}")
+    position = raw_sample.get("position", {})
+    if not isinstance(position, dict):
+        raise RunPlanError(f"{label}: position must be an object.")
+
+    return {
+        "sample_id": optional_string(raw_sample.get("sample_id"), f"sample_{index:03d}"),
         "label": label,
-        "enabled": parse_bool(raw_sample.get("enabled", True)),
-        "position": position,
-        "rpm": rpm,
-        "stabilization_s": stabilization_s,
-        "protocol": protocol,
+        "enabled": bool(raw_sample.get("enabled", True)),
+        "position": {
+            "x": parse_int(position.get("x", 0), f"{label}: position.x"),
+            "y": parse_int(position.get("y", 0), f"{label}: position.y"),
+            "z": parse_int(position.get("z", 0), f"{label}: position.z"),
+        },
+        "rpm": parse_int(raw_sample.get("rpm", 0), f"{label}: rpm"),
+        "stabilization_s": parse_nonnegative_float(raw_sample.get("stabilization_s", 0), f"{label}: stabilization_s"),
+        "protocol": optional_string(raw_sample.get("protocol"), "ocp_only"),
         "rotation_command": optional_string(raw_sample.get("rotation_command"), ""),
-        "post_echem_wait_s": post_echem_wait_s,
-        "rinse_after": parse_bool(raw_sample.get("rinse_after", False)),
+        "post_echem_wait_s": parse_nonnegative_float(raw_sample.get("post_echem_wait_s", 0), f"{label}: post_echem_wait_s"),
+        "rinse_after": bool(raw_sample.get("rinse_after", False)),
+    }
+
+
+def validate_legacy_sample_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    run_name = normalize_run_name(payload.get("run_name") or payload.get("name"))
+    repetitions = parse_int(payload.get("repetitions", 1), "repetitions")
+
+    if repetitions < 1 or repetitions > 100:
+        raise RunPlanError("repetitions must be between 1 and 100.")
+
+    raw_samples = payload.get("samples")
+    if not isinstance(raw_samples, list):
+        raise RunPlanError("samples must be a list.")
+
+    max_groups, _ = automation_limits()
+    if len(raw_samples) > max_groups:
+        raise RunPlanError(f"run plan cannot contain more than {max_groups} samples.")
+
+    samples = [validate_sample(sample, index) for index, sample in enumerate(raw_samples, start=1)]
+
+    return {
+        "schema_version": 1,
+        "run_name": run_name,
+        "display_name": optional_string(payload.get("display_name"), run_name),
+        "description": optional_string(payload.get("description"), ""),
+        "repetitions": repetitions,
+        "samples": samples,
+        "saved_at": payload.get("saved_at"),
     }
 
 
@@ -202,71 +256,45 @@ def validate_run_plan_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise RunPlanError("run plan payload must be an object.")
 
-    run_name = normalize_run_name(payload.get("run_name") or payload.get("name"))
-    display_name = optional_string(payload.get("display_name"), run_name)
-    description = optional_string(payload.get("description"), "")
-    repetitions = validate_repetitions(payload.get("repetitions", 1))
+    if "groups" in payload or int(payload.get("schema_version", 1) or 1) >= 2:
+        return validate_grouped_payload(payload)
 
-    raw_samples = payload.get("samples")
-
-    if raw_samples is None:
-        raw_samples = payload.get("steps")
-
-    if not isinstance(raw_samples, list):
-        raise RunPlanError("samples must be a list.")
-
-    if not raw_samples:
-        raise RunPlanError("run plan must contain at least one sample.")
-
-    sample_limit = max_samples()
-
-    if len(raw_samples) > sample_limit:
-        raise RunPlanError(f"run plan cannot contain more than {sample_limit} samples.")
-
-    samples = [
-        validate_sample(raw_sample, sample_index)
-        for sample_index, raw_sample in enumerate(raw_samples, start=1)
-    ]
-
-    return {
-        "run_name": run_name,
-        "display_name": display_name,
-        "description": description,
-        "repetitions": repetitions,
-        "samples": samples,
-        "saved_at": payload.get("saved_at"),
-    }
+    return validate_legacy_sample_payload(payload)
 
 
 def load_run_plan(name: str) -> dict[str, Any]:
     path = run_plan_path_for_name(name)
-
     if not path.exists():
         raise RunPlanError(f"run plan '{name}' does not exist.")
 
-    with path.open("r", encoding="utf-8") as f:
+    with path.open("r", encoding="utf-8-sig") as f:
         payload = json.load(f)
 
     return validate_run_plan_payload(payload)
 
 
 def save_run_plan(payload: dict[str, Any]) -> dict[str, Any]:
-    run_plan = validate_run_plan_payload(payload)
-    run_plan["saved_at"] = datetime.now(timezone.utc).isoformat()
-
-    path = run_plan_path_for_name(run_plan["run_name"])
+    plan = validate_run_plan_payload(payload)
+    plan["saved_at"] = datetime.now(timezone.utc).isoformat()
+    path = run_plan_path_for_name(plan["run_name"])
 
     with path.open("w", encoding="utf-8") as f:
-        json.dump(run_plan, f, indent=2)
+        json.dump(plan, f, indent=2)
         f.write("\n")
+
+    group_count = len(plan.get("groups", []))
+    sample_count = len(plan.get("samples", []))
+    step_count = sum(len(group.get("steps", [])) for group in plan.get("groups", []))
 
     return {
         "ok": True,
-        "run_name": run_plan["run_name"],
-        "display_name": run_plan["display_name"],
-        "sample_count": len(run_plan["samples"]),
+        "run_name": plan["run_name"],
+        "display_name": plan["display_name"],
+        "group_count": group_count,
+        "sample_count": sample_count or group_count,
+        "step_count": step_count,
         "path": str(path),
-        "saved_at": run_plan["saved_at"],
+        "saved_at": plan["saved_at"],
     }
 
 
@@ -278,69 +306,57 @@ def delete_run_plan(name: str) -> dict[str, Any]:
         raise RunPlanError(f"run plan '{run_name}' does not exist.")
 
     path.unlink()
-
-    return {
-        "ok": True,
-        "run_name": run_name,
-    }
+    return {"ok": True, "run_name": run_name}
 
 
 def list_run_plans() -> list[dict[str, Any]]:
-    run_plans = []
+    plans: list[dict[str, Any]] = []
 
     for path in sorted(run_plans_dir().glob("*.json")):
         try:
-            with path.open("r", encoding="utf-8") as f:
+            with path.open("r", encoding="utf-8-sig") as f:
                 payload = json.load(f)
+            plan = validate_run_plan_payload(payload)
 
-            run_plan = validate_run_plan_payload(payload)
+            group_count = len(plan.get("groups", []))
+            sample_count = len(plan.get("samples", []))
+            step_count = sum(len(group.get("steps", [])) for group in plan.get("groups", []))
 
-            run_plans.append(
+            plans.append(
                 {
-                    "run_name": run_plan["run_name"],
-                    "display_name": run_plan["display_name"],
-                    "description": run_plan["description"],
-                    "repetitions": run_plan["repetitions"],
-                    "sample_count": len(run_plan["samples"]),
-                    "enabled_sample_count": len(
-                        [
-                            sample
-                            for sample in run_plan["samples"]
-                            if bool(sample.get("enabled", True))
-                        ]
-                    ),
-                    "saved_at": run_plan.get("saved_at"),
+                    "run_name": plan["run_name"],
+                    "display_name": plan["display_name"],
+                    "description": plan["description"],
+                    "repetitions": plan["repetitions"],
+                    "schema_version": plan.get("schema_version", 1),
+                    "group_count": group_count,
+                    "sample_count": sample_count or group_count,
+                    "step_count": step_count,
+                    "saved_at": plan.get("saved_at"),
                     "file": path.name,
                 }
             )
         except Exception:
             continue
 
-    return run_plans
+    return plans
 
 
 def default_run_plan_payload() -> dict[str, Any]:
     return {
-        "run_name": "single_sample_test",
-        "display_name": "Single Sample Test",
-        "description": "Move to one sample position, run one selected EChem protocol, then rinse.",
+        "schema_version": 2,
+        "run_name": "default",
+        "display_name": "Default",
+        "description": "Blank grouped run plan.",
         "repetitions": 1,
-        "samples": [
+        "home_before_run": True,
+        "home_after_run": True,
+        "groups": [
             {
-                "sample_id": "sample_001",
+                "group_id": "group_001",
                 "label": "Sample 1",
                 "enabled": True,
-                "position": {
-                    "x": 0,
-                    "y": 0,
-                    "z": default_sample_z()
-                },
-                "rpm": 1600,
-                "stabilization_s": 10,
-                "protocol": "ca_steps_backward",
-                "rotation_command": "",
-                "post_echem_wait_s": 0,
-                "rinse_after": True
+                "steps": [],
             }
-        ]
+        ],
     }

@@ -1,0 +1,65 @@
+{
+  "schema_version": 2,
+  "run_name": "grouped_sample1_example",
+  "display_name": "Grouped Sample 1 Example",
+  "description": "Each step controls one hardware or EChem function.",
+  "repetitions": 1,
+  "home_before_run": true,
+  "home_after_run": true,
+  "groups": [
+    {
+      "group_id": "sample_001",
+      "label": "Sample 1",
+      "enabled": true,
+      "steps": [
+        {
+          "name": "Move to Sample 1 X",
+          "action": "move_x",
+          "enabled": true,
+          "position": 0
+        },
+        {
+          "name": "Lower Electrode",
+          "action": "move_z",
+          "enabled": true,
+          "position": 50000
+        },
+        {
+          "name": "Rotate RDE Arm",
+          "action": "rotation",
+          "enabled": true,
+          "command": "1"
+        },
+        {
+          "name": "Set Rotation Speed",
+          "action": "set_rpm",
+          "enabled": true,
+          "rpm": 1600
+        },
+        {
+          "name": "Stabilize",
+          "action": "wait",
+          "enabled": true,
+          "duration_s": 10
+        },
+        {
+          "name": "Run EChem",
+          "action": "echem",
+          "enabled": true,
+          "protocol": "ocp_only"
+        },
+        {
+          "name": "Stop RDE",
+          "action": "stop_rpm",
+          "enabled": true
+        },
+        {
+          "name": "Raise Electrode",
+          "action": "move_z",
+          "enabled": true,
+          "position": 0
+        }
+      ]
+    }
+  ]
+}

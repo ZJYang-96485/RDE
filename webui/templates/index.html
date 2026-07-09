@@ -94,6 +94,46 @@
         margin-bottom: 12px;
       }
 
+
+      .recipe-group {
+        border: 2px solid #bdd2e3;
+        background: #f7fbfe;
+      }
+
+      .recipe-group-header,
+      .atomic-step-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .group-step-list {
+        display: grid;
+        gap: 10px;
+        margin: 12px 0;
+      }
+
+      .atomic-step {
+        border: 1px solid #cbdce8;
+        border-radius: 10px;
+        background: #ffffff;
+        padding: 12px;
+      }
+
+      .atomic-parameters {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 10px;
+        margin-top: 8px;
+      }
+
+      .atomic-parameter label {
+        display: block;
+        margin-bottom: 4px;
+      }
+
       @media (max-width: 760px) {
         .workspace-tabs {
           grid-template-columns: 1fr;
@@ -196,7 +236,7 @@
 
       <section class="panel automation-panel workspace-panel" data-workspace-panel="runplan">
         <h2>Sample Run Plan</h2>
-        <p class="hint">Add samples or physical positions. Each sample can move to X/Y/Z, rotate the RDE arm, set RPM, stabilize, run a selected EChem protocol, and optionally rinse afterward.</p>
+        <p class="hint">Build named groups such as Sample 1. Inside each group, add atomic steps that control only one function: X position, Z position, rotation, RPM, wait, EChem measurement, rinse, or home.</p>
 
         <label for="gamryModeSelect">Gamry Backend</label>
         <div class="inline-control-row">
@@ -217,10 +257,13 @@
         <label for="automationRepetitions">Repetitions</label>
         <input id="automationRepetitions" type="number" min="1" max="100" value="1" />
 
-        <div id="recipeSteps"></div>
+        <label class="check-label"><input id="homeBeforeRun" type="checkbox" checked /> <span>Home axes before Step 1</span></label>
+        <label class="check-label"><input id="homeAfterRun" type="checkbox" checked /> <span>Home axes after the run</span></label>
+
+        <div id="recipeGroups"></div>
 
         <div class="cmd-buttons">
-          <button id="addStepBtn" class="home-btn" type="button">Add Sample</button>
+          <button id="addStepBtn" class="home-btn" type="button">Add Group</button>
           <button id="saveRecipeBtn" class="home-btn" type="button">Save Run Plan</button>
           <button id="loadRecipeBtn" class="home-btn" type="button">Load Run Plan</button>
           <button id="refreshRecipesBtn" class="home-btn" type="button">Refresh Run Plans</button>
@@ -284,46 +327,75 @@
 
     </div>
 
-    <template id="recipeStepTemplate">
-      <div class="automation-block recipe-step">
-        <label class="check-label"><input class="step-enabled" type="checkbox" checked /> <span class="step-title">Sample</span></label>
-
-        <label>Name</label>
-        <input class="step-name" type="text" value="Sample" />
-
-        <label>X / Horizontal position</label>
-        <input class="step-x" type="number" step="1" value="0" />
-
-        <div class="unused-y-axis" aria-hidden="true">
-          <label>Y / Vertical position</label>
-          <input class="step-vertical" type="number" step="1" value="0" />
+    <template id="recipeGroupTemplate">
+      <div class="automation-block recipe-group">
+        <div class="recipe-group-header">
+          <label class="check-label">
+            <input class="group-enabled" type="checkbox" checked />
+            <span class="group-title">Group</span>
+          </label>
+          <div class="cmd-buttons">
+            <button class="group-up home-btn" type="button">Move Group Up</button>
+            <button class="group-down home-btn" type="button">Move Group Down</button>
+            <button class="group-duplicate home-btn" type="button">Duplicate Group</button>
+            <button class="group-delete abort-btn" type="button">Delete Group</button>
+          </div>
         </div>
 
-        <label>Z / Linear position</label>
-        <input class="step-z" type="number" step="1" value="50000" />
+        <label>Group Name</label>
+        <input class="group-name" type="text" value="Sample" />
 
-        <label>RPM, use 0 for no spin</label>
-        <input class="step-rpm" type="number" min="0" max="{{ rpm_max }}" value="1000" />
+        <div class="group-step-list"></div>
 
-        <label>Stabilization Time (seconds)</label>
-        <input class="step-seconds" type="number" min="0" value="10" />
-
-        <label>Rotation command, blank for none</label>
-        <input class="step-rotation" type="text" value="" placeholder="0 or 1" />
-
-        <label>EChem Protocol</label>
-        <select class="step-protocol"></select>
-
-        <label class="check-label">
-          <input class="step-rinse" type="checkbox" />
-          <span>Rinse after this sample</span>
-        </label>
-
-        <div class="cmd-buttons">
-          <button class="step-up home-btn" type="button">Move Up</button>
-          <button class="step-down home-btn" type="button">Move Down</button>
-          <button class="step-delete abort-btn" type="button">Delete</button>
+        <div class="inline-control-row">
+          <select class="group-new-action">
+            <option value="move_x">X Position</option>
+            <option value="move_z">Z Position</option>
+            <option value="rotation">RDE Arm Rotation</option>
+            <option value="set_rpm">Set RDE RPM</option>
+            <option value="wait">Wait</option>
+            <option value="echem">EChem Measurement</option>
+            <option value="stop_rpm">Stop RDE</option>
+            <option value="rinse">Rinse Cycle</option>
+            <option value="home">Home Axes</option>
+          </select>
+          <button class="group-add-step home-btn" type="button">Add Step</button>
         </div>
+      </div>
+    </template>
+
+    <template id="atomicStepTemplate">
+      <div class="atomic-step">
+        <div class="atomic-step-header">
+          <label class="check-label">
+            <input class="atomic-enabled" type="checkbox" checked />
+            <span class="atomic-title">Step</span>
+          </label>
+          <div class="cmd-buttons">
+            <button class="atomic-up home-btn" type="button">Up</button>
+            <button class="atomic-down home-btn" type="button">Down</button>
+            <button class="atomic-duplicate home-btn" type="button">Duplicate</button>
+            <button class="atomic-delete abort-btn" type="button">Delete</button>
+          </div>
+        </div>
+
+        <label>Step Type</label>
+        <select class="atomic-action">
+          <option value="move_x">X Position</option>
+          <option value="move_z">Z Position</option>
+          <option value="rotation">RDE Arm Rotation</option>
+          <option value="set_rpm">Set RDE RPM</option>
+          <option value="wait">Wait</option>
+          <option value="echem">EChem Measurement</option>
+          <option value="stop_rpm">Stop RDE</option>
+          <option value="rinse">Rinse Cycle</option>
+          <option value="home">Home Axes</option>
+        </select>
+
+        <label>Step Name</label>
+        <input class="atomic-name" type="text" value="Step" />
+
+        <div class="atomic-parameters"></div>
       </div>
     </template>
 
@@ -370,8 +442,11 @@
       const gamryModeStatusEl = document.getElementById("gamryModeStatus");
       const recipeNameInput = document.getElementById("recipeNameInput");
       const recipeSelect = document.getElementById("recipeSelect");
-      const recipeStepsEl = document.getElementById("recipeSteps");
-      const recipeStepTemplate = document.getElementById("recipeStepTemplate");
+      const recipeGroupsEl = document.getElementById("recipeGroups");
+      const recipeGroupTemplate = document.getElementById("recipeGroupTemplate");
+      const atomicStepTemplate = document.getElementById("atomicStepTemplate");
+      const homeBeforeRunInput = document.getElementById("homeBeforeRun");
+      const homeAfterRunInput = document.getElementById("homeAfterRun");
       const automationStatusEl = document.getElementById("automationStatus");
       const automationErrorEl = document.getElementById("automationError");
       const automationRepetitionsInput = document.getElementById("automationRepetitions");
@@ -465,7 +540,7 @@
       }
 
       function setRecipeDisabled(disabled) {
-        for (const el of recipeStepsEl.querySelectorAll("input, button, select")) {
+        for (const el of recipeGroupsEl.querySelectorAll("input, button, select")) {
           el.disabled = disabled;
         }
         addStepBtn.disabled = disabled;
@@ -475,6 +550,8 @@
         deleteRecipeBtn.disabled = disabled;
         recipeNameInput.disabled = disabled;
         recipeSelect.disabled = disabled;
+        homeBeforeRunInput.disabled = disabled;
+        homeAfterRunInput.disabled = disabled;
       }
 
       function setProtocolBuilderDisabled(disabled) {
@@ -776,36 +853,29 @@
         });
       }
 
-      function clearRecipeSteps() {
-        recipeStepsEl.innerHTML = "";
+      function clearRecipeGroups() {
+        recipeGroupsEl.innerHTML = "";
       }
 
-      function fillProtocolSelect(select, selectedName = "ca_steps_backward") {
+      function fillProtocolSelect(select, selectedName = "ocp_only") {
         select.innerHTML = "";
 
         for (const protocol of availableProtocols) {
           const name = protocol.protocol_name || protocol.name;
           const label = protocol.display_name || name;
-
-          if (!name) {
-            continue;
-          }
+          if (!name) continue;
 
           const option = document.createElement("option");
           option.value = name;
           option.textContent = label;
-
-          if (name === selectedName) {
-            option.selected = true;
-          }
-
+          option.selected = name === selectedName;
           select.appendChild(option);
         }
 
         if (select.options.length === 0) {
           const option = document.createElement("option");
-          option.value = "ca_steps_backward";
-          option.textContent = "CA Steps with Backward Scan";
+          option.value = "ocp_only";
+          option.textContent = "OCP Only";
           option.selected = true;
           select.appendChild(option);
         }
@@ -823,16 +893,11 @@
         availableProtocols = Array.isArray(data.protocols) ? data.protocols : [];
 
         if (availableProtocols.length === 0) {
-          availableProtocols = [
-            {
-              protocol_name: "ca_steps_backward",
-              display_name: "CA Steps with Backward Scan"
-            }
-          ];
+          availableProtocols = [{ protocol_name: "ocp_only", display_name: "OCP Only" }];
         }
 
-        for (const select of recipeStepsEl.querySelectorAll(".step-protocol")) {
-          const current = select.value || "ca_steps_backward";
+        for (const select of recipeGroupsEl.querySelectorAll(".atomic-protocol")) {
+          const current = select.value || "ocp_only";
           fillProtocolSelect(select, current);
         }
 
@@ -843,66 +908,235 @@
         return true;
       }
 
-      function updateStepTitles() {
-        const steps = Array.from(recipeStepsEl.querySelectorAll(".recipe-step"));
+      function actionDisplayName(action) {
+        const names = {
+          move_x: "X Position",
+          move_z: "Z Position",
+          rotation: "RDE Arm Rotation",
+          set_rpm: "Set RDE RPM",
+          wait: "Wait",
+          echem: "EChem Measurement",
+          stop_rpm: "Stop RDE",
+          rinse: "Rinse Cycle",
+          home: "Home Axes",
+        };
+        return names[action] || action;
+      }
+
+      function atomicStepValues(block) {
+        const action = block.querySelector(".atomic-action").value;
+        const values = {
+          enabled: block.querySelector(".atomic-enabled").checked,
+          name: block.querySelector(".atomic-name").value,
+          action,
+        };
+
+        if (action === "move_x" || action === "move_z") {
+          values.position = Number(block.querySelector(".atomic-position").value);
+        } else if (action === "rotation") {
+          values.command = block.querySelector(".atomic-command").value;
+        } else if (action === "set_rpm") {
+          values.rpm = Number(block.querySelector(".atomic-rpm").value);
+        } else if (action === "wait") {
+          values.duration_s = Number(block.querySelector(".atomic-duration").value);
+        } else if (action === "echem") {
+          values.protocol = block.querySelector(".atomic-protocol").value;
+        }
+
+        return values;
+      }
+
+      function renderAtomicParameters(block, values = {}) {
+        const action = block.querySelector(".atomic-action").value;
+        const container = block.querySelector(".atomic-parameters");
+        container.innerHTML = "";
+
+        const addField = (labelText, input) => {
+          const wrap = document.createElement("div");
+          wrap.className = "atomic-parameter";
+          const label = document.createElement("label");
+          label.textContent = labelText;
+          wrap.appendChild(label);
+          wrap.appendChild(input);
+          container.appendChild(wrap);
+        };
+
+        if (action === "move_x" || action === "move_z") {
+          const input = document.createElement("input");
+          input.type = "number";
+          input.step = "1";
+          input.className = "atomic-position";
+          input.value = String(values.position ?? 0);
+          addField(`${action === "move_x" ? "X" : "Z"} target position (steps from Home)`, input);
+        } else if (action === "rotation") {
+          const input = document.createElement("input");
+          input.type = "text";
+          input.className = "atomic-command";
+          input.value = values.command ?? "";
+          input.placeholder = "0 or 1";
+          addField("Rotation command", input);
+        } else if (action === "set_rpm") {
+          const input = document.createElement("input");
+          input.type = "number";
+          input.min = "0";
+          input.max = "{{ rpm_max }}";
+          input.step = "1";
+          input.className = "atomic-rpm";
+          input.value = String(values.rpm ?? 1600);
+          addField("RPM, use 0 to stop", input);
+        } else if (action === "wait") {
+          const input = document.createElement("input");
+          input.type = "number";
+          input.min = "0";
+          input.step = "0.1";
+          input.className = "atomic-duration";
+          input.value = String(values.duration_s ?? 10);
+          addField("Duration (seconds)", input);
+        } else if (action === "echem") {
+          const select = document.createElement("select");
+          select.className = "atomic-protocol";
+          fillProtocolSelect(select, values.protocol ?? "ocp_only");
+          addField("EChem Protocol", select);
+        } else {
+          const note = document.createElement("p");
+          note.className = "hint";
+          note.textContent = action === "stop_rpm"
+            ? "Stops the RDE immediately."
+            : action === "rinse"
+              ? "Runs the configured rinse cycle."
+              : "Homes the motion axes and resets the position reference.";
+          container.appendChild(note);
+        }
+      }
+
+      function updateAtomicTitles(groupBlock) {
+        const steps = Array.from(groupBlock.querySelectorAll(":scope > .group-step-list > .atomic-step"));
         steps.forEach((step, index) => {
-          step.querySelector(".step-title").textContent = `Sample ${index + 1}`;
+          const action = step.querySelector(".atomic-action").value;
+          step.querySelector(".atomic-title").textContent = `Step ${index + 1}: ${actionDisplayName(action)}`;
         });
       }
 
-      function addRecipeStep(values = {}) {
-        const fragment = recipeStepTemplate.content.cloneNode(true);
-        const block = fragment.querySelector(".recipe-step");
+      function updateGroupTitles() {
+        const groups = Array.from(recipeGroupsEl.querySelectorAll(":scope > .recipe-group"));
+        groups.forEach((group, index) => {
+          const name = group.querySelector(".group-name").value.trim() || `Group ${index + 1}`;
+          group.querySelector(".group-title").textContent = `Group ${index + 1}: ${name}`;
+          updateAtomicTitles(group);
+        });
+      }
 
-        block.querySelector(".step-name").value = values.name ?? "Sample";
-        block.querySelector(".step-enabled").checked = values.enabled ?? true;
-        block.querySelector(".step-x").value = values.x ?? 0;
-        block.querySelector(".step-vertical").value = values.vertical ?? 0;
-        block.querySelector(".step-z").value = values.z ?? 50000;
-        block.querySelector(".step-rpm").value = values.rpm ?? 1000;
-        block.querySelector(".step-seconds").value = values.duration_seconds ?? 10;
-        block.querySelector(".step-rotation").value = values.rotation_command ?? "";
-        fillProtocolSelect(block.querySelector(".step-protocol"), values.protocol ?? "ca_steps_backward");
-        block.querySelector(".step-rinse").checked = Boolean(values.rinse_after ?? false);
+      function addAtomicStep(groupBlock, values = {}) {
+        const fragment = atomicStepTemplate.content.cloneNode(true);
+        const block = fragment.querySelector(".atomic-step");
+        const action = values.action ?? values.type ?? "move_x";
 
-        block.querySelector(".step-delete").addEventListener("click", () => {
-          block.remove();
-          updateStepTitles();
+        block.querySelector(".atomic-enabled").checked = values.enabled ?? true;
+        block.querySelector(".atomic-action").value = action;
+        block.querySelector(".atomic-name").value = values.name ?? actionDisplayName(action);
+        renderAtomicParameters(block, values);
+
+        block.querySelector(".atomic-action").addEventListener("change", () => {
+          const newAction = block.querySelector(".atomic-action").value;
+          block.querySelector(".atomic-name").value = actionDisplayName(newAction);
+          renderAtomicParameters(block, {});
+          updateAtomicTitles(groupBlock);
         });
 
-        block.querySelector(".step-up").addEventListener("click", () => {
+        block.querySelector(".atomic-name").addEventListener("input", () => updateAtomicTitles(groupBlock));
+
+        block.querySelector(".atomic-delete").addEventListener("click", () => {
+          block.remove();
+          updateAtomicTitles(groupBlock);
+        });
+
+        block.querySelector(".atomic-up").addEventListener("click", () => {
           const previous = block.previousElementSibling;
           if (previous) {
-            recipeStepsEl.insertBefore(block, previous);
-            updateStepTitles();
+            block.parentElement.insertBefore(block, previous);
+            updateAtomicTitles(groupBlock);
           }
         });
 
-        block.querySelector(".step-down").addEventListener("click", () => {
+        block.querySelector(".atomic-down").addEventListener("click", () => {
           const next = block.nextElementSibling;
           if (next) {
-            recipeStepsEl.insertBefore(next, block);
-            updateStepTitles();
+            block.parentElement.insertBefore(next, block);
+            updateAtomicTitles(groupBlock);
           }
         });
 
-        recipeStepsEl.appendChild(fragment);
-        updateStepTitles();
+        block.querySelector(".atomic-duplicate").addEventListener("click", () => {
+          addAtomicStep(groupBlock, atomicStepValues(block));
+        });
+
+        groupBlock.querySelector(".group-step-list").appendChild(fragment);
+        updateAtomicTitles(groupBlock);
       }
 
-      function getRecipeStepsPayload() {
-        return Array.from(recipeStepsEl.querySelectorAll(".recipe-step")).map((step) => ({
-          enabled: step.querySelector(".step-enabled").checked,
-          name: step.querySelector(".step-name").value,
-          x: Number(step.querySelector(".step-x").value),
-          vertical: Number(step.querySelector(".step-vertical").value),
-          z: Number(step.querySelector(".step-z").value),
-          rpm: Number(step.querySelector(".step-rpm").value),
-          duration_seconds: Number(step.querySelector(".step-seconds").value),
-          rotation_command: step.querySelector(".step-rotation").value,
-          protocol: step.querySelector(".step-protocol").value,
-          rinse_after: step.querySelector(".step-rinse").checked,
-        }));
+      function groupValues(groupBlock) {
+        return {
+          group_id: groupBlock.dataset.groupId || "",
+          label: groupBlock.querySelector(".group-name").value,
+          enabled: groupBlock.querySelector(".group-enabled").checked,
+          steps: Array.from(groupBlock.querySelectorAll(":scope > .group-step-list > .atomic-step")).map(atomicStepValues),
+        };
+      }
+
+      function addRecipeGroup(values = {}) {
+        const fragment = recipeGroupTemplate.content.cloneNode(true);
+        const block = fragment.querySelector(".recipe-group");
+        block.dataset.groupId = values.group_id ?? "";
+        block.querySelector(".group-enabled").checked = values.enabled ?? true;
+        block.querySelector(".group-name").value = values.label ?? values.name ?? `Sample ${recipeGroupsEl.children.length + 1}`;
+
+        for (const step of Array.isArray(values.steps) ? values.steps : []) {
+          addAtomicStep(block, step);
+        }
+
+        block.querySelector(".group-name").addEventListener("input", updateGroupTitles);
+        block.querySelector(".group-add-step").addEventListener("click", () => {
+          addAtomicStep(block, { action: block.querySelector(".group-new-action").value });
+        });
+
+        block.querySelector(".group-delete").addEventListener("click", () => {
+          block.remove();
+          updateGroupTitles();
+        });
+
+        block.querySelector(".group-up").addEventListener("click", () => {
+          const previous = block.previousElementSibling;
+          if (previous) {
+            recipeGroupsEl.insertBefore(block, previous);
+            updateGroupTitles();
+          }
+        });
+
+        block.querySelector(".group-down").addEventListener("click", () => {
+          const next = block.nextElementSibling;
+          if (next) {
+            recipeGroupsEl.insertBefore(next, block);
+            updateGroupTitles();
+          }
+        });
+
+        block.querySelector(".group-duplicate").addEventListener("click", () => {
+          const copy = groupValues(block);
+          copy.group_id = "";
+          copy.label = `${copy.label} Copy`;
+          addRecipeGroup(copy);
+        });
+
+        recipeGroupsEl.appendChild(fragment);
+        updateGroupTitles();
+      }
+
+      function getRecipeGroupsPayload() {
+        return Array.from(recipeGroupsEl.querySelectorAll(":scope > .recipe-group")).map((group, index) => {
+          const values = groupValues(group);
+          values.group_id = values.group_id || `group_${String(index + 1).padStart(3, "0")}`;
+          return values;
+        });
       }
 
       function selectedRecipeName() {
@@ -928,7 +1162,7 @@
         for (const recipe of recipes) {
           const option = document.createElement("option");
           option.value = recipe.name;
-          option.textContent = `${recipe.name} (${recipe.step_count} sample${recipe.step_count === 1 ? "" : "s"})`;
+          option.textContent = `${recipe.name} (${recipe.group_count ?? 0} group(s), ${recipe.step_count ?? 0} step(s))`;
           if (recipe.name === currentName) {
             option.selected = true;
             selectedFound = true;
@@ -955,7 +1189,7 @@
 
       async function saveRecipe() {
         setAutomationError("");
-        automationStatusEl.textContent = "Saving run plan...";
+        automationStatusEl.textContent = "Saving grouped run plan...";
 
         const recipeName = selectedRecipeName();
         const res = await fetch("/api/recipe", {
@@ -964,26 +1198,28 @@
           body: JSON.stringify({
             name: recipeName,
             repetitions: Number(automationRepetitionsInput.value),
-            steps: getRecipeStepsPayload(),
+            home_before_run: homeBeforeRunInput.checked,
+            home_after_run: homeAfterRunInput.checked,
+            groups: getRecipeGroupsPayload(),
           }),
         });
         const data = await res.json();
 
         if (!res.ok) {
-          setAutomationError(data.error || "Unable to save run plan.");
+          setAutomationError(data.error || "Unable to save grouped run plan.");
           automationStatusEl.textContent = "Run plan save failed.";
           return false;
         }
 
         recipeNameInput.value = data.name || recipeName;
         await refreshRecipeList(recipeNameInput.value);
-        automationStatusEl.textContent = `Run plan '${recipeNameInput.value}' saved: ${data.count} sample(s), ${data.repetitions} repetition(s).`;
+        automationStatusEl.textContent = `Run plan '${recipeNameInput.value}' saved: ${data.group_count} group(s), ${data.step_count} atomic step(s).`;
         return true;
       }
 
       async function loadRecipe() {
         setAutomationError("");
-        automationStatusEl.textContent = "Loading run plan...";
+        automationStatusEl.textContent = "Loading grouped run plan...";
 
         const recipeName = selectedRecipeName();
         const res = await fetch(`/api/recipe?name=${encodeURIComponent(recipeName)}`);
@@ -997,25 +1233,21 @@
 
         recipeNameInput.value = data.name || recipeName;
         automationRepetitionsInput.value = String(data.repetitions || 1);
-        clearRecipeSteps();
+        homeBeforeRunInput.checked = data.home_before_run !== false;
+        homeAfterRunInput.checked = data.home_after_run !== false;
+        clearRecipeGroups();
 
-        const steps = Array.isArray(data.steps) ? data.steps : [];
-        for (const step of steps) {
-          addRecipeStep(step);
+        const groups = Array.isArray(data.groups) ? data.groups : [];
+        for (const group of groups) {
+          addRecipeGroup(group);
         }
 
-        if (recipeStepsEl.children.length === 0) {
-          addRecipeStep({
-            name: "Sample 1",
-            rpm: 0,
-            duration_seconds: 0,
-            z: 0,
-            protocol: "ca_steps_backward",
-            rinse_after: false
-          });
+        if (recipeGroupsEl.children.length === 0) {
+          addRecipeGroup({ label: "Sample 1", steps: [] });
         }
 
-        automationStatusEl.textContent = `Loaded run plan '${recipeNameInput.value}': ${recipeStepsEl.children.length} sample(s).`;
+        const stepCount = getRecipeGroupsPayload().reduce((sum, group) => sum + group.steps.length, 0);
+        automationStatusEl.textContent = `Loaded '${recipeNameInput.value}': ${recipeGroupsEl.children.length} group(s), ${stepCount} atomic step(s).`;
         return true;
       }
 
@@ -1023,9 +1255,7 @@
         setAutomationError("");
         const recipeName = selectedRecipeName();
 
-        if (!confirm(`Delete run plan '${recipeName}'?`)) {
-          return false;
-        }
+        if (!confirm(`Delete run plan '${recipeName}'?`)) return false;
 
         automationStatusEl.textContent = "Deleting run plan...";
         const res = await fetch(`/api/recipe?name=${encodeURIComponent(recipeName)}`, { method: "DELETE" });
@@ -1046,26 +1276,29 @@
 
       async function startAutomation() {
         setAutomationError("");
-        automationStatusEl.textContent = "Starting automation...";
+        automationStatusEl.textContent = "Starting grouped automation...";
 
         const res = await fetch("/api/automation/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            steps: getRecipeStepsPayload(),
+            name: selectedRecipeName(),
             repetitions: Number(automationRepetitionsInput.value),
+            home_before_run: homeBeforeRunInput.checked,
+            home_after_run: homeAfterRunInput.checked,
+            groups: getRecipeGroupsPayload(),
           }),
         });
         const data = await res.json();
 
         if (!res.ok) {
-          setAutomationError(data.error || "Unable to start automation.");
+          setAutomationError(data.error || "Unable to start grouped automation.");
           automationStatusEl.textContent = "Idle";
           return false;
         }
 
-        const selected = data.selected_samples || data.selected_steps || [];
-        automationStatusEl.textContent = `Started samples: ${selected.join(", ")} | Repetitions: ${data.repetitions}`;
+        const selected = data.selected_groups || data.selected_steps || [];
+        automationStatusEl.textContent = `Started groups: ${selected.join(", ")} | Repetitions: ${data.repetitions}`;
         await fetchStatus();
         return true;
       }
@@ -1690,14 +1923,7 @@
       });
 
       addStepBtn.addEventListener("click", () => {
-        addRecipeStep({
-          name: `Sample ${recipeStepsEl.children.length + 1}`,
-          rpm: 0,
-          duration_seconds: 0,
-          z: 0,
-          protocol: "ca_steps_backward",
-          rinse_after: false
-        });
+        addRecipeGroup({ label: `Sample ${recipeGroupsEl.children.length + 1}`, steps: [] });
       });
 
       saveRecipeBtn.addEventListener("click", async () => {
@@ -1877,14 +2103,19 @@
         .then(() => loadRecipe())
         .catch((err) => {
           setAutomationError(err.message);
-          clearRecipeSteps();
+          clearRecipeGroups();
           recipeNameInput.value = "default";
-          addRecipeStep({ name: "Sample 1", x: 0, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10, protocol: "ca_steps_backward", rinse_after: true });
-          addRecipeStep({ name: "Sample 2", x: 80000, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10, protocol: "ca_steps_backward", rinse_after: true });
-          addRecipeStep({ name: "Sample 3", x: 160000, vertical: 0, z: 50000, rpm: 1000, duration_seconds: 10, protocol: "ca_steps_backward", rinse_after: true });
-          addRecipeStep({ name: "DI Water", x: 120000, vertical: 60000, z: 50000, rpm: 0, duration_seconds: 5, protocol: "ca_steps_backward", rinse_after: false });
-          addRecipeStep({ name: "Blank Electrode", x: 180000, vertical: 60000, z: 50000, rpm: 1000, duration_seconds: 10, protocol: "ca_steps_backward", rinse_after: true });
-          addRecipeStep({ name: "Empty Rotation", x: 240000, vertical: 60000, z: 0, rpm: 0, duration_seconds: 0, rotation_command: "1", protocol: "ca_steps_backward", rinse_after: false });
+          addRecipeGroup({
+            label: "Sample 1",
+            steps: [
+              { action: "move_x", name: "Move X", position: 0 },
+              { action: "move_z", name: "Move Z", position: 50000 },
+              { action: "set_rpm", name: "Set RDE RPM", rpm: 1600 },
+              { action: "wait", name: "Stabilization Wait", duration_s: 10 },
+              { action: "echem", name: "EChem Measurement", protocol: "ocp_only" },
+              { action: "stop_rpm", name: "Stop RDE" }
+            ]
+          });
         });
 
       setInterval(() => {

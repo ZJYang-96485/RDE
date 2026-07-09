@@ -9,6 +9,7 @@ from typing import Any
 from flask import Flask, jsonify, render_template, request
 
 from hardware.motion_controller import (
+    emergency_stop_motion,
     move_horizontal_steps,
     move_linear_steps,
     move_vertical_steps,
@@ -569,23 +570,39 @@ def run_plan_delete():
 
 
 def sample_to_atomic_group(sample: dict[str, Any], index: int) -> dict[str, Any]:
-    """Migrate an older all-in-one sample block into atomic grouped steps."""
+    """
+    Convert an older all-in-one sample block for UI display.
+
+    Legacy X/Z values were absolute targets, while the grouped builder now uses
+    signed relative steps. Non-zero legacy positions are therefore imported as
+    disabled review steps instead of being executed silently with new meaning.
+    """
     position = sample.get("position", {})
     label = str(sample.get("label") or sample.get("sample_id") or f"Sample {index}")
-    steps: list[dict[str, Any]] = [
-        {
-            "name": "Move X",
-            "action": "move_x",
-            "enabled": True,
-            "position": int(position.get("x", 0)),
-        },
-        {
-            "name": "Move Z",
-            "action": "move_z",
-            "enabled": True,
-            "position": int(position.get("z", 0)),
-        },
-    ]
+    steps: list[dict[str, Any]] = []
+
+    legacy_x = int(position.get("x", 0))
+    legacy_z = int(position.get("z", 0))
+
+    if legacy_x != 0:
+        steps.append(
+            {
+                "name": "REVIEW legacy X absolute target",
+                "action": "move_x",
+                "enabled": False,
+                "steps": legacy_x,
+            }
+        )
+
+    if legacy_z != 0:
+        steps.append(
+            {
+                "name": "REVIEW legacy Z absolute target",
+                "action": "move_z",
+                "enabled": False,
+                "steps": legacy_z,
+            }
+        )
 
     rotation_command = str(sample.get("rotation_command", "") or "").strip()
     if rotation_command:
@@ -808,6 +825,14 @@ def automation_start():
     except Exception as exc:
         return json_error(str(exc), 400)
 
+    # Always send the physical stop RPM before starting the run thread.
+    # This prevents a stale/manual RPM command from carrying into the first
+    # X/Z movement after an app restart or a previous interrupted run.
+    try:
+        stop_rde(None)
+    except Exception as exc:
+        return json_error(f"Unable to confirm RDE stop before automation: {exc}", 500)
+
     try:
         run_plan_payload_background(run_plan)
     except RecipeRunnerError as exc:
@@ -838,8 +863,11 @@ def automation_abort_route():
     # Set the shared abort flag first so wait/motion loops can exit.
     abort_automation()
 
-    # Do not wait for the background recipe thread to reach its exception
-    # handler before stopping the rotator. Send the stop RPM immediately.
+    # Send STOP directly to every open axis serial connection. This bypasses
+    # the normal transaction lock held by the thread waiting for an axis ACK.
+    motion_stop_result = emergency_stop_motion()
+
+    # Stop RDE immediately instead of waiting for recipe-runner cleanup.
     rde_stop_error = None
     try:
         stop_rde("Immediate automation abort requested.")
@@ -849,9 +877,10 @@ def automation_abort_route():
     payload = {
         "ok": True,
         "message": (
-            "Abort requested. RDE stop was sent immediately; "
-            "the current step is being cancelled and axes will remain in place."
+            "Emergency abort sent: RDE stop and X/Z STOP commands were issued "
+            "immediately. Axes remain in place."
         ),
+        "motion_stop_sent": motion_stop_result,
     }
 
     if rde_stop_error:

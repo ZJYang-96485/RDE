@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+import re
 import threading
+from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 
 from hardware.rotation_controller import rotation_home
-from hardware.serial_base import SerialDevice
-from workflow.config_loader import get_baud_rate, get_safe_z, get_serial_port, load_config, user_axis_to_internal_axis
-from workflow.safety import axis_ack_timeout_seconds, validate_axis_move, validate_xyz_position
+from hardware.serial_base import SerialAbortError, SerialDevice
+from workflow.config_loader import (
+    get_baud_rate,
+    get_safe_z,
+    get_serial_port,
+    load_config,
+    user_axis_to_internal_axis,
+)
+from workflow.safety import (
+    axis_ack_timeout_seconds,
+    validate_axis_move,
+    validate_xyz_position,
+)
 from workflow.state import (
     AutomationAbortRequested,
     add_axis_delta,
@@ -18,6 +30,23 @@ from workflow.state import (
 
 class MotionControllerError(RuntimeError):
     pass
+
+
+_STOP_ACK_PATTERN = re.compile(
+    r"^ACK\s+STOP\s+(?P<executed>\d+)(?:/(?P<requested>\d+))?",
+    re.IGNORECASE,
+)
+
+
+def _executed_steps_from_stop_ack(response: str | None) -> int | None:
+    if not response:
+        return None
+
+    match = _STOP_ACK_PATTERN.match(str(response).strip())
+    if not match:
+        return None
+
+    return int(match.group("executed"))
 
 
 class MotionController:
@@ -55,8 +84,20 @@ class MotionController:
     def device_for_axis(self, internal_axis: str) -> SerialDevice:
         if internal_axis not in self.devices:
             raise MotionControllerError(f"unknown motion axis: {internal_axis}")
-
         return self.devices[internal_axis]
+
+    def emergency_stop_all(self) -> dict[str, bool]:
+        """
+        Send STOP immediately to every already-open axis controller.
+
+        The call deliberately does not wait for the normal device transaction
+        lock, because the motion thread may currently hold that lock while it
+        waits for the movement ACK.
+        """
+        return {
+            axis: device.send_emergency_line_if_open("STOP")
+            for axis, device in self.devices.items()
+        }
 
     def move_axis_steps(
         self,
@@ -74,6 +115,11 @@ class MotionController:
         if abort_event is None:
             abort_event = get_abort_event()
 
+        if abort_event.is_set():
+            raise AutomationAbortRequested(
+                f"Abort requested before {internal_axis} movement command."
+            )
+
         timeout_s = axis_ack_timeout_seconds(steps)
         device = self.device_for_axis(internal_axis)
 
@@ -83,13 +129,34 @@ class MotionController:
                 timeout_s=timeout_s,
                 abort_event=abort_event,
             )
+        except SerialAbortError as exc:
+            executed = _executed_steps_from_stop_ack(exc.response)
+
+            if executed is not None and executed > 0:
+                signed_executed = executed if steps > 0 else -executed
+                add_axis_delta(internal_axis, signed_executed)
+
+            raise AutomationAbortRequested(
+                f"Abort requested during {internal_axis} movement. "
+                f"Controller response: {exc.response or 'no stop ACK'}"
+            ) from exc
         except Exception as exc:
             if abort_event is not None and abort_event.is_set():
-                raise AutomationAbortRequested("Abort requested during axis movement.") from exc
+                raise AutomationAbortRequested(
+                    "Abort requested during axis movement."
+                ) from exc
 
-            raise MotionControllerError(f"Unable to move {internal_axis} by {steps} steps: {exc}") from exc
+            raise MotionControllerError(
+                f"Unable to move {internal_axis} by {steps} steps: {exc}"
+            ) from exc
 
         add_axis_delta(internal_axis, steps)
+
+        if abort_event is not None and abort_event.is_set():
+            raise AutomationAbortRequested(
+                f"Abort requested immediately after {internal_axis} movement."
+            )
+
         return ack
 
     def move_user_axis_steps(
@@ -127,11 +194,127 @@ class MotionController:
     ) -> str | None:
         return self.move_axis_steps("vertical", steps, abort_event=abort_event)
 
-    def move_to_safe_z(self, abort_event: threading.Event | None = None) -> str | None:
+    def move_xz_steps_parallel(
+        self,
+        x_steps: int,
+        z_steps: int,
+        abort_event: threading.Event | None = None,
+    ) -> dict[str, str | None]:
+        """
+        Move X and Z concurrently using their independent serial controllers.
+
+        Both commands are signed relative steps, matching Motor Control.
+        If either axis fails or abort is requested, STOP is sent to both axes.
+        """
+        x_steps = int(x_steps)
+        z_steps = int(z_steps)
+
+        if x_steps == 0 and z_steps == 0:
+            raise MotionControllerError(
+                "parallel X/Z move requires at least one non-zero step value."
+            )
+
+        if abort_event is None:
+            abort_event = get_abort_event()
+
+        if abort_event.is_set():
+            raise AutomationAbortRequested(
+                "Abort requested before concurrent X/Z movement."
+            )
+
+        if x_steps != 0:
+            validate_axis_move("horizontal", x_steps)
+        if z_steps != 0:
+            validate_axis_move("linear", z_steps)
+
+        # If only one axis is requested, use the normal path.
+        if x_steps == 0:
+            return {
+                "x_ack": None,
+                "z_ack": self.move_linear_steps(
+                    z_steps,
+                    abort_event=abort_event,
+                ),
+            }
+
+        if z_steps == 0:
+            return {
+                "x_ack": self.move_horizontal_steps(
+                    x_steps,
+                    abort_event=abort_event,
+                ),
+                "z_ack": None,
+            }
+
+        # A barrier makes the two worker threads issue their commands at
+        # effectively the same time after both are ready.
+        start_barrier = threading.Barrier(3)
+
+        def move_x() -> str | None:
+            start_barrier.wait()
+            return self.move_horizontal_steps(
+                x_steps,
+                abort_event=abort_event,
+            )
+
+        def move_z() -> str | None:
+            start_barrier.wait()
+            return self.move_linear_steps(
+                z_steps,
+                abort_event=abort_event,
+            )
+
+        with ThreadPoolExecutor(
+            max_workers=2,
+            thread_name_prefix="xz-motion",
+        ) as executor:
+            futures = {
+                "x": executor.submit(move_x),
+                "z": executor.submit(move_z),
+            }
+
+            # Release both workers together.
+            start_barrier.wait()
+
+            done, pending = wait(
+                futures.values(),
+                return_when=FIRST_EXCEPTION,
+            )
+
+            first_error = None
+            for future in done:
+                try:
+                    future.result()
+                except Exception as exc:
+                    first_error = exc
+                    break
+
+            if first_error is not None:
+                # Stop both physical axes immediately. Setting the shared
+                # event also makes the other wait loop send STOP itself.
+                abort_event.set()
+                self.emergency_stop_all()
+
+                # Drain the remaining future so the executor can exit cleanly.
+                wait(futures.values())
+
+                raise first_error
+
+            # No early failure: wait for both ACKs.
+            wait(futures.values())
+
+            return {
+                "x_ack": futures["x"].result(),
+                "z_ack": futures["z"].result(),
+            }
+
+    def move_to_safe_z(
+        self,
+        abort_event: threading.Event | None = None,
+    ) -> str | None:
         safe_z = get_safe_z()
         current_z = get_axis_position("linear")
         delta = int(safe_z) - int(current_z)
-
         return self.move_linear_steps(delta, abort_event=abort_event)
 
     def move_to_xyz(
@@ -153,24 +336,34 @@ class MotionController:
             "linear_ack": None,
         }
 
-        result["safe_z_ack"] = self.move_to_safe_z(abort_event=abort_event)
+        result["safe_z_ack"] = self.move_to_safe_z(
+            abort_event=abort_event
+        )
 
         positions = get_axis_positions()
-
         x_delta = int(x) - int(positions["horizontal"])
         y_delta = int(y) - int(positions["vertical"])
 
         if x_delta != 0:
-            result["horizontal_ack"] = self.move_horizontal_steps(x_delta, abort_event=abort_event)
+            result["horizontal_ack"] = self.move_horizontal_steps(
+                x_delta,
+                abort_event=abort_event,
+            )
 
         if y_delta != 0:
-            result["vertical_ack"] = self.move_vertical_steps(y_delta, abort_event=abort_event)
+            result["vertical_ack"] = self.move_vertical_steps(
+                y_delta,
+                abort_event=abort_event,
+            )
 
         current_z = get_axis_position("linear")
         z_delta = int(z) - int(current_z)
 
         if z_delta != 0:
-            result["linear_ack"] = self.move_linear_steps(z_delta, abort_event=abort_event)
+            result["linear_ack"] = self.move_linear_steps(
+                z_delta,
+                abort_event=abort_event,
+            )
 
         return result
 
@@ -193,15 +386,24 @@ class MotionController:
         rotation_ack = None
 
         if linear_command != 0:
-            linear_ack = self.move_linear_steps(linear_command, abort_event=abort_event)
+            linear_ack = self.move_linear_steps(
+                linear_command,
+                abort_event=abort_event,
+            )
 
         rotation_ack = rotation_home()
 
         if horizontal_command != 0:
-            horizontal_ack = self.move_horizontal_steps(horizontal_command, abort_event=abort_event)
+            horizontal_ack = self.move_horizontal_steps(
+                horizontal_command,
+                abort_event=abort_event,
+            )
 
         if vertical_command != 0:
-            vertical_ack = self.move_vertical_steps(vertical_command, abort_event=abort_event)
+            vertical_ack = self.move_vertical_steps(
+                vertical_command,
+                abort_event=abort_event,
+            )
 
         reset_axis_positions()
 
@@ -233,25 +435,50 @@ def get_motion_controller() -> MotionController:
     return _default_motion_controller
 
 
+def emergency_stop_motion() -> dict[str, bool]:
+    return get_motion_controller().emergency_stop_all()
+
+
 def move_linear_steps(
     steps: int,
     abort_event: threading.Event | None = None,
 ) -> str | None:
-    return get_motion_controller().move_linear_steps(steps, abort_event=abort_event)
+    return get_motion_controller().move_linear_steps(
+        steps,
+        abort_event=abort_event,
+    )
 
 
 def move_horizontal_steps(
     steps: int,
     abort_event: threading.Event | None = None,
 ) -> str | None:
-    return get_motion_controller().move_horizontal_steps(steps, abort_event=abort_event)
+    return get_motion_controller().move_horizontal_steps(
+        steps,
+        abort_event=abort_event,
+    )
 
 
 def move_vertical_steps(
     steps: int,
     abort_event: threading.Event | None = None,
 ) -> str | None:
-    return get_motion_controller().move_vertical_steps(steps, abort_event=abort_event)
+    return get_motion_controller().move_vertical_steps(
+        steps,
+        abort_event=abort_event,
+    )
+
+
+def move_xz_steps_parallel(
+    x_steps: int,
+    z_steps: int,
+    abort_event: threading.Event | None = None,
+) -> dict[str, str | None]:
+    return get_motion_controller().move_xz_steps_parallel(
+        x_steps=x_steps,
+        z_steps=z_steps,
+        abort_event=abort_event,
+    )
 
 
 def move_to_xyz(
@@ -271,4 +498,6 @@ def move_to_xyz(
 def home_axes_internal(
     abort_event: threading.Event | None = None,
 ) -> dict[str, int | str | None]:
-    return get_motion_controller().home_axes(abort_event=abort_event)
+    return get_motion_controller().home_axes(
+        abort_event=abort_event,
+    )

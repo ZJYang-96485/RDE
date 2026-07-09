@@ -7,16 +7,19 @@ from pathlib import Path
 from typing import Any
 
 from workflow.config_loader import get_path, load_config
+from workflow.safety import validate_axis_command, validate_rpm
 
 MAX_RUN_NAME_LENGTH = 80
 
 ATOMIC_ACTIONS = {
     "move_x",
     "move_z",
+    "move_xz_parallel",
     "rotation",
     "set_rpm",
     "wait",
     "echem",
+    "rpm_echem",
     "stop_rpm",
     "rinse",
 }
@@ -110,13 +113,39 @@ def validate_atomic_step(raw_step: dict[str, Any], group_label: str, index: int)
     }
 
     if action in {"move_x", "move_z"}:
-        # New schema: signed relative steps, matching Motor Control exactly.
-        # Legacy grouped files that used "position" are accepted as a one-time
-        # compatibility fallback, but are interpreted as relative steps.
+        # Signed relative steps, matching Motor Control exactly.
         raw_steps = raw_step.get("steps", raw_step.get("position", 0))
         step["steps"] = parse_int(raw_steps, f"{group_label}/{name}: steps")
         if step["steps"] == 0:
             raise RunPlanError(f"{group_label}/{name}: steps cannot be 0.")
+
+        try:
+            validate_axis_command(step["steps"])
+        except Exception as exc:
+            raise RunPlanError(f"{group_label}/{name}: {exc}") from exc
+
+    elif action == "move_xz_parallel":
+        step["x_steps"] = parse_int(
+            raw_step.get("x_steps", 0),
+            f"{group_label}/{name}: x_steps",
+        )
+        step["z_steps"] = parse_int(
+            raw_step.get("z_steps", 0),
+            f"{group_label}/{name}: z_steps",
+        )
+
+        if step["x_steps"] == 0 and step["z_steps"] == 0:
+            raise RunPlanError(
+                f"{group_label}/{name}: x_steps and z_steps cannot both be 0."
+            )
+
+        try:
+            if step["x_steps"] != 0:
+                validate_axis_command(step["x_steps"])
+            if step["z_steps"] != 0:
+                validate_axis_command(step["z_steps"])
+        except Exception as exc:
+            raise RunPlanError(f"{group_label}/{name}: {exc}") from exc
 
     elif action == "rotation":
         command = optional_string(raw_step.get("command"))
@@ -128,6 +157,13 @@ def validate_atomic_step(raw_step: dict[str, Any], group_label: str, index: int)
         rpm = parse_int(raw_step.get("rpm", 0), f"{group_label}/{name}: rpm")
         if rpm < 0:
             raise RunPlanError(f"{group_label}/{name}: rpm cannot be negative.")
+
+        if rpm > 0:
+            try:
+                validate_rpm(rpm)
+            except Exception as exc:
+                raise RunPlanError(f"{group_label}/{name}: {exc}") from exc
+
         step["rpm"] = rpm
 
     elif action == "wait":
@@ -141,6 +177,28 @@ def validate_atomic_step(raw_step: dict[str, Any], group_label: str, index: int)
         if not protocol:
             raise RunPlanError(f"{group_label}/{name}: protocol cannot be empty.")
         step["protocol"] = protocol
+
+    elif action == "rpm_echem":
+        rpm = parse_int(raw_step.get("rpm", 1600), f"{group_label}/{name}: rpm")
+        if rpm <= 0:
+            raise RunPlanError(f"{group_label}/{name}: rpm must be > 0.")
+
+        try:
+            validate_rpm(rpm)
+        except Exception as exc:
+            raise RunPlanError(f"{group_label}/{name}: {exc}") from exc
+
+        protocol = optional_string(raw_step.get("protocol"))
+        if not protocol:
+            raise RunPlanError(f"{group_label}/{name}: protocol cannot be empty.")
+
+        step["rpm"] = rpm
+        step["protocol"] = protocol
+        step["rpm_settle_s"] = parse_nonnegative_float(
+            raw_step.get("rpm_settle_s", 0),
+            f"{group_label}/{name}: rpm_settle_s",
+        )
+        step["stop_rpm_after"] = bool(raw_step.get("stop_rpm_after", True))
 
     return step
 

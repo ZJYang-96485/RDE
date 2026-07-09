@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from hardware.gamry_client import run_gamry_step
-from hardware.motion_controller import move_horizontal_steps, move_linear_steps, move_to_xyz
+from hardware.motion_controller import move_horizontal_steps, move_linear_steps, move_to_xyz, move_xz_steps_parallel
 from hardware.rde_controller import send_rpm, stop_rde
 from hardware.rinse_controller import run_rinse_cycle
 from hardware.rotation_controller import send_rotation_text
@@ -138,6 +138,38 @@ def run_rinse_after_sample(run_dir: Path, label: str) -> None:
     append_log(run_dir, f"{label}: rinse started.")
     rinse_result = run_rinse_cycle()
     append_log(run_dir, f"{label}: rinse finished: {rinse_result}.")
+
+
+def run_group_echem_action(
+    *,
+    run_dir: Path,
+    group_dir: Path,
+    group_index: int,
+    step_index: int,
+    label: str,
+    step_name: str,
+    protocol_name: str,
+    synthetic_sample: dict[str, Any],
+) -> None:
+    protocol = load_protocol(protocol_name)
+    append_log(run_dir, f"{label}: loaded EChem protocol {protocol_name}.")
+
+    echem_dir = group_dir / f"{step_index:03d}_{safe_name(protocol_name, 'protocol')}"
+    echem_dir.mkdir(parents=True, exist_ok=True)
+
+    echem_sample = dict(synthetic_sample)
+    echem_sample["sample_id"] = (
+        f"{synthetic_sample['sample_id']}_step_{step_index:03d}"
+    )
+    echem_sample["label"] = f"{label} / {step_name}"
+
+    run_protocol_for_sample(
+        run_dir=run_dir,
+        sample_dir=echem_dir,
+        sample_index=group_index,
+        sample=echem_sample,
+        protocol=protocol,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -275,6 +307,35 @@ def run_group(
                     f"{label}: Z relative move={steps}, tracked Z={position_state['z']}, ack={ack}.",
                 )
 
+            elif action == "move_xz_parallel":
+                x_steps = int(step["x_steps"])
+                z_steps = int(step["z_steps"])
+
+                check_abort(
+                    "Abort requested before concurrent X/Z movement."
+                )
+
+                result = move_xz_steps_parallel(
+                    x_steps=x_steps,
+                    z_steps=z_steps,
+                    abort_event=get_abort_event(),
+                )
+
+                position_state["x"] += x_steps
+                position_state["z"] += z_steps
+
+                append_log(
+                    run_dir,
+                    (
+                        f"{label}: concurrent X/Z move completed. "
+                        f"X={x_steps}, Z={z_steps}, "
+                        f"tracked X={position_state['x']}, "
+                        f"tracked Z={position_state['z']}, "
+                        f"x_ack={result['x_ack']}, "
+                        f"z_ack={result['z_ack']}."
+                    ),
+                )
+
             elif action == "rotation":
                 ack = send_rotation_text(str(step["command"]))
                 append_log(run_dir, f"{label}: rotation ack={ack}.")
@@ -296,24 +357,59 @@ def run_group(
                 sleep_interruptible(duration_s, "Abort requested during grouped wait.")
 
             elif action == "echem":
-                protocol_name = str(step["protocol"])
-                protocol = load_protocol(protocol_name)
-                append_log(run_dir, f"{label}: loaded EChem protocol {protocol_name}.")
-
-                echem_dir = group_dir / f"{step_index:03d}_{safe_name(protocol_name, 'protocol')}"
-                echem_dir.mkdir(parents=True, exist_ok=True)
-
-                echem_sample = dict(synthetic_sample)
-                echem_sample["sample_id"] = f"{synthetic_sample['sample_id']}_step_{step_index:03d}"
-                echem_sample["label"] = f"{label} / {step_name}"
-
-                run_protocol_for_sample(
+                run_group_echem_action(
                     run_dir=run_dir,
-                    sample_dir=echem_dir,
-                    sample_index=group_index,
-                    sample=echem_sample,
-                    protocol=protocol,
+                    group_dir=group_dir,
+                    group_index=group_index,
+                    step_index=step_index,
+                    label=label,
+                    step_name=step_name,
+                    protocol_name=str(step["protocol"]),
+                    synthetic_sample=synthetic_sample,
                 )
+
+            elif action == "rpm_echem":
+                rpm = int(step["rpm"])
+                protocol_name = str(step["protocol"])
+                rpm_settle_s = float(step.get("rpm_settle_s", 0))
+                stop_after = bool(step.get("stop_rpm_after", True))
+
+                # This action is reached only after every earlier atomic step
+                # has finished. Therefore, when it follows Move Z, the RDE
+                # cannot begin spinning until the Z movement ACK is received.
+                check_abort("Abort requested before concurrent RPM + EChem.")
+                send_rpm(rpm)
+                rde_is_running = True
+                append_log(
+                    run_dir,
+                    f"{label}: concurrent RPM + EChem started at {rpm} RPM.",
+                )
+
+                try:
+                    if rpm_settle_s > 0:
+                        sleep_interruptible(
+                            rpm_settle_s,
+                            "Abort requested during RPM stabilization.",
+                        )
+
+                    run_group_echem_action(
+                        run_dir=run_dir,
+                        group_dir=group_dir,
+                        group_index=group_index,
+                        step_index=step_index,
+                        label=label,
+                        step_name=step_name,
+                        protocol_name=protocol_name,
+                        synthetic_sample=synthetic_sample,
+                    )
+                finally:
+                    if stop_after:
+                        stop_rde(None)
+                        rde_is_running = False
+                        append_log(
+                            run_dir,
+                            f"{label}: RDE stopped after concurrent RPM + EChem.",
+                        )
 
             elif action == "stop_rpm":
                 stop_rde(None)
@@ -437,6 +533,7 @@ def run_plan_payload(run_plan: dict[str, Any]) -> dict[str, Any]:
         except Exception as stop_exc:
             append_log(run_dir, f"RDE stop after failure failed: {stop_exc}.")
 
+        clear_abort()
         mark_run_failed(run_dir, str(exc))
         fail_automation(str(exc), "Automation failed")
         raise
@@ -447,10 +544,10 @@ def run_saved_plan(name: str) -> dict[str, Any]:
 
 
 def run_plan_payload_background(run_plan: dict[str, Any]) -> threading.Thread:
-    clear_abort()
-
     if not reserve_automation():
         raise RecipeRunnerError("automation is already running.")
+
+    clear_abort()
 
     def target() -> None:
         try:

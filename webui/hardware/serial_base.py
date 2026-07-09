@@ -14,6 +14,14 @@ class SerialConnectionError(RuntimeError):
     pass
 
 
+class SerialAbortError(SerialConnectionError):
+    """Raised after an active serial operation receives an abort request."""
+
+    def __init__(self, message: str, response: str | None = None) -> None:
+        super().__init__(message)
+        self.response = response
+
+
 class MockSerialConnection:
     def __init__(self, name: str, port: str) -> None:
         self.name = name
@@ -32,7 +40,13 @@ class MockSerialConnection:
 
     def write(self, payload: bytes) -> int:
         text = payload.decode("ascii", errors="replace").strip()
-        self.responses.append(f"ACK MOCK {self.name} {text}\n".encode("utf-8"))
+
+        if text.upper() in {"STOP", "ABORT", "CANCEL"}:
+            response = f"ACK STOP MOCK {self.name}\n"
+        else:
+            response = f"ACK MOCK {self.name} {text}\n"
+
+        self.responses.append(response.encode("utf-8"))
         return len(payload)
 
     def flush(self) -> None:
@@ -41,7 +55,6 @@ class MockSerialConnection:
     def readline(self) -> bytes:
         if not self.responses:
             return b""
-
         return self.responses.pop(0)
 
 
@@ -62,11 +75,24 @@ class SerialDevice:
         self.write_timeout_s = float(write_timeout_s)
         self.startup_delay_s = float(startup_delay_s)
         self.conn: Any = None
+
+        # Main lock serializes normal request/response transactions.
         self.lock = threading.Lock()
+
+        # Separate write lock lets the HTTP abort route send STOP while the
+        # motion thread is blocked waiting for the Arduino ACK.
+        self.write_lock = threading.Lock()
+
+        # Prevent duplicate STOP writes from the HTTP abort route and the
+        # waiting motion thread. Duplicate STOP commands can leave a stale
+        # "ACK STOP IDLE" in the serial buffer and corrupt the next move.
+        self.stop_command_sent = threading.Event()
 
     def ensure_available(self) -> None:
         if serial is None:
-            raise SerialConnectionError("pyserial is not installed. Run: pip install -r requirements.txt")
+            raise SerialConnectionError(
+                "pyserial is not installed. Run: pip install -r requirements.txt"
+            )
 
     def mock_serial_enabled(self) -> bool:
         try:
@@ -113,24 +139,71 @@ class SerialDevice:
     def close(self) -> None:
         if self.conn and self.conn.is_open:
             self.conn.close()
-
         self.conn = None
 
     def reconnect(self) -> None:
         self.close()
         self.connect()
 
-    def write_line(self, text: str) -> None:
+    def _write_payload(self, payload: bytes) -> None:
         self.connect()
 
-        payload = f"{text}\n".encode("ascii")
-        self.conn.write(payload)
-        self.conn.flush()
+        with self.write_lock:
+            self.conn.write(payload)
+            self.conn.flush()
+
+    def write_line(self, text: str) -> None:
+        self._write_payload(f"{text}\n".encode("ascii"))
 
     def read_line(self) -> str:
         self.connect()
-
         return self.conn.readline().decode("utf-8", errors="replace").strip()
+
+    def send_emergency_line_if_open(self, text: str = "STOP") -> bool:
+        """
+        Write an emergency command without waiting for the normal transaction
+        lock. This is only used for STOP/ABORT while another thread is waiting
+        for the movement ACK.
+        """
+        if not self.is_open():
+            return False
+
+        normalized = str(text).strip().upper()
+        is_stop = normalized in {"STOP", "ABORT", "CANCEL"}
+
+        if is_stop and self.stop_command_sent.is_set():
+            return True
+
+        payload = f"{text}\n".encode("ascii")
+
+        try:
+            if is_stop:
+                self.stop_command_sent.set()
+
+            with self.write_lock:
+                self.conn.write(payload)
+                self.conn.flush()
+
+            return True
+        except Exception:
+            if is_stop:
+                self.stop_command_sent.clear()
+            return False
+
+    def discard_stale_input(self) -> None:
+        """
+        Clear delayed ACK/boot text before a new request. In particular, this
+        removes an idle STOP acknowledgement left after an emergency command.
+        """
+        self.connect()
+
+        try:
+            self.conn.reset_input_buffer()
+        except Exception:
+            while True:
+                line = self.conn.readline()
+                if not line:
+                    break
 
     def send_line(self, text: str) -> None:
         with self.lock:
@@ -140,7 +213,11 @@ class SerialDevice:
                 self.reconnect()
                 self.write_line(text)
 
-    def send_line_read_first_response(self, text: str, attempts: int = 4) -> str | None:
+    def send_line_read_first_response(
+        self,
+        text: str,
+        attempts: int = 4,
+    ) -> str | None:
         with self.lock:
             try:
                 self.write_line(text)
@@ -164,11 +241,35 @@ class SerialDevice:
         timeout_s: float,
         abort_event: threading.Event | None = None,
     ) -> str:
+        # Never issue a new motion command after the abort flag is already set.
+        if abort_event is not None and abort_event.is_set():
+            raise SerialAbortError(
+                f"{self.name}: abort was already requested before command send."
+            )
+
         with self.lock:
+            # A STOP sent while idle may have left an ACK STOP IDLE response.
+            self.discard_stale_input()
+            self.stop_command_sent.clear()
+
+            # Check again after acquiring the transaction lock and after any
+            # serial startup delay.
+            if abort_event is not None and abort_event.is_set():
+                raise SerialAbortError(
+                    f"{self.name}: abort requested before command write."
+                )
+
             try:
                 self.write_line(text)
             except Exception:
                 self.reconnect()
+                self.discard_stale_input()
+
+                if abort_event is not None and abort_event.is_set():
+                    raise SerialAbortError(
+                        f"{self.name}: abort requested before retry write."
+                    )
+
                 self.write_line(text)
 
             return self.wait_for_ack(timeout_s, abort_event=abort_event)
@@ -180,26 +281,58 @@ class SerialDevice:
     ) -> str:
         deadline = time.monotonic() + float(timeout_s)
         last_line = None
+        stop_sent = False
+        stop_deadline: float | None = None
 
         while time.monotonic() < deadline:
-            if abort_event is not None and abort_event.is_set():
-                raise SerialConnectionError(f"{self.name}: abort requested while waiting for ACK.")
+            if abort_event is not None and abort_event.is_set() and not stop_sent:
+                # The axis firmware must support STOP while moving.
+                self.send_emergency_line_if_open("STOP")
+                stop_sent = True
+                stop_deadline = time.monotonic() + 5.0
 
             line = self.read_line()
 
-            if not line:
-                continue
+            if line:
+                last_line = line
 
-            last_line = line
+                if line.startswith("ACK STOP"):
+                    self.stop_command_sent.clear()
+                    raise SerialAbortError(
+                        f"{self.name}: movement stopped after abort request.",
+                        response=line,
+                    )
 
-            if line.startswith("ACK"):
-                return line
+                if line.startswith("ACK"):
+                    if abort_event is not None and abort_event.is_set():
+                        # Movement may have completed at the same moment the
+                        # abort was requested. Propagate abort before any next
+                        # run-plan step can start.
+                        raise SerialAbortError(
+                            f"{self.name}: abort requested as movement completed.",
+                            response=line,
+                        )
+                    self.stop_command_sent.clear()
+                    return line
 
-            if line.startswith("ERR"):
-                raise SerialConnectionError(f"{self.name} reported error: {line}")
+                if line.startswith("ERR"):
+                    raise SerialConnectionError(
+                        f"{self.name} reported error: {line}"
+                    )
 
+            if stop_sent and stop_deadline is not None:
+                if time.monotonic() >= stop_deadline:
+                    self.stop_command_sent.clear()
+                    raise SerialAbortError(
+                        f"{self.name}: STOP was sent but no stop ACK was received.",
+                        response=last_line,
+                    )
+
+        self.stop_command_sent.clear()
         detail = f" Last line from board: {last_line}" if last_line else ""
-        raise SerialConnectionError(f"Timeout waiting for ACK from {self.name} on {self.port}.{detail}")
+        raise SerialConnectionError(
+            f"Timeout waiting for ACK from {self.name} on {self.port}.{detail}"
+        )
 
 
 def make_serial_device(

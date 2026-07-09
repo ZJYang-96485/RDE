@@ -5,8 +5,7 @@
       "rde": "COM6",
       "rotation": "COM3",
       "linear": "COM4",
-      "horizontal": "COM8",
-      "vertical": "COM5"
+      "horizontal": "COM8"
     },
     "hardware": {
       "mock_serial": false

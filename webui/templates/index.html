@@ -235,7 +235,7 @@
 
       <section class="panel automation-panel workspace-panel" data-workspace-panel="runplan">
         <h2>Sample Run Plan</h2>
-        <p class="hint">Build named groups such as Sample 1. Inside each group, add atomic steps that control only one function: X movement, Z movement, rotation, RPM, wait, EChem measurement, or rinse. Automatic homing is disabled during physical calibration.</p>
+        <p class="hint">Build named groups such as Sample 1. Inside each group, add atomic steps for X, Z, simultaneous X + Z, rotation, RPM, wait, EChem, or rinse. Use Concurrent RPM + EChem when both must operate together. Automatic homing is disabled during physical calibration.</p>
 
         <label for="gamryModeSelect">Gamry Backend</label>
         <div class="inline-control-row">
@@ -268,8 +268,9 @@
           <button id="deleteRecipeBtn" class="abort-btn" type="button">Delete Run Plan</button>
           <button id="startExperimentBtn" class="home-btn" type="button">Start Experiment</button>
         </div>
-        <button id="abortHomeBtn" class="abort-btn" type="button">Emergency Abort — Stop RDE and Cancel Current Step</button>
+        <button id="abortHomeBtn" class="abort-btn" type="button">Emergency Abort — Stop RDE and X/Z Now</button>
         <p id="automationStatus" class="hint">Idle</p>
+        <p class="hint">Emergency Abort stops RDE and interruptible X/Z motion immediately. An active ToolkitPy measurement may still need its current acquisition call to return.</p>
         <p id="automationError" class="error" hidden></p>
       </section>
 
@@ -349,10 +350,12 @@
           <select class="group-new-action">
             <option value="move_x">Move X — Relative Steps</option>
             <option value="move_z">Move Z — Relative Steps</option>
+            <option value="move_xz_parallel">Move X + Z Together</option>
             <option value="rotation">RDE Arm Rotation</option>
             <option value="set_rpm">Set RDE RPM</option>
             <option value="wait">Wait</option>
             <option value="echem">EChem Measurement</option>
+            <option value="rpm_echem">Concurrent RPM + EChem</option>
             <option value="stop_rpm">Stop RDE</option>
             <option value="rinse">Rinse Cycle</option>
           </select>
@@ -380,10 +383,12 @@
         <select class="atomic-action">
           <option value="move_x">Move X — Relative Steps</option>
           <option value="move_z">Move Z — Relative Steps</option>
+          <option value="move_xz_parallel">Move X + Z Together</option>
           <option value="rotation">RDE Arm Rotation</option>
           <option value="set_rpm">Set RDE RPM</option>
           <option value="wait">Wait</option>
           <option value="echem">EChem Measurement</option>
+          <option value="rpm_echem">Concurrent RPM + EChem</option>
           <option value="stop_rpm">Stop RDE</option>
           <option value="rinse">Rinse Cycle</option>
         </select>
@@ -876,10 +881,12 @@
         const names = {
           move_x: "Move X — Relative Steps",
           move_z: "Move Z — Relative Steps",
+          move_xz_parallel: "Move X + Z Together",
           rotation: "RDE Arm Rotation",
           set_rpm: "Set RDE RPM",
           wait: "Wait",
           echem: "EChem Measurement",
+          rpm_echem: "Concurrent RPM + EChem",
           stop_rpm: "Stop RDE",
           rinse: "Rinse Cycle",
         };
@@ -896,6 +903,13 @@
 
         if (action === "move_x" || action === "move_z") {
           values.steps = Number(block.querySelector(".atomic-steps").value);
+        } else if (action === "move_xz_parallel") {
+          values.x_steps = Number(
+            block.querySelector(".atomic-x-steps").value
+          );
+          values.z_steps = Number(
+            block.querySelector(".atomic-z-steps").value
+          );
         } else if (action === "rotation") {
           values.command = block.querySelector(".atomic-command").value;
         } else if (action === "set_rpm") {
@@ -904,6 +918,14 @@
           values.duration_s = Number(block.querySelector(".atomic-duration").value);
         } else if (action === "echem") {
           values.protocol = block.querySelector(".atomic-protocol").value;
+        } else if (action === "rpm_echem") {
+          values.rpm = Number(block.querySelector(".atomic-rpm").value);
+          values.protocol = block.querySelector(".atomic-protocol").value;
+          values.rpm_settle_s = Number(
+            block.querySelector(".atomic-rpm-settle").value
+          );
+          values.stop_rpm_after =
+            block.querySelector(".atomic-stop-rpm-after").checked;
         }
 
         return values;
@@ -941,6 +963,34 @@
             "This sends the exact same signed step command as Motor Control. " +
             "Example: +1000 and -1000 move in the same directions as the manual buttons.";
           container.appendChild(note);
+        } else if (action === "move_xz_parallel") {
+          const xInput = document.createElement("input");
+          xInput.type = "number";
+          xInput.step = "1";
+          xInput.className = "atomic-x-steps";
+          xInput.value = String(values.x_steps ?? 1000);
+          addField("X signed relative steps", xInput);
+
+          const zInput = document.createElement("input");
+          zInput.type = "number";
+          zInput.step = "1";
+          zInput.className = "atomic-z-steps";
+          zInput.value = String(values.z_steps ?? 1000);
+          addField("Z signed relative steps", zInput);
+
+          const note = document.createElement("p");
+          note.className = "hint";
+          note.textContent =
+            "X and Z commands are issued together to their independent " +
+            "controllers. Emergency Abort sends STOP to both axes.";
+          container.appendChild(note);
+
+          const warning = document.createElement("p");
+          warning.className = "error";
+          warning.textContent =
+            "Use only when the diagonal X/Z path is physically clear. " +
+            "This skips the safer one-axis-at-a-time sequence.";
+          container.appendChild(warning);
         } else if (action === "rotation") {
           const input = document.createElement("input");
           input.type = "text";
@@ -970,6 +1020,50 @@
           select.className = "atomic-protocol";
           fillProtocolSelect(select, values.protocol ?? "ocp_only");
           addField("EChem Protocol", select);
+        } else if (action === "rpm_echem") {
+          const rpmInput = document.createElement("input");
+          rpmInput.type = "number";
+          rpmInput.min = "{{ rpm_min }}";
+          rpmInput.max = "{{ rpm_max }}";
+          rpmInput.step = "1";
+          rpmInput.className = "atomic-rpm";
+          rpmInput.value = String(values.rpm ?? 1600);
+          addField("RPM", rpmInput);
+
+          const protocolSelect = document.createElement("select");
+          protocolSelect.className = "atomic-protocol";
+          fillProtocolSelect(
+            protocolSelect,
+            values.protocol ?? "ocp_only"
+          );
+          addField("EChem Protocol", protocolSelect);
+
+          const settleInput = document.createElement("input");
+          settleInput.type = "number";
+          settleInput.min = "0";
+          settleInput.step = "0.1";
+          settleInput.className = "atomic-rpm-settle";
+          settleInput.value = String(values.rpm_settle_s ?? 0);
+          addField("RPM stabilization before EChem (seconds)", settleInput);
+
+          const stopWrap = document.createElement("label");
+          stopWrap.className = "check-label";
+          const stopInput = document.createElement("input");
+          stopInput.type = "checkbox";
+          stopInput.className = "atomic-stop-rpm-after";
+          stopInput.checked = values.stop_rpm_after ?? true;
+          const stopText = document.createElement("span");
+          stopText.textContent = "Stop RDE after EChem finishes";
+          stopWrap.appendChild(stopInput);
+          stopWrap.appendChild(stopText);
+          container.appendChild(stopWrap);
+
+          const note = document.createElement("p");
+          note.className = "hint";
+          note.textContent =
+            "Place this after the Move Z step. The app waits for the Z ACK, " +
+            "then starts RPM and runs EChem while the RDE keeps spinning.";
+          container.appendChild(note);
         } else {
           const note = document.createElement("p");
           note.className = "hint";
@@ -1004,6 +1098,15 @@
 
         block.querySelector(".atomic-enabled").checked = values.enabled ?? true;
         block.querySelector(".atomic-action").value = action;
+
+        if (String(values.name || "").startsWith("REVIEW legacy")) {
+          const warning = document.createElement("p");
+          warning.className = "error";
+          warning.textContent =
+            "Legacy positions were absolute targets. This step is disabled; " +
+            "replace it with the correct signed relative movement before use.";
+          block.insertBefore(warning, block.querySelector(".atomic-parameters"));
+        }
         block.querySelector(".atomic-name").value = values.name ?? actionDisplayName(action);
         renderAtomicParameters(block, values);
 

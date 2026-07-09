@@ -19,7 +19,6 @@ ATOMIC_ACTIONS = {
     "echem",
     "stop_rpm",
     "rinse",
-    "home",
 }
 
 
@@ -190,8 +189,6 @@ def validate_grouped_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "display_name": display_name,
         "description": description,
         "repetitions": repetitions,
-        "home_before_run": bool(payload.get("home_before_run", True)),
-        "home_after_run": bool(payload.get("home_after_run", True)),
         "groups": groups,
         "saved_at": payload.get("saved_at"),
     }
@@ -349,8 +346,6 @@ def default_run_plan_payload() -> dict[str, Any]:
         "display_name": "Default",
         "description": "Blank grouped run plan.",
         "repetitions": 1,
-        "home_before_run": True,
-        "home_after_run": True,
         "groups": [
             {
                 "group_id": "group_001",

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from hardware.gamry_client import run_gamry_step
-from hardware.motion_controller import home_axes_internal, move_to_xyz
+from hardware.motion_controller import move_to_xyz
 from hardware.rde_controller import send_rpm, stop_rde
 from hardware.rinse_controller import run_rinse_cycle
 from hardware.rotation_controller import send_rotation_text
@@ -317,12 +317,6 @@ def run_group(
             elif action == "rinse":
                 run_rinse_after_sample(run_dir, label)
 
-            elif action == "home":
-                home_axes_internal(abort_event=get_abort_event())
-                position_state["x"] = 0
-                position_state["z"] = 0
-                append_log(run_dir, f"{label}: axes homed.")
-
             else:
                 raise RecipeRunnerError(f"Unsupported grouped action: {action}")
 
@@ -349,12 +343,11 @@ def execute_plan_body(run_plan: dict[str, Any], run_dir: Path) -> None:
             raise RecipeRunnerError("run plan has no enabled groups.")
 
         append_log(run_dir, f"Grouped automation started. Repetitions={repetitions}, enabled groups={len(groups)}.")
+        append_log(
+            run_dir,
+            "Automatic homing is disabled. X/Z positions use the current software tracking origin.",
+        )
         position_state = {"x": 0, "z": 0}
-
-        if bool(run_plan.get("home_before_run", True)):
-            set_automation_state(step="Home before grouped run")
-            home_axes_internal(abort_event=get_abort_event())
-            append_log(run_dir, "Axes homed before grouped run.")
 
         for repetition in range(1, repetitions + 1):
             append_log(run_dir, f"Starting repetition {repetition}/{repetitions}.")
@@ -368,11 +361,6 @@ def execute_plan_body(run_plan: dict[str, Any], run_dir: Path) -> None:
                     repetitions=repetitions,
                     position_state=position_state,
                 )
-
-        if bool(run_plan.get("home_after_run", True)):
-            set_automation_state(step="Moving to home")
-            append_log(run_dir, "Grouped automation finished. Moving to home.")
-            home_axes_internal(abort_event=get_abort_event())
 
     else:
         samples = [sample for sample in run_plan["samples"] if bool(sample.get("enabled", True))]
@@ -393,9 +381,10 @@ def execute_plan_body(run_plan: dict[str, Any], run_dir: Path) -> None:
                     repetitions=repetitions,
                 )
 
-        set_automation_state(step="Moving to home")
-        append_log(run_dir, "Automation finished. Moving to home.")
-        home_axes_internal(abort_event=get_abort_event())
+        append_log(
+            run_dir,
+            "Automation finished. Automatic homing is disabled; axes remain at their final tracked positions.",
+        )
 
 
 def run_plan_payload(run_plan: dict[str, Any]) -> dict[str, Any]:
@@ -420,24 +409,19 @@ def run_plan_payload(run_plan: dict[str, Any]) -> dict[str, Any]:
         except Exception as exc:
             append_log(run_dir, f"RDE stop during abort failed: {exc}.")
 
-        try:
-            clear_abort()
-            set_automation_state(step="Abort cleanup: moving home")
-            home_axes_internal(abort_event=get_abort_event())
-            mark_run_aborted(run_dir)
-            finish_automation("Automation aborted and homed")
-            append_log(run_dir, "Automation aborted and homed.")
-        except Exception as exc:
-            mark_run_failed(run_dir, str(exc))
-            fail_automation(str(exc), "Automation abort cleanup failed")
-            append_log(run_dir, f"Automation abort cleanup failed: {exc}.")
-            raise RecipeRunnerError(f"Abort cleanup failed: {exc}") from exc
+        clear_abort()
+        mark_run_aborted(run_dir)
+        finish_automation("Automation aborted; axes left in place")
+        append_log(
+            run_dir,
+            "Automation aborted. RDE stopped; automatic homing is disabled and axes were left in place.",
+        )
 
         return {
             "ok": False,
             "aborted": True,
             "run_dir": str(run_dir),
-            "message": "Automation aborted and homed.",
+            "message": "Automation aborted. RDE stopped; axes left in place.",
         }
 
     except Exception as exc:

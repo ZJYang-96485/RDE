@@ -221,8 +221,7 @@
         <p id="verticalStatus" class="hint"></p>
         </div>
 
-        <button id="axesHomeBtn" class="home-btn">Home Axes</button>
-        <p id="axesHomeStatus" class="hint"></p>
+        <p class="hint">Axis homing is disabled while the physical home position is being calibrated.</p>
 
         <div class="status-wrap">
           <p id="status" class="status">Idle</p>
@@ -236,7 +235,7 @@
 
       <section class="panel automation-panel workspace-panel" data-workspace-panel="runplan">
         <h2>Sample Run Plan</h2>
-        <p class="hint">Build named groups such as Sample 1. Inside each group, add atomic steps that control only one function: X position, Z position, rotation, RPM, wait, EChem measurement, rinse, or home.</p>
+        <p class="hint">Build named groups such as Sample 1. Inside each group, add atomic steps that control only one function: X movement, Z movement, rotation, RPM, wait, EChem measurement, or rinse. Automatic homing is disabled during physical calibration.</p>
 
         <label for="gamryModeSelect">Gamry Backend</label>
         <div class="inline-control-row">
@@ -257,8 +256,7 @@
         <label for="automationRepetitions">Repetitions</label>
         <input id="automationRepetitions" type="number" min="1" max="100" value="1" />
 
-        <label class="check-label"><input id="homeBeforeRun" type="checkbox" checked /> <span>Home axes before Step 1</span></label>
-        <label class="check-label"><input id="homeAfterRun" type="checkbox" checked /> <span>Home axes after the run</span></label>
+        <p class="hint">No home command will run before, after, or during abort. X/Z tracking starts from the current software position when the app starts.</p>
 
         <div id="recipeGroups"></div>
 
@@ -270,7 +268,7 @@
           <button id="deleteRecipeBtn" class="abort-btn" type="button">Delete Run Plan</button>
           <button id="startExperimentBtn" class="home-btn" type="button">Start Experiment</button>
         </div>
-        <button id="abortHomeBtn" class="abort-btn" type="button">Abort Then Go Home</button>
+        <button id="abortHomeBtn" class="abort-btn" type="button">Abort and Stop — Keep Axes in Place</button>
         <p id="automationStatus" class="hint">Idle</p>
         <p id="automationError" class="error" hidden></p>
       </section>
@@ -357,7 +355,6 @@
             <option value="echem">EChem Measurement</option>
             <option value="stop_rpm">Stop RDE</option>
             <option value="rinse">Rinse Cycle</option>
-            <option value="home">Home Axes</option>
           </select>
           <button class="group-add-step home-btn" type="button">Add Step</button>
         </div>
@@ -389,7 +386,6 @@
           <option value="echem">EChem Measurement</option>
           <option value="stop_rpm">Stop RDE</option>
           <option value="rinse">Rinse Cycle</option>
-          <option value="home">Home Axes</option>
         </select>
 
         <label>Step Name</label>
@@ -428,8 +424,6 @@
       const verticalUpBtn = document.getElementById("verticalUpBtn");
       const verticalDownBtn = document.getElementById("verticalDownBtn");
       const verticalStatusEl = document.getElementById("verticalStatus");
-      const axesHomeBtn = document.getElementById("axesHomeBtn");
-      const axesHomeStatusEl = document.getElementById("axesHomeStatus");
       const startExperimentBtn = document.getElementById("startExperimentBtn");
       const abortHomeBtn = document.getElementById("abortHomeBtn");
       const addStepBtn = document.getElementById("addStepBtn");
@@ -445,8 +439,6 @@
       const recipeGroupsEl = document.getElementById("recipeGroups");
       const recipeGroupTemplate = document.getElementById("recipeGroupTemplate");
       const atomicStepTemplate = document.getElementById("atomicStepTemplate");
-      const homeBeforeRunInput = document.getElementById("homeBeforeRun");
-      const homeAfterRunInput = document.getElementById("homeAfterRun");
       const automationStatusEl = document.getElementById("automationStatus");
       const automationErrorEl = document.getElementById("automationError");
       const automationRepetitionsInput = document.getElementById("automationRepetitions");
@@ -550,8 +542,6 @@
         deleteRecipeBtn.disabled = disabled;
         recipeNameInput.disabled = disabled;
         recipeSelect.disabled = disabled;
-        homeBeforeRunInput.disabled = disabled;
-        homeAfterRunInput.disabled = disabled;
       }
 
       function setProtocolBuilderDisabled(disabled) {
@@ -659,7 +649,6 @@
           horizontalRightBtn.disabled = automationRunning;
           verticalUpBtn.disabled = automationRunning;
           verticalDownBtn.disabled = automationRunning;
-          axesHomeBtn.disabled = automationRunning;
           rpmInput.disabled = automationRunning;
           secondsInput.disabled = automationRunning;
           linearStepsSlider.disabled = automationRunning;
@@ -779,31 +768,6 @@
         return true;
       }
 
-      async function homeAxes() {
-        setError("");
-        axesHomeStatusEl.textContent = "";
-
-        const res = await fetch("/api/axes/home", { method: "POST" });
-        const data = await res.json();
-
-        if (!res.ok) {
-          setError(data.error || "Unable to home axes.");
-          return false;
-        }
-
-        axesHomeStatusEl.textContent =
-          `Homed sequence: Linear ${data.linear_command} (${data.linear_com_port}) -> ` +
-          `Rotation ${data.rotation_command} (${data.rotation_com_port}) -> ` +
-          `X ${data.horizontal_command} (${data.horizontal_com_port})`;
-        if (data.rotation_ack) {
-          axesHomeStatusEl.textContent += ` | Rotation board: ${data.rotation_ack}`;
-        }
-        linearStatusEl.textContent = `At home position (${data.linear_com_port})`;
-        horizontalStatusEl.textContent = `At home position (${data.horizontal_com_port})`;
-        verticalStatusEl.textContent = `Unused Y axis remains at zero (${data.vertical_com_port})`;
-        await fetchStatus();
-        return true;
-      }
 
       function sliderToSteps(raw) {
         const t = Number(raw) / 1000;
@@ -918,7 +882,6 @@
           echem: "EChem Measurement",
           stop_rpm: "Stop RDE",
           rinse: "Rinse Cycle",
-          home: "Home Axes",
         };
         return names[action] || action;
       }
@@ -967,7 +930,7 @@
           input.step = "1";
           input.className = "atomic-position";
           input.value = String(values.position ?? 0);
-          addField(`${action === "move_x" ? "X" : "Z"} target position (steps from Home)`, input);
+          addField(`${action === "move_x" ? "X" : "Z"} target position (steps from current software origin)`, input);
         } else if (action === "rotation") {
           const input = document.createElement("input");
           input.type = "text";
@@ -1002,9 +965,7 @@
           note.className = "hint";
           note.textContent = action === "stop_rpm"
             ? "Stops the RDE immediately."
-            : action === "rinse"
-              ? "Runs the configured rinse cycle."
-              : "Homes the motion axes and resets the position reference.";
+            : "Runs the configured rinse cycle.";
           container.appendChild(note);
         }
       }
@@ -1198,8 +1159,6 @@
           body: JSON.stringify({
             name: recipeName,
             repetitions: Number(automationRepetitionsInput.value),
-            home_before_run: homeBeforeRunInput.checked,
-            home_after_run: homeAfterRunInput.checked,
             groups: getRecipeGroupsPayload(),
           }),
         });
@@ -1233,8 +1192,6 @@
 
         recipeNameInput.value = data.name || recipeName;
         automationRepetitionsInput.value = String(data.repetitions || 1);
-        homeBeforeRunInput.checked = data.home_before_run !== false;
-        homeAfterRunInput.checked = data.home_after_run !== false;
         clearRecipeGroups();
 
         const groups = Array.isArray(data.groups) ? data.groups : [];
@@ -1284,8 +1241,6 @@
           body: JSON.stringify({
             name: selectedRecipeName(),
             repetitions: Number(automationRepetitionsInput.value),
-            home_before_run: homeBeforeRunInput.checked,
-            home_after_run: homeAfterRunInput.checked,
             groups: getRecipeGroupsPayload(),
           }),
         });
@@ -1303,9 +1258,9 @@
         return true;
       }
 
-      async function abortAutomationAndHome() {
+      async function abortAutomationAndStop() {
         setAutomationError("");
-        const res = await fetch("/api/automation/abort-home", { method: "POST" });
+        const res = await fetch("/api/automation/abort", { method: "POST" });
         const data = await res.json();
 
         if (!res.ok) {
@@ -1911,16 +1866,6 @@
         }
       });
 
-      axesHomeBtn.addEventListener("click", async () => {
-        axesHomeBtn.disabled = true;
-        try {
-          await homeAxes();
-        } catch (err) {
-          setError(err.message);
-        } finally {
-          axesHomeBtn.disabled = false;
-        }
-      });
 
       addStepBtn.addEventListener("click", () => {
         addRecipeGroup({ label: `Sample ${recipeGroupsEl.children.length + 1}`, steps: [] });
@@ -2021,7 +1966,7 @@
       abortHomeBtn.addEventListener("click", async () => {
         abortHomeBtn.disabled = true;
         try {
-          await abortAutomationAndHome();
+          await abortAutomationAndStop();
         } catch (err) {
           setAutomationError(err.message);
         } finally {

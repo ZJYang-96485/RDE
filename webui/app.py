@@ -9,7 +9,6 @@ from typing import Any
 from flask import Flask, jsonify, render_template, request
 
 from hardware.motion_controller import (
-    home_axes_internal,
     move_horizontal_steps,
     move_linear_steps,
     move_vertical_steps,
@@ -388,30 +387,9 @@ def vertical_send():
 
 @app.post("/api/axes/home")
 def axes_home():
-    if automation_is_running():
-        return json_error("automation is running; home is disabled.", 409)
-
-    try:
-        result = home_axes_internal()
-    except Exception as exc:
-        return json_error(f"Unable to return axes to home position: {exc}", 500)
-
-    return jsonify(
-        {
-            "ok": True,
-            "linear_command": result["linear_command"],
-            "horizontal_command": result["horizontal_command"],
-            "vertical_command": result["vertical_command"],
-            "linear_position": 0,
-            "horizontal_position": 0,
-            "vertical_position": 0,
-            "linear_com_port": get_serial_port("linear"),
-            "rotation_com_port": get_serial_port("rotation"),
-            "horizontal_com_port": get_serial_port("horizontal"),
-            "vertical_com_port": get_serial_port("vertical"),
-            "rotation_command": result["rotation_command"],
-            "rotation_ack": result["rotation_ack"],
-        }
+    return json_error(
+        "Axis homing is temporarily disabled while the physical home position is being calibrated.",
+        409,
     )
 
 
@@ -702,8 +680,6 @@ def grouped_payload_to_run_plan(payload: dict[str, Any]) -> dict[str, Any]:
         "display_name": str(payload.get("display_name") or name),
         "description": str(payload.get("description") or "Grouped atomic-step run plan created in the web app."),
         "repetitions": int(payload.get("repetitions", 1) or 1),
-        "home_before_run": bool(payload.get("home_before_run", True)),
-        "home_after_run": bool(payload.get("home_after_run", True)),
         "groups": groups,
     }
 
@@ -722,8 +698,6 @@ def run_plan_to_ui_payload(run_plan: dict[str, Any]) -> dict[str, Any]:
         "display_name": run_plan.get("display_name", run_plan.get("run_name", "default")),
         "description": run_plan.get("description", ""),
         "repetitions": run_plan.get("repetitions", 1),
-        "home_before_run": bool(run_plan.get("home_before_run", True)),
-        "home_after_run": bool(run_plan.get("home_after_run", True)),
         "groups": groups,
         "saved_at": run_plan.get("saved_at"),
     }
@@ -855,14 +829,20 @@ def automation_start():
     )
 
 
+@app.post("/api/automation/abort")
 @app.post("/api/automation/abort-home")
-def automation_abort_home():
+def automation_abort_route():
     if not automation_is_running():
         return json_error("automation is not running.", 409)
 
     abort_automation()
 
-    return jsonify({"ok": True, "message": "Abort requested. System will stop and go home."})
+    return jsonify(
+        {
+            "ok": True,
+            "message": "Abort requested. The RDE will stop and the axes will remain in place.",
+        }
+    )
 
 
 if __name__ == "__main__":

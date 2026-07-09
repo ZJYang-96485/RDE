@@ -4,8 +4,6 @@
   "display_name": "Grouped Sample 1 Example",
   "description": "Each step controls one hardware or EChem function.",
   "repetitions": 1,
-  "home_before_run": true,
-  "home_after_run": true,
   "groups": [
     {
       "group_id": "sample_001",

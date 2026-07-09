@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from hardware.gamry_client import run_gamry_step
-from hardware.motion_controller import move_to_xyz
+from hardware.motion_controller import move_horizontal_steps, move_linear_steps, move_to_xyz
 from hardware.rde_controller import send_rpm, stop_rde
 from hardware.rinse_controller import run_rinse_cycle
 from hardware.rotation_controller import send_rotation_text
@@ -252,21 +252,27 @@ def run_group(
             append_log(run_dir, f"{label}: starting atomic step {step_index}: {action} / {step_name}.")
 
             if action == "move_x":
-                position_state["x"] = int(step["position"])
-                move_to_xyz(
-                    x=position_state["x"],
-                    y=0,
-                    z=position_state["z"],
+                steps = int(step["steps"])
+                ack = move_horizontal_steps(
+                    steps,
                     abort_event=get_abort_event(),
+                )
+                position_state["x"] += steps
+                append_log(
+                    run_dir,
+                    f"{label}: X relative move={steps}, tracked X={position_state['x']}, ack={ack}.",
                 )
 
             elif action == "move_z":
-                position_state["z"] = int(step["position"])
-                move_to_xyz(
-                    x=position_state["x"],
-                    y=0,
-                    z=position_state["z"],
+                steps = int(step["steps"])
+                ack = move_linear_steps(
+                    steps,
                     abort_event=get_abort_event(),
+                )
+                position_state["z"] += steps
+                append_log(
+                    run_dir,
+                    f"{label}: Z relative move={steps}, tracked Z={position_state['z']}, ack={ack}.",
                 )
 
             elif action == "rotation":
@@ -345,7 +351,7 @@ def execute_plan_body(run_plan: dict[str, Any], run_dir: Path) -> None:
         append_log(run_dir, f"Grouped automation started. Repetitions={repetitions}, enabled groups={len(groups)}.")
         append_log(
             run_dir,
-            "Automatic homing is disabled. X/Z positions use the current software tracking origin.",
+            "Automatic homing is disabled. Grouped X/Z commands are signed relative steps, identical to Motor Control.",
         )
         position_state = {"x": 0, "z": 0}
 

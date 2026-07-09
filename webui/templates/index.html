@@ -256,7 +256,7 @@
         <label for="automationRepetitions">Repetitions</label>
         <input id="automationRepetitions" type="number" min="1" max="100" value="1" />
 
-        <p class="hint">No home command will run before, after, or during abort. X/Z tracking starts from the current software position when the app starts.</p>
+        <p class="hint">No home command will run before, after, or during abort. X/Z run-plan commands are signed relative steps and use the same direction convention as Motor Control.</p>
 
         <div id="recipeGroups"></div>
 
@@ -268,7 +268,7 @@
           <button id="deleteRecipeBtn" class="abort-btn" type="button">Delete Run Plan</button>
           <button id="startExperimentBtn" class="home-btn" type="button">Start Experiment</button>
         </div>
-        <button id="abortHomeBtn" class="abort-btn" type="button">Abort and Stop — Keep Axes in Place</button>
+        <button id="abortHomeBtn" class="abort-btn" type="button">Emergency Abort — Stop RDE and Cancel Current Step</button>
         <p id="automationStatus" class="hint">Idle</p>
         <p id="automationError" class="error" hidden></p>
       </section>
@@ -347,8 +347,8 @@
 
         <div class="inline-control-row">
           <select class="group-new-action">
-            <option value="move_x">X Position</option>
-            <option value="move_z">Z Position</option>
+            <option value="move_x">Move X — Relative Steps</option>
+            <option value="move_z">Move Z — Relative Steps</option>
             <option value="rotation">RDE Arm Rotation</option>
             <option value="set_rpm">Set RDE RPM</option>
             <option value="wait">Wait</option>
@@ -378,8 +378,8 @@
 
         <label>Step Type</label>
         <select class="atomic-action">
-          <option value="move_x">X Position</option>
-          <option value="move_z">Z Position</option>
+          <option value="move_x">Move X — Relative Steps</option>
+          <option value="move_z">Move Z — Relative Steps</option>
           <option value="rotation">RDE Arm Rotation</option>
           <option value="set_rpm">Set RDE RPM</option>
           <option value="wait">Wait</option>
@@ -874,8 +874,8 @@
 
       function actionDisplayName(action) {
         const names = {
-          move_x: "X Position",
-          move_z: "Z Position",
+          move_x: "Move X — Relative Steps",
+          move_z: "Move Z — Relative Steps",
           rotation: "RDE Arm Rotation",
           set_rpm: "Set RDE RPM",
           wait: "Wait",
@@ -895,7 +895,7 @@
         };
 
         if (action === "move_x" || action === "move_z") {
-          values.position = Number(block.querySelector(".atomic-position").value);
+          values.steps = Number(block.querySelector(".atomic-steps").value);
         } else if (action === "rotation") {
           values.command = block.querySelector(".atomic-command").value;
         } else if (action === "set_rpm") {
@@ -928,9 +928,19 @@
           const input = document.createElement("input");
           input.type = "number";
           input.step = "1";
-          input.className = "atomic-position";
-          input.value = String(values.position ?? 0);
-          addField(`${action === "move_x" ? "X" : "Z"} target position (steps from current software origin)`, input);
+          input.className = "atomic-steps";
+          input.value = String(values.steps ?? values.position ?? 1);
+          addField(
+            `${action === "move_x" ? "X" : "Z"} signed relative steps`,
+            input
+          );
+
+          const note = document.createElement("p");
+          note.className = "hint";
+          note.textContent =
+            "This sends the exact same signed step command as Motor Control. " +
+            "Example: +1000 and -1000 move in the same directions as the manual buttons.";
+          fields.appendChild(note);
         } else if (action === "rotation") {
           const input = document.createElement("input");
           input.type = "text";
@@ -2053,8 +2063,8 @@
           addRecipeGroup({
             label: "Sample 1",
             steps: [
-              { action: "move_x", name: "Move X", position: 0 },
-              { action: "move_z", name: "Move Z", position: 50000 },
+              { action: "move_x", name: "Move X", steps: 1000 },
+              { action: "move_z", name: "Move Z", steps: 1000 },
               { action: "set_rpm", name: "Set RDE RPM", rpm: 1600 },
               { action: "wait", name: "Stabilization Wait", duration_s: 10 },
               { action: "echem", name: "EChem Measurement", protocol: "ocp_only" },

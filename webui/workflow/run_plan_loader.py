@@ -110,7 +110,13 @@ def validate_atomic_step(raw_step: dict[str, Any], group_label: str, index: int)
     }
 
     if action in {"move_x", "move_z"}:
-        step["position"] = parse_int(raw_step.get("position", 0), f"{group_label}/{name}: position")
+        # New schema: signed relative steps, matching Motor Control exactly.
+        # Legacy grouped files that used "position" are accepted as a one-time
+        # compatibility fallback, but are interpreted as relative steps.
+        raw_steps = raw_step.get("steps", raw_step.get("position", 0))
+        step["steps"] = parse_int(raw_steps, f"{group_label}/{name}: steps")
+        if step["steps"] == 0:
+            raise RunPlanError(f"{group_label}/{name}: steps cannot be 0.")
 
     elif action == "rotation":
         command = optional_string(raw_step.get("command"))

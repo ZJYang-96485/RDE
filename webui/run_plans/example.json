@@ -14,13 +14,13 @@
           "name": "Move to Sample 1 X",
           "action": "move_x",
           "enabled": true,
-          "position": 0
+          "steps": 1000
         },
         {
           "name": "Lower Electrode",
           "action": "move_z",
           "enabled": true,
-          "position": 50000
+          "steps": 50000
         },
         {
           "name": "Rotate RDE Arm",
@@ -55,7 +55,7 @@
           "name": "Raise Electrode",
           "action": "move_z",
           "enabled": true,
-          "position": 0
+          "steps": 1000
         }
       ]
     }

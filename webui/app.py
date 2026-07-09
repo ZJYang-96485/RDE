@@ -835,14 +835,29 @@ def automation_abort_route():
     if not automation_is_running():
         return json_error("automation is not running.", 409)
 
+    # Set the shared abort flag first so wait/motion loops can exit.
     abort_automation()
 
-    return jsonify(
-        {
-            "ok": True,
-            "message": "Abort requested. The RDE will stop and the axes will remain in place.",
-        }
-    )
+    # Do not wait for the background recipe thread to reach its exception
+    # handler before stopping the rotator. Send the stop RPM immediately.
+    rde_stop_error = None
+    try:
+        stop_rde("Immediate automation abort requested.")
+    except Exception as exc:
+        rde_stop_error = str(exc)
+
+    payload = {
+        "ok": True,
+        "message": (
+            "Abort requested. RDE stop was sent immediately; "
+            "the current step is being cancelled and axes will remain in place."
+        ),
+    }
+
+    if rde_stop_error:
+        payload["rde_stop_error"] = rde_stop_error
+
+    return jsonify(payload)
 
 
 if __name__ == "__main__":

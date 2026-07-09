@@ -73,7 +73,6 @@ def validate_axis_move(internal_axis: str, steps: int) -> int:
     target_position = int(current_position) + int(steps)
 
     validate_axis_position(axis, target_position)
-
     return steps
 
 
@@ -97,7 +96,7 @@ def validate_xyz_position(x: int, y: int, z: int) -> dict[str, int]:
     return {
         "x": x,
         "y": y,
-        "z": z
+        "z": z,
     }
 
 
@@ -107,7 +106,7 @@ def user_xyz_to_internal_positions(x: int, y: int, z: int) -> dict[str, int]:
     values = {
         "x": int(x),
         "y": int(y),
-        "z": int(z)
+        "z": int(z),
     }
 
     converted = {}
@@ -120,8 +119,42 @@ def user_xyz_to_internal_positions(x: int, y: int, z: int) -> dict[str, int]:
 
 
 def axis_ack_timeout_seconds(steps: int) -> float:
-    steps = abs(int(steps))
-    return max(5.0, min(120.0, 2.0 + steps / 5000.0))
+    """
+    Estimate the longest expected movement time and add a generous margin.
+
+    This intentionally uses the slower Nano/X-axis pulse timing (2000 us base)
+    so the same timeout is safe for both X and Z controllers.
+
+    Firmware speed schedule:
+      <= 100 steps:   multiplier 1
+      <= 1000:        multiplier 2
+      <= 10000:       multiplier 5
+      > 10000:        multiplier 10
+
+    Each step has one HIGH and one LOW pulse delay, so movement time is:
+      steps * 2 * pulse_us
+    """
+    steps_abs = abs(int(steps))
+
+    if steps_abs <= 100:
+        multiplier = 1
+    elif steps_abs <= 1000:
+        multiplier = 2
+    elif steps_abs <= 10000:
+        multiplier = 5
+    else:
+        multiplier = 10
+
+    base_pulse_us = 2000
+    min_pulse_us = 50
+    pulse_us = max(min_pulse_us, int(base_pulse_us / multiplier))
+
+    estimated_motion_s = steps_abs * (2.0 * pulse_us) / 1_000_000.0
+
+    # 50% motion margin + 8 s for serial startup, scheduling, and ACK handling.
+    timeout_s = estimated_motion_s * 1.5 + 8.0
+
+    return max(10.0, min(600.0, timeout_s))
 
 
 def safe_z_delta() -> int:
@@ -146,7 +179,7 @@ def home_deltas() -> dict[str, int]:
     return {
         "linear": -int(positions["linear"]),
         "horizontal": -int(positions["horizontal"]),
-        "vertical": -int(positions["vertical"])
+        "vertical": -int(positions["vertical"]),
     }
 
 

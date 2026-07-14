@@ -4,6 +4,7 @@ import json
 import os
 import threading
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from flask import Flask, jsonify, render_template, request
@@ -20,6 +21,7 @@ from workflow.config_loader import (
     ConfigError,
     get_baud_rate,
     get_max_axis_command,
+    get_live_plot_config,
     get_motion_config,
     get_rde_limits,
     get_safe_z,
@@ -39,6 +41,7 @@ from workflow.protocol_loader import (
     validate_protocol_payload,
 )
 from workflow.recipe_runner import RecipeRunnerError, abort_automation, run_plan_payload_background
+from gamry_worker.live_writer import read_live_points, read_live_status
 from workflow.run_plan_loader import (
     RunPlanError,
     default_run_plan_payload,
@@ -53,6 +56,7 @@ from workflow.state import (
     automation_is_running,
     get_rde_state,
     get_status_payload,
+    get_automation_state,
     start_rde_run,
 )
 
@@ -98,6 +102,7 @@ def config_payload() -> dict[str, Any]:
         "axis_mapping": motion["axis_mapping"],
         "gamry_mode": gamry["mode"],
         "gamry_real_runner_configured": real_runner_configured,
+        "live_plot": get_live_plot_config(),
     }
 
 
@@ -179,6 +184,91 @@ def status():
         }
     )
     return jsonify(payload)
+
+
+def current_live_dir() -> Path | None:
+    run_dir = get_automation_state().get("run_dir")
+    if not run_dir:
+        return None
+    return Path(str(run_dir)) / "_system" / "live"
+
+
+def idle_live_status() -> dict[str, Any]:
+    return {
+        "active": False,
+        "run_id": None,
+        "sample_id": None,
+        "sample_label": None,
+        "protocol_name": None,
+        "step_name": None,
+        "technique": None,
+        "started_at": None,
+        "finished_at": None,
+        "last_update_at": None,
+        "point_count": 0,
+        "status": "idle",
+        "error": None,
+    }
+
+
+@app.get("/api/live/status")
+def live_status():
+    live_dir = current_live_dir()
+    current = read_live_status(live_dir) if live_dir is not None else None
+    payload = current or idle_live_status()
+    return jsonify({"ok": True, "active": bool(payload.get("active", False)), "status": payload})
+
+
+@app.get("/api/live/points")
+def live_points():
+    live_config = get_live_plot_config()
+
+    def query_int(name: str, default: int) -> int | tuple[Any, int]:
+        raw = request.args.get(name)
+        if raw is None or raw == "":
+            return default
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            return json_error(f"{name} must be an integer.", 400)
+        if name == "after" and value < 0:
+            return json_error("after must be >= 0.", 400)
+        if name == "limit" and value <= 0:
+            return json_error("limit must be > 0.", 400)
+        return value
+
+    after = query_int("after", 0)
+    if not isinstance(after, int):
+        return after
+    limit = query_int("limit", live_config["max_browser_points"])
+    if not isinstance(limit, int):
+        return limit
+    limit = min(limit, live_config["max_browser_points"])
+
+    live_dir = current_live_dir()
+    current = read_live_status(live_dir) if live_dir is not None else None
+    status_payload = current or idle_live_status()
+    points = read_live_points(live_dir, after=after, limit=limit) if live_dir is not None else []
+    latest_seq = int(status_payload.get("point_count", 0) or 0)
+    if points:
+        latest_seq = max(latest_seq, max(int(point.get("seq", 0)) for point in points))
+
+    return jsonify(
+        {
+            "ok": True,
+            "active": bool(status_payload.get("active", False)),
+            "status": status_payload,
+            "points": points,
+            "latest_seq": latest_seq,
+        }
+    )
+
+
+@app.post("/api/live/clear-view")
+def live_clear_view():
+    # The first frontend version clears only its in-memory canvas. Keep this
+    # endpoint intentionally non-destructive so it can never remove a DTA.
+    return jsonify({"ok": True, "message": "Browser live view can be cleared without changing stored data."})
 
 
 @app.post("/api/start")

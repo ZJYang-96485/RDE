@@ -9,19 +9,13 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from gamry_worker.real_gamry import run as run_real_gamry
-    from gamry_worker.run_ca import run as run_ca
-    from gamry_worker.run_cv import run as run_cv
-    from gamry_worker.run_eis import run as run_eis
-    from gamry_worker.run_lsv import run as run_lsv
-    from gamry_worker.run_ocp import run as run_ocp
+    from gamry_worker.live_writer import (
+        fail_live_stream,
+        finish_live_stream,
+        initialize_live_stream,
+    )
 except ModuleNotFoundError:
-    from real_gamry import run as run_real_gamry
-    from run_ca import run as run_ca
-    from run_cv import run as run_cv
-    from run_eis import run as run_eis
-    from run_lsv import run as run_lsv
-    from run_ocp import run as run_ocp
+    from live_writer import fail_live_stream, finish_live_stream, initialize_live_stream
 
 
 class GamryWorkerError(RuntimeError):
@@ -75,31 +69,19 @@ def normalize_outputs(outputs: Any) -> list[str]:
 
 
 def dispatch_mock_step(
+    job: dict[str, Any],
     step: dict[str, Any],
     outputs: list[str],
     sample_id: str | None,
 ) -> dict[str, Any]:
-    technique = str(step.get("technique", "")).strip().lower()
+    # Imported only for mock jobs so a Mac does not need ToolkitPy just to
+    # start the Flask app or run mock experiments.
+    try:
+        from gamry_worker.mock_gamry import run_job as run_mock_job
+    except ModuleNotFoundError:
+        from mock_gamry import run_job as run_mock_job
 
-    runners = {
-        "ocp": run_ocp,
-        "ca": run_ca,
-        "ca_staircase": run_ca,
-        "cv": run_cv,
-        "lsv": run_lsv,
-        "eis": run_eis,
-    }
-
-    runner = runners.get(technique)
-
-    if runner is None:
-        raise GamryWorkerError(f"unsupported Gamry technique: {technique}")
-
-    return runner(
-        step=step,
-        outputs=outputs,
-        sample_id=sample_id,
-    )
+    return run_mock_job(job)
 
 def dispatch_real_step(
     step: dict[str, Any],
@@ -107,72 +89,45 @@ def dispatch_real_step(
     sample_id: str | None = None,
     job: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    technique = str(step.get("technique", "")).strip().lower()
+    # The existing real path is an external Windows worker boundary. It keeps
+    # ToolkitPy out of the Mac process and leaves the small run_* modules
+    # available for later verified ToolkitPy adapter insertion.
+    try:
+        from gamry_worker.real_gamry import run as run_real_gamry
+    except ModuleNotFoundError:
+        from real_gamry import run as run_real_gamry
 
-    if technique == "ocp":
-        try:
-            from gamry_worker.run_ocp import run as run_ocp
-        except ModuleNotFoundError:
-            from run_ocp import run as run_ocp
-
-        return run_ocp(
-            step=step,
-            outputs=outputs,
-            sample_id=sample_id,
-        )
-
-    if technique in {"ca", "ca_staircase"}:
-        try:
-            from gamry_worker.run_ca import run as run_ca
-        except ModuleNotFoundError:
-            from run_ca import run as run_ca
-
-        return run_ca(
-            step=step,
-            outputs=outputs,
-            sample_id=sample_id,
-        )
-
-    if technique == "lsv":
-        try:
-            from gamry_worker.run_lsv import run as run_lsv
-        except ModuleNotFoundError:
-            from run_lsv import run as run_lsv
-
-        return run_lsv(
-            step=step,
-            outputs=outputs,
-            sample_id=sample_id,
-        )
-
-    if technique == "cv":
-        try:
-            from gamry_worker.run_cv import run as run_cv
-        except ModuleNotFoundError:
-            from run_cv import run as run_cv
-
-        return run_cv(
-            step=step,
-            outputs=outputs,
-            sample_id=sample_id,
-        )
-
-    if technique == "eis":
-        try:
-            from gamry_worker.run_eis import run as run_eis
-        except ModuleNotFoundError:
-            from run_eis import run as run_eis
-
-        return run_eis(
-            step=step,
-            outputs=outputs,
-            sample_id=sample_id,
-        )
-
-    raise NotImplementedError(
-        f"Real Gamry mode currently supports 'ocp', 'ca', 'ca_staircase', 'lsv', 'cv', and 'eis'. "
-        f"Requested technique: '{technique}'."
+    return run_real_gamry(
+        job=job or {},
+        step=step,
+        outputs=outputs,
+        sample_id=sample_id,
     )
+
+
+def live_enabled_for_job(job: dict[str, Any]) -> bool:
+    return bool(job.get("live_enabled", True)) and bool(str(job.get("live_dir", "")).strip())
+
+
+def live_technique(step: dict[str, Any]) -> str:
+    technique = str(step.get("technique", "")).strip().lower()
+    return "ca" if technique == "ca_staircase" else technique
+
+
+def start_live_for_job(job: dict[str, Any], step: dict[str, Any], sample_id: str | None) -> bool:
+    if not live_enabled_for_job(job):
+        return False
+
+    initialize_live_stream(
+        job["live_dir"],
+        run_id=str(job.get("run_id") or "") or None,
+        sample_id=sample_id,
+        sample_label=str(job.get("sample_label") or "") or None,
+        protocol_name=str(job.get("protocol_name") or "") or None,
+        step_name=str(step.get("name") or "") or None,
+        technique=live_technique(step),
+    )
+    return True
 
 
 def run_job(job: dict[str, Any]) -> dict[str, Any]:
@@ -187,21 +142,32 @@ def run_job(job: dict[str, Any]) -> dict[str, Any]:
     if sample_id is not None:
         sample_id = str(sample_id)
 
-    if mode == "mock":
-        result = dispatch_mock_step(
-            step=step,
-            outputs=outputs,
-            sample_id=sample_id,
-        )
-    elif mode in {"real", "toolkitpy", "gamry"}:
-        result = dispatch_real_step(
-            job=job,
-            step=step,
-            outputs=outputs,
-            sample_id=sample_id,
-        )
-    else:
-        raise GamryWorkerError(f"unsupported Gamry mode: {mode}")
+    live_started = start_live_for_job(job, step, sample_id)
+
+    try:
+        if mode == "mock":
+            result = dispatch_mock_step(
+                job=job,
+                step=step,
+                outputs=outputs,
+                sample_id=sample_id,
+            )
+        elif mode in {"real", "toolkitpy", "gamry"}:
+            result = dispatch_real_step(
+                job=job,
+                step=step,
+                outputs=outputs,
+                sample_id=sample_id,
+            )
+        else:
+            raise GamryWorkerError(f"unsupported Gamry mode: {mode}")
+    except Exception as exc:
+        if live_started:
+            fail_live_stream(job["live_dir"], str(exc))
+        raise
+
+    if live_started:
+        finish_live_stream(job["live_dir"])
 
     return {
         "ok": True,
@@ -217,6 +183,9 @@ def run_job(job: dict[str, Any]) -> dict[str, Any]:
 
 
 def error_payload(job: dict[str, Any] | None, exc: BaseException) -> dict[str, Any]:
+    if isinstance(job, dict) and live_enabled_for_job(job):
+        fail_live_stream(job["live_dir"], str(exc))
+
     return {
         "ok": False,
         "job_id": job.get("job_id") if isinstance(job, dict) else None,

@@ -94,7 +94,13 @@ _DEFAULT_CONFIG = {
         "real_timeout_s": 7200,
         "instrument_index": 0,
         "instrument_label": "",
-        "default_file_extension": ".DTA"
+        "default_file_extension": ".DTA",
+        "live_plot": {
+            "enabled": True,
+            "poll_interval_ms": 500,
+            "mock_time_scale": 0.05,
+            "max_browser_points": 5000,
+        }
     }
 }
 
@@ -339,6 +345,19 @@ def validate_gamry_config(config: dict[str, Any]) -> None:
     if real_timeout_s <= 0:
         raise ConfigError("gamry.real_timeout_s must be > 0.")
 
+    live_plot = gamry.get("live_plot", {})
+    if not isinstance(live_plot, dict):
+        raise ConfigError("gamry.live_plot must be an object.")
+
+    if float(live_plot.get("poll_interval_ms", 500)) <= 0:
+        raise ConfigError("gamry.live_plot.poll_interval_ms must be > 0.")
+
+    if float(live_plot.get("mock_time_scale", 0.05)) < 0:
+        raise ConfigError("gamry.live_plot.mock_time_scale cannot be negative.")
+
+    if int(live_plot.get("max_browser_points", 5000)) <= 0:
+        raise ConfigError("gamry.live_plot.max_browser_points must be > 0.")
+
 
 def validate_config(config: dict[str, Any]) -> None:
     validate_serial_config(config)
@@ -489,3 +508,13 @@ def get_path(name: str) -> Path:
 
 def get_gamry_config() -> dict[str, Any]:
     return load_config()["gamry"]
+
+
+def get_live_plot_config() -> dict[str, Any]:
+    live_plot = get_gamry_config().get("live_plot", {})
+    return {
+        "enabled": bool(live_plot.get("enabled", True)),
+        "poll_interval_ms": int(live_plot.get("poll_interval_ms", 500)),
+        "mock_time_scale": float(live_plot.get("mock_time_scale", 0.05)),
+        "max_browser_points": int(live_plot.get("max_browser_points", 5000)),
+    }

@@ -100,6 +100,8 @@ class GamryClient:
         outputs: list[str | Path],
         run_dir: str | Path,
         sample_id: str | None = None,
+        sample_label: str | None = None,
+        protocol_name: str | None = None,
     ) -> tuple[dict[str, Any], Path, Path]:
         if not isinstance(step, dict):
             raise GamryClientError("step must be an object.")
@@ -108,12 +110,22 @@ class GamryClient:
         jobs_dir = self.job_dir(run_dir)
         job_path = jobs_dir / f"{job_id}_job.json"
         result_path = jobs_dir / f"{job_id}_result.json"
+        run_path = Path(run_dir)
+        live_config = self.config().get("live_plot", {})
+        if not isinstance(live_config, dict):
+            live_config = {}
 
         job = {
             "job_id": job_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "mode": self.mode(),
+            "run_id": run_path.name,
+            "run_dir": str(run_path),
+            "live_dir": str(run_path / "_system" / "live"),
+            "live_enabled": bool(live_config.get("enabled", True)),
             "sample_id": sample_id,
+            "sample_label": sample_label,
+            "protocol_name": protocol_name,
             "step": step,
             "outputs": normalize_output_paths(outputs),
             "result_path": str(result_path),
@@ -128,12 +140,16 @@ class GamryClient:
         outputs: list[str | Path],
         run_dir: str | Path,
         sample_id: str | None = None,
+        sample_label: str | None = None,
+        protocol_name: str | None = None,
     ) -> dict[str, Any]:
         job, job_path, result_path = self.build_job(
             step=step,
             outputs=outputs,
             run_dir=run_dir,
             sample_id=sample_id,
+            sample_label=sample_label,
+            protocol_name=protocol_name,
         )
 
         write_json(job_path, job)
@@ -203,10 +219,14 @@ def run_gamry_step(
     outputs: list[str | Path],
     run_dir: str | Path,
     sample_id: str | None = None,
+    sample_label: str | None = None,
+    protocol_name: str | None = None,
 ) -> dict[str, Any]:
     return get_gamry_client().run_step(
         step=step,
         outputs=outputs,
         run_dir=run_dir,
         sample_id=sample_id,
+        sample_label=sample_label,
+        protocol_name=protocol_name,
     )

@@ -11,6 +11,7 @@ from hardware.motion_controller import move_horizontal_steps, move_linear_steps,
 from hardware.rde_controller import send_rpm, stop_rde
 from hardware.rinse_controller import run_rinse_cycle
 from hardware.rotation_controller import send_rotation_text
+from gamry_worker.live_writer import fail_live_stream
 from workflow.data_manager import (
     append_log,
     create_run_workspace,
@@ -130,7 +131,26 @@ def run_protocol_for_sample(
             outputs=output_record["outputs"],
             run_dir=run_dir,
             sample_id=sample.get("sample_id"),
+            sample_label=label,
+            protocol_name=str(
+                protocol.get("protocol_name")
+                or protocol.get("display_name")
+                or "protocol"
+            ),
         )
+
+        # The worker subprocess may finish its current acquisition call after
+        # the UI sends an abort. Reflect that user-visible outcome in the
+        # temporary stream before the shared abort check unwinds the plan.
+        if get_abort_event().is_set():
+            live_dir = Path(run_dir) / "_system" / "live"
+            if (live_dir / "status.json").exists():
+                fail_live_stream(
+                    live_dir,
+                    "Automation abort requested.",
+                    status="aborted",
+                )
+            check_abort("Abort requested after EChem step.")
 
         append_log(run_dir, f"{label}: finished EChem step {step_index}: {result}.")
 

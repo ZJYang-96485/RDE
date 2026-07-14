@@ -134,6 +134,49 @@
         margin-bottom: 4px;
       }
 
+      .live-gamry-panel {
+        margin-top: 18px;
+        border: 1px solid #bdd2e3;
+        border-radius: 12px;
+        padding: 14px;
+        background: #f7fbfe;
+      }
+
+      .live-gamry-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 6px 12px;
+        margin: 10px 0;
+      }
+
+      .live-gamry-meta span {
+        color: #234a68;
+        font-size: 0.92rem;
+      }
+
+      .live-gamry-canvas-wrap {
+        position: relative;
+        min-height: 300px;
+        border: 1px solid #cbdce8;
+        border-radius: 8px;
+        background: #ffffff;
+      }
+
+      #liveGamryCanvas {
+        display: block;
+        width: 100%;
+        height: 300px;
+      }
+
+      #liveGamryEmpty {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        color: #5a7182;
+        pointer-events: none;
+      }
+
       @media (max-width: 760px) {
         .workspace-tabs {
           grid-template-columns: 1fr;
@@ -272,6 +315,29 @@
         <p id="automationStatus" class="hint">Idle</p>
         <p class="hint">Emergency Abort stops RDE and interruptible X/Z motion immediately. An active ToolkitPy measurement may still need its current acquisition call to return.</p>
         <p id="automationError" class="error" hidden></p>
+
+        <section class="live-gamry-panel" aria-labelledby="liveGamryTitle">
+          <h3 id="liveGamryTitle">Live Gamry Plot</h3>
+          <p id="liveGamryMessage" class="hint">No live data exists yet.</p>
+          <div class="live-gamry-meta">
+            <span id="liveGamryStatus">Status: idle</span>
+            <span id="liveGamrySample">Sample: —</span>
+            <span id="liveGamryProtocol">Protocol: —</span>
+            <span id="liveGamryStep">EChem step: —</span>
+            <span id="liveGamryTechnique">Technique: —</span>
+            <span id="liveGamryCount">Points: 0</span>
+            <span id="liveGamryUpdated">Last update: —</span>
+          </div>
+          <div class="live-gamry-canvas-wrap">
+            <canvas id="liveGamryCanvas" aria-label="Live Gamry data plot"></canvas>
+            <div id="liveGamryEmpty">No live data exists yet.</div>
+          </div>
+          <div class="cmd-buttons">
+            <button id="livePauseBtn" class="home-btn" type="button">Pause Display</button>
+            <button id="liveClearBtn" class="home-btn" type="button">Clear View</button>
+            <button id="liveScaleBtn" class="home-btn" type="button">Auto Scale: On</button>
+          </div>
+        </section>
       </section>
 
       <section class="panel echem-builder-panel workspace-panel" data-workspace-panel="echem">
@@ -447,6 +513,19 @@
       const automationStatusEl = document.getElementById("automationStatus");
       const automationErrorEl = document.getElementById("automationError");
       const automationRepetitionsInput = document.getElementById("automationRepetitions");
+      const liveGamryMessageEl = document.getElementById("liveGamryMessage");
+      const liveGamryStatusEl = document.getElementById("liveGamryStatus");
+      const liveGamrySampleEl = document.getElementById("liveGamrySample");
+      const liveGamryProtocolEl = document.getElementById("liveGamryProtocol");
+      const liveGamryStepEl = document.getElementById("liveGamryStep");
+      const liveGamryTechniqueEl = document.getElementById("liveGamryTechnique");
+      const liveGamryCountEl = document.getElementById("liveGamryCount");
+      const liveGamryUpdatedEl = document.getElementById("liveGamryUpdated");
+      const liveGamryCanvas = document.getElementById("liveGamryCanvas");
+      const liveGamryEmptyEl = document.getElementById("liveGamryEmpty");
+      const livePauseBtn = document.getElementById("livePauseBtn");
+      const liveClearBtn = document.getElementById("liveClearBtn");
+      const liveScaleBtn = document.getElementById("liveScaleBtn");
 
       const echemSavedProtocolSelect = document.getElementById("echemSavedProtocolSelect");
       const newBlankEchemProtocolBtn = document.getElementById("newBlankEchemProtocolBtn");
@@ -500,8 +579,162 @@
       let gamryRealRunnerConfigured = false;
       let gamryModeDirty = false;
       let availableProtocols = [];
+      let liveStreamKey = "";
+      let livePoints = [];
+      let liveLatestSeq = 0;
+      let livePaused = false;
+      let liveAutoScale = true;
+      let liveMaxVisiblePoints = 5000;
+      let livePollIntervalMs = 500;
+      let livePollTimer = null;
+      let livePollBusy = false;
       const MIN_STEPS = 1;
       const MAX_STEPS = 300000;
+
+      function liveValue(point, axis, technique) {
+        if (technique === "eis") {
+          return axis === "x" ? Number(point.zreal_ohm) : -Number(point.zimag_ohm);
+        }
+        if (axis === "x") {
+          return technique === "cv" || technique === "lsv" ? Number(point.e_v) : Number(point.t_s);
+        }
+        return technique === "ocp" || technique === "cp" ? Number(point.e_v) : Number(point.i_a);
+      }
+
+      function livePlotLabels(technique) {
+        if (technique === "eis") return ["Zreal (ohm)", "-Zimag (ohm)"];
+        if (technique === "ocp") return ["Time (s)", "Potential (V)"];
+        if (technique === "ca") return ["Time (s)", "Current (A)"];
+        if (technique === "cp") return ["Time (s)", "Potential (V)"];
+        return ["Potential (V)", "Current (A)"];
+      }
+
+      function drawLivePlot(status = {}) {
+        const ctx = liveGamryCanvas.getContext("2d");
+        if (!ctx) return;
+        const rect = liveGamryCanvas.getBoundingClientRect();
+        const width = Math.max(320, rect.width || 640);
+        const height = 300;
+        const dpr = window.devicePixelRatio || 1;
+        liveGamryCanvas.width = Math.round(width * dpr);
+        liveGamryCanvas.height = Math.round(height * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+
+        const technique = String(status.technique || (livePoints[0] && livePoints[0].technique) || "").toLowerCase();
+        const valid = livePoints.filter((point) => Number.isFinite(liveValue(point, "x", technique)) && Number.isFinite(liveValue(point, "y", technique)));
+        liveGamryEmptyEl.hidden = valid.length > 0;
+        if (!valid.length) return;
+
+        const margin = { left: 58, right: 18, top: 16, bottom: 42 };
+        const plotWidth = width - margin.left - margin.right;
+        const plotHeight = height - margin.top - margin.bottom;
+        let xs = valid.map((point) => liveValue(point, "x", technique));
+        let ys = valid.map((point) => liveValue(point, "y", technique));
+        let xmin = Math.min(...xs), xmax = Math.max(...xs);
+        let ymin = Math.min(...ys), ymax = Math.max(...ys);
+        if (!liveAutoScale) {
+          xmin = Math.min(xmin, 0); xmax = Math.max(xmax, 1); ymin = Math.min(ymin, 0); ymax = Math.max(ymax, 1);
+        }
+        const xpad = (xmax - xmin || 1) * 0.08;
+        const ypad = (ymax - ymin || 1) * 0.08;
+        xmin -= xpad; xmax += xpad; ymin -= ypad; ymax += ypad;
+        const sx = (value) => margin.left + ((value - xmin) / (xmax - xmin)) * plotWidth;
+        const sy = (value) => margin.top + plotHeight - ((value - ymin) / (ymax - ymin)) * plotHeight;
+
+        ctx.strokeStyle = "#d7e4ee";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(margin.left, margin.top);
+        ctx.lineTo(margin.left, margin.top + plotHeight);
+        ctx.lineTo(margin.left + plotWidth, margin.top + plotHeight);
+        ctx.stroke();
+        ctx.fillStyle = "#234a68";
+        ctx.font = "12px sans-serif";
+        const labels = livePlotLabels(technique);
+        ctx.fillText(labels[0], margin.left + plotWidth / 2 - 30, height - 10);
+        ctx.save();
+        ctx.translate(14, margin.top + plotHeight / 2 + 25);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText(labels[1], 0, 0);
+        ctx.restore();
+
+        ctx.strokeStyle = "#2f86c1";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        valid.forEach((point, index) => {
+          const x = sx(liveValue(point, "x", technique));
+          const y = sy(liveValue(point, "y", technique));
+          if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      }
+
+      function updateLiveMeta(status) {
+        const state = String(status.status || "idle");
+        liveGamryStatusEl.textContent = `Status: ${state}`;
+        liveGamrySampleEl.textContent = `Sample: ${status.sample_label || status.sample_id || "—"}`;
+        liveGamryProtocolEl.textContent = `Protocol: ${status.protocol_name || "—"}`;
+        liveGamryStepEl.textContent = `EChem step: ${status.step_name || "—"}`;
+        liveGamryTechniqueEl.textContent = `Technique: ${status.technique || "—"}`;
+        liveGamryCountEl.textContent = `Points: ${status.point_count || livePoints.length || 0}`;
+        liveGamryUpdatedEl.textContent = `Last update: ${status.last_update_at ? new Date(status.last_update_at).toLocaleTimeString() : "—"}`;
+        if (status.error) {
+          liveGamryMessageEl.textContent = `Live acquisition error: ${status.error}`;
+        } else if (!status.run_id) {
+          liveGamryMessageEl.textContent = "No live data exists yet.";
+        } else if (!livePoints.length) {
+          liveGamryMessageEl.textContent = state === "running" ? "Waiting for live points..." : "No live points were recorded.";
+        } else {
+          liveGamryMessageEl.textContent = livePaused ? "Display paused; acquisition continues." : "Live data stream connected.";
+        }
+        drawLivePlot(status);
+      }
+
+      function scheduleLivePoll(delay) {
+        if (livePollTimer) clearTimeout(livePollTimer);
+        livePollTimer = setTimeout(pollLiveGamry, delay);
+      }
+
+      async function pollLiveGamry() {
+        if (livePollBusy) return;
+        livePollBusy = true;
+        let nextDelay = 2000;
+        try {
+          const statusResponse = await fetch("/api/live/status");
+          const statusData = await statusResponse.json();
+          const status = statusData.status || {};
+          const key = status.run_id ? [status.run_id, status.sample_id, status.step_name, status.technique, status.started_at].join("|") : "";
+          const changed = key !== liveStreamKey;
+          if (changed) {
+            liveStreamKey = key;
+            livePoints = [];
+            liveLatestSeq = 0;
+          }
+
+          updateLiveMeta(status);
+          if (!livePaused && key) {
+            const initialAfter = changed ? Math.max(0, Number(status.point_count || 0) - liveMaxVisiblePoints) : liveLatestSeq;
+            const pointsResponse = await fetch(`/api/live/points?after=${encodeURIComponent(initialAfter)}&limit=${encodeURIComponent(liveMaxVisiblePoints)}`);
+            const pointsData = await pointsResponse.json();
+            if (pointsResponse.ok && Array.isArray(pointsData.points)) {
+              const newPoints = pointsData.points;
+              livePoints = [...livePoints, ...newPoints].slice(-liveMaxVisiblePoints);
+              if (newPoints.length) {
+                liveLatestSeq = Math.max(liveLatestSeq, ...newPoints.map((point) => Number(point.seq || 0)));
+              }
+              updateLiveMeta(pointsData.status || status);
+            }
+          }
+          nextDelay = status.active ? livePollIntervalMs : 2000;
+        } catch (err) {
+          liveGamryMessageEl.textContent = `Live plot unavailable: ${err.message}`;
+          nextDelay = 2000;
+        } finally {
+          livePollBusy = false;
+          scheduleLivePoll(nextDelay);
+        }
+      }
 
       function setError(message) {
         errorEl.hidden = !message;
@@ -603,6 +836,9 @@
 
         const config = data.config || {};
         renderGamryModeStatus(config.gamry_mode, config.gamry_real_runner_configured);
+        const livePlot = config.live_plot || {};
+        livePollIntervalMs = Math.max(100, Number(livePlot.poll_interval_ms || 500));
+        liveMaxVisiblePoints = Math.max(1, Number(livePlot.max_browser_points || 5000));
         return true;
       }
 
@@ -2087,6 +2323,26 @@
         }
       });
 
+      livePauseBtn.addEventListener("click", () => {
+        livePaused = !livePaused;
+        livePauseBtn.textContent = livePaused ? "Resume Display" : "Pause Display";
+        updateLiveMeta({ status: livePaused ? "paused" : "running", run_id: liveStreamKey ? "active" : null, technique: livePoints[0]?.technique, point_count: livePoints.length });
+      });
+
+      liveClearBtn.addEventListener("click", () => {
+        livePoints = [];
+        liveLatestSeq = Number(liveGamryCountEl.textContent.match(/\d+/)?.[0] || liveLatestSeq);
+        liveGamryMessageEl.textContent = "View cleared. Final DTA files are unchanged.";
+        drawLivePlot({ technique: livePoints[0]?.technique });
+        liveGamryEmptyEl.hidden = false;
+      });
+
+      liveScaleBtn.addEventListener("click", () => {
+        liveAutoScale = !liveAutoScale;
+        liveScaleBtn.textContent = `Auto Scale: ${liveAutoScale ? "On" : "Off"}`;
+        drawLivePlot({ technique: livePoints[0]?.technique });
+      });
+
 
       newBlankEchemProtocolBtn.addEventListener("click", () => {
         newBlankEchemProtocol();
@@ -2184,6 +2440,8 @@
       }, 500);
 
       setInterval(fetchStatus, 2000);
+      scheduleLivePoll(0);
+      window.addEventListener("resize", () => drawLivePlot({ technique: livePoints[0]?.technique }));
 
       updateFromSlider(linearStepsSlider, linearStepsInput, linearStepsValue);
       updateFromSlider(horizontalStepsSlider, horizontalStepsInput, horizontalStepsValue);

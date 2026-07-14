@@ -94,6 +94,7 @@ def run_protocol_for_sample(
     sample_index: int,
     sample: dict[str, Any],
     protocol: dict[str, Any],
+    filename_prefix: str | None = None,
 ) -> None:
     label = sample_label(sample, sample_index)
     protocol_snapshot = save_protocol_snapshot(run_dir, protocol)
@@ -104,6 +105,7 @@ def run_protocol_for_sample(
         sample_dir=sample_dir,
         sample_index=sample_index,
         protocol=protocol,
+        filename_prefix=filename_prefix,
     )
     outputs_by_step = protocol_outputs_by_step(protocol_outputs)
 
@@ -154,21 +156,21 @@ def run_group_echem_action(
     protocol = load_protocol(protocol_name)
     append_log(run_dir, f"{label}: loaded EChem protocol {protocol_name}.")
 
-    echem_dir = group_dir / f"{step_index:03d}_{safe_name(protocol_name, 'protocol')}"
-    echem_dir.mkdir(parents=True, exist_ok=True)
-
     echem_sample = dict(synthetic_sample)
     echem_sample["sample_id"] = (
         f"{synthetic_sample['sample_id']}_step_{step_index:03d}"
     )
     echem_sample["label"] = f"{label} / {step_name}"
 
+    # DTA files go directly into the group folder. The atomic step number is
+    # prefixed to each filename, so repeated protocols never overwrite files.
     run_protocol_for_sample(
         run_dir=run_dir,
-        sample_dir=echem_dir,
+        sample_dir=group_dir,
         sample_index=group_index,
         sample=echem_sample,
         protocol=protocol,
+        filename_prefix=f"{step_index:03d}",
     )
 
 
@@ -189,7 +191,13 @@ def run_sample(
     set_automation_state(step=f"Rep {repetition}/{repetitions} - Move to {label}")
     append_log(run_dir, f"Rep {repetition}/{repetitions}: moving to {label}.")
 
-    sample_dir = create_sample_workspace(run_dir, sample, sample_index)
+    sample_dir = create_sample_workspace(
+        run_dir,
+        sample,
+        sample_index,
+        repetition=repetition,
+        repetitions=repetitions,
+    )
 
     move_to_xyz(
         x=int(position["x"]),
@@ -265,7 +273,13 @@ def run_group(
 ) -> None:
     label = str(group.get("label") or f"Group {group_index}")
     synthetic_sample = group_workspace_sample(group, group_index)
-    group_dir = create_sample_workspace(run_dir, synthetic_sample, group_index)
+    group_dir = create_sample_workspace(
+        run_dir,
+        synthetic_sample,
+        group_index,
+        repetition=repetition,
+        repetitions=repetitions,
+    )
     rde_is_running = False
 
     append_log(run_dir, f"Rep {repetition}/{repetitions}: starting group '{label}'.")

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from workflow.config_loader import get_gamry_config, load_config
+from workflow.config_loader import get_gamry_config
 
 
 class GamryClientError(RuntimeError):
@@ -74,7 +74,9 @@ class GamryClient:
         return sys.executable
 
     def worker_script(self) -> Path:
-        configured = str(self.config().get("worker_script", "gamry_worker/worker.py") or "").strip()
+        configured = str(
+            self.config().get("worker_script", "gamry_worker/worker.py") or ""
+        ).strip()
         path = Path(configured)
 
         if not path.is_absolute():
@@ -86,7 +88,9 @@ class GamryClient:
         return path
 
     def job_dir(self, run_dir: str | Path) -> Path:
-        path = Path(run_dir) / "_jobs"
+        # Internal worker files are grouped in one hidden/system folder so the
+        # run root contains only sample folders plus the user-facing summary.
+        path = Path(run_dir) / "_system" / "jobs"
         path.mkdir(parents=True, exist_ok=True)
         return path
 
@@ -102,7 +106,6 @@ class GamryClient:
 
         job_id = f"{utc_now_compact()}_{uuid.uuid4().hex[:10]}"
         jobs_dir = self.job_dir(run_dir)
-
         job_path = jobs_dir / f"{job_id}_job.json"
         result_path = jobs_dir / f"{job_id}_result.json"
 

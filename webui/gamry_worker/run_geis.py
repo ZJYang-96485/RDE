@@ -41,9 +41,24 @@ def initialize_pstat(pstat: Any) -> None:
 
 
 def _speed(value: Any) -> int:
-    if value is None or str(value).strip().lower() in {"", "normal", "norm"}:
-        return 1
-    return int(value)
+    names = {
+        "": 1,
+        "fast": 0,
+        "normal": 1,
+        "norm": 1,
+        "low": 2,
+        "slow": 2,
+    }
+    text = str(value if value is not None else "normal").strip().lower()
+    if text in names:
+        return names[text]
+    try:
+        numeric = float(text)
+    except ValueError as exc:
+        raise ValueError("GEIS speed must be fast, normal, low, or 0, 1, 2.") from exc
+    if not numeric.is_integer() or int(numeric) not in {0, 1, 2}:
+        raise ValueError("GEIS speed must be fast, normal, low, or 0, 1, 2.")
+    return int(numeric)
 
 
 def run_single_geis(
@@ -66,43 +81,47 @@ def run_single_geis(
         raise ValueError("GEIS ac_current_a must be positive.")
     if estimated_z <= 0 or points_per_decade < 1:
         raise ValueError("GEIS estimated_z_ohm and points_per_decade must be positive.")
-    if initial_freq <= final_freq:
-        raise ValueError("GEIS initial_frequency_hz must be greater than final_frequency_hz.")
+    if initial_freq == final_freq:
+        raise ValueError("GEIS initial_frequency_hz and final_frequency_hz must differ.")
 
     initial_freq = min(max(initial_freq, pstat.freq_limit_lower()), pstat.freq_limit_upper())
     final_freq = min(max(final_freq, pstat.freq_limit_lower()), pstat.freq_limit_upper())
-    if initial_freq <= final_freq:
+    if initial_freq == final_freq:
         raise ValueError("GEIS frequency limits collapse after applying the instrument range.")
-    initialize_pstat(pstat)
-    pstat.set_ctrl_mode(tkp.GSTATMODE)
-    pstat.set_i_convention(tkp.ICONVENTION.ANODIC)
-    ie_range = pstat.test_ie_range(abs(dc_current) + 1.414 * abs(ac_current))
-    pstat.set_ie_range(ie_range)
-    r_measure = pstat.ie_resistor(ie_range)
-    pstat.set_voltage(r_measure * dc_current)
-    pstat.set_cell(tkp.CELL_ON)
-    if settle_s > 0:
-        time.sleep(settle_s)
-    dc_voltage = pstat.measure_v()
-
-    readz = tkp.ReadZ(pstat)
-    readz.set_gain(1.0)
-    readz.set_inoise(0.0)
-    readz.set_vnoise(0.0)
-    readz.set_ienoise(0.0)
-    readz.set_zmod(estimated_z)
-    readz.set_idc(dc_current)
-    readz.set_speed(_speed(step.get("speed", 1)))
-    readz.set_drift_cor(bool(step.get("drift_correction", False)))
-
-    log_increment = -1.0 / points_per_decade
+    speed = _speed(step.get("speed", 1))
+    log_increment = (1.0 if final_freq > initial_freq else -1.0) / points_per_decade
     max_points = int(tkp.check_eis_points(initial_freq, final_freq, points_per_decade))
-    zcurve = tkp.ZCurve(max_points)
     emitter = LiveCurveEmitter(live_dir, normalize_geis_point)
     measured_points = 0
     bad_points = 0
+    readz = None
+    zcurve = None
 
     try:
+        initialize_pstat(pstat)
+        pstat.set_ctrl_mode(tkp.GSTATMODE)
+        pstat.set_i_convention(tkp.ICONVENTION.ANODIC)
+        ie_range = pstat.test_ie_range(abs(dc_current) + 1.414 * abs(ac_current))
+        pstat.set_ie_range(ie_range)
+        r_measure = pstat.ie_resistor(ie_range)
+        pstat.set_voltage(r_measure * dc_current)
+        pstat.set_cell(tkp.CELL_ON)
+        if settle_s > 0:
+            time.sleep(settle_s)
+        dc_voltage = pstat.measure_v()
+
+        readz = tkp.ReadZ(pstat)
+        readz.set_gain(1.0)
+        readz.set_inoise(0.0)
+        readz.set_vnoise(0.0)
+        readz.set_ienoise(0.0)
+        readz.set_zmod(estimated_z)
+        readz.set_idc(dc_current)
+        readz.set_speed(speed)
+        readz.set_drift_cor(bool(step.get("drift_correction", False)))
+        zcurve = tkp.ZCurve(max_points)
+        started_at = time.monotonic()
+
         for current_point in range(max_points):
             if not tkp.pstat_is_valid(pstat):
                 break
@@ -118,7 +137,8 @@ def run_single_geis(
                 emitter.emit_point(data[measured_points - 1])
             time.sleep(0.010)
 
-        if tkp.pstat_is_valid(pstat):
+        pstat_valid = bool(tkp.pstat_is_valid(pstat))
+        if pstat_valid:
             pstat.set_cell(tkp.CELL_OFF)
         tkp.print_default_dta_file(zcurve, pstat, str(output.resolve()), "GALVEIS")
         result = {
@@ -132,9 +152,12 @@ def run_single_geis(
             "dc_voltage_v": dc_voltage,
             "estimated_z_ohm": estimated_z,
             "points_per_decade": points_per_decade,
+            "speed": speed,
             "points": measured_points,
             "bad_points": bad_points,
             "max_points": max_points,
+            "elapsed_s": time.monotonic() - started_at,
+            "stop_reason": "frequency_sweep_complete" if pstat_valid else "instrument_invalid",
         }
         result.update(emitter.result_fields())
         return result
@@ -144,14 +167,10 @@ def run_single_geis(
                 pstat.set_cell(tkp.CELL_OFF)
         except Exception:
             pass
-        try:
+        if readz is not None:
             del readz
-        except Exception:
-            pass
-        try:
+        if zcurve is not None:
             del zcurve
-        except Exception:
-            pass
 
 
 def run(

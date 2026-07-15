@@ -177,6 +177,10 @@
         pointer-events: none;
       }
 
+      #liveGamryEmpty[hidden] {
+        display: none !important;
+      }
+
       @media (max-width: 760px) {
         .workspace-tabs {
           grid-template-columns: 1fr;
@@ -320,7 +324,7 @@
 
         <section class="live-gamry-panel" aria-labelledby="liveGamryTitle">
           <h3 id="liveGamryTitle">Live Gamry Plot</h3>
-          <p id="liveGamryMessage" class="hint">No active Gamry measurement.</p>
+          <p id="liveGamryMessage" class="hint">Live plot ready.</p>
           <div class="live-gamry-meta">
             <span id="liveGamryStatus">Status: idle</span>
             <span id="liveGamrySample">Sample: —</span>
@@ -333,7 +337,7 @@
           </div>
           <div class="live-gamry-canvas-wrap">
             <canvas id="liveGamryCanvas" aria-label="Live Gamry data plot"></canvas>
-            <div id="liveGamryEmpty">No active Gamry measurement.</div>
+            <div id="liveGamryEmpty" hidden></div>
           </div>
           <div class="cmd-buttons">
             <button id="livePauseBtn" class="home-btn" type="button">Pause Display</button>
@@ -733,7 +737,7 @@
         if (status.error || status.stream_error) {
           liveGamryMessageEl.textContent = `Live acquisition error: ${status.error || status.stream_error}`;
         } else if (!status.run_id) {
-          liveGamryMessageEl.textContent = "No active Gamry measurement.";
+          liveGamryMessageEl.textContent = "Live plot ready.";
         } else if (!livePoints.length) {
           liveGamryMessageEl.textContent = state === "running" ? "Waiting for live points..." : "No live points were recorded.";
         } else {
@@ -1859,6 +1863,7 @@
           defaultOutput: "CC_CHARGE.DTA",
           fields: [
             { key: "current_a", label: "Current magnitude (A, positive)", type: "number", value: 0.00001, positive: true, step: "0.000001" },
+            { key: "expected_max_current_a", label: "Expected maximum |current| (A)", type: "number", value: 0.00001, positive: true, step: "0.000001" },
             { key: "duration_s", label: "Maximum duration (s)", type: "number", value: 60, positive: true, step: "0.1" },
             { key: "sample_period_s", label: "Sample period (s)", type: "number", value: 1, positive: true, step: "0.01" },
             { key: "voltage_cutoff_v", label: "Upper |voltage| cutoff (V)", type: "number", value: 4.2, positive: true, step: "0.001" },
@@ -1873,6 +1878,7 @@
           defaultOutput: "CC_DISCHARGE.DTA",
           fields: [
             { key: "current_a", label: "Current magnitude (A, positive)", type: "number", value: 0.00001, positive: true, step: "0.000001" },
+            { key: "expected_max_current_a", label: "Expected maximum |current| (A)", type: "number", value: 0.00001, positive: true, step: "0.000001" },
             { key: "duration_s", label: "Maximum duration (s)", type: "number", value: 60, positive: true, step: "0.1" },
             { key: "sample_period_s", label: "Sample period (s)", type: "number", value: 1, positive: true, step: "0.01" },
             { key: "voltage_cutoff_v", label: "Lower |voltage| cutoff (V)", type: "number", value: 3.0, positive: true, step: "0.001" },
@@ -2103,11 +2109,15 @@
           if (payload.voltage_limit_low_v >= payload.voltage_limit_high_v) throw new Error(`${name}: lower voltage limit must be below upper voltage limit.`);
           if (payload.expected_max_current_a < Math.abs(payload.current_a)) throw new Error(`${name}: expected maximum current must cover the applied current.`);
         }
+        if ((kind === "cc_charge" || kind === "cc_discharge") && payload.expected_max_current_a < payload.current_a) {
+          throw new Error(`${name}: expected maximum current must cover the applied current.`);
+        }
         const initialFreq = payload.initial_frequency_hz ?? payload.initial_freq_hz;
         const finalFreq = payload.final_frequency_hz ?? payload.final_freq_hz;
-        if ((kind === "eis" || kind === "geis") && initialFreq <= finalFreq) {
+        if (kind === "eis" && initialFreq <= finalFreq) {
           throw new Error(`${name}: initial frequency must be greater than final frequency.`);
         }
+        if (kind === "geis" && initialFreq === finalFreq) throw new Error(`${name}: initial and final frequencies must differ.`);
 
         return payload;
       }

@@ -41,6 +41,16 @@ def initialize_pstat(pstat: Any, sample_period_s: float, max_current_a: float) -
     pstat.set_irupt_mode(tkp.IRUPTOFF)
 
 
+def _last_curve_value(data: Any, field: str) -> float | None:
+    try:
+        values = data[field]
+        if len(values):
+            return float(values[-1])
+    except (KeyError, TypeError, ValueError):
+        pass
+    return None
+
+
 def run_single_cp(
     pstat: Any,
     step: dict[str, Any],
@@ -127,8 +137,19 @@ def run_single_cp(
                     curve.stop()
             time.sleep(max(0.01, min(sample_period_s, 0.25)))
 
-        emitter.emit_new(curve.acq_data())
-        if tkp.pstat_is_valid(pstat):
+        data = curve.acq_data()
+        emitter.emit_new(data)
+        pstat_valid = bool(tkp.pstat_is_valid(pstat))
+        elapsed_s = _last_curve_value(data, "time")
+        final_voltage_v = _last_curve_value(data, "vf")
+        if cutoff_reason is not None:
+            stop_reason = "voltage_cutoff"
+        elif pstat_valid:
+            stop_reason = "duration_complete"
+        else:
+            stop_reason = "instrument_invalid"
+
+        if pstat_valid:
             pstat.set_cell(tkp.CELL_OFF)
         tkp.print_default_dta_file(curve, pstat, str(output.resolve()), "CHRONOP")
 
@@ -143,6 +164,10 @@ def run_single_cp(
             "voltage_limit_high_v": voltage_max_v,
             "expected_max_current_a": expected_max_current_a,
             "cutoff_reason": cutoff_reason,
+            "stop_reason": stop_reason,
+            "stop_detail": cutoff_reason,
+            "elapsed_s": elapsed_s,
+            "final_voltage_v": final_voltage_v,
             "points": int(curve.count()),
         }
         result.update(emitter.result_fields())

@@ -49,15 +49,22 @@ class CurrentControlledTechniqueTest(unittest.TestCase):
                 result, output, live_dir = self.mock_job(technique, step)
                 self.assertTrue(result["ok"])
                 self.assertTrue(output.is_file())
+                technique_result = result["result"]["result"]
+                self.assertIn("stop_reason", technique_result)
+                self.assertIn("elapsed_s", technique_result)
+                dta_text = output.read_text(encoding="utf-8")
                 points = read_live_points(live_dir, limit=100)
                 self.assertGreater(len(points), 0)
                 self.assertEqual(points[0]["technique"], technique)
                 self.assertEqual(points[0]["index"], points[0]["seq"])
                 self.assertEqual(read_live_status(live_dir)["status"], "complete")
                 if technique == "geis":
+                    self.assertIn("Pt\tT\tFreq\tZreal\tZimag\tZmod\tZphz\tIdc\tVdc", dta_text)
                     self.assertIn("zreal_ohm", points[0])
                     self.assertIn("zimag_ohm", points[0])
                 else:
+                    self.assertIn("Pt\tT\tVf\tIm\tQ_Ah", dta_text)
+                    self.assertIn("final_voltage_v", technique_result)
                     self.assertIn("t_s", points[0])
                     self.assertIn("e_v", points[0])
                     self.assertIn("i_a", points[0])
@@ -75,9 +82,9 @@ class CurrentControlledTechniqueTest(unittest.TestCase):
             "protocol_name": "current_controlled",
             "steps": [
                 {"name": "cp", "technique": "cp", "current_a": -1e-5, "duration_s": 1, "sample_period_s": 0.1, "voltage_limit_low_v": -1, "voltage_limit_high_v": 1, "expected_max_current_a": 1e-5},
-                {"name": "charge", "technique": "cc_charge", "current_a": 1e-5, "duration_s": 1, "sample_period_s": 0.1, "voltage_cutoff_v": 4.2},
+                {"name": "charge", "technique": "cc_charge", "current_a": 1e-5, "expected_max_current_a": 2e-5, "duration_s": 1, "sample_period_s": 0.1, "voltage_cutoff_v": 4.2, "output": "unsafe/subfolder/charge.txt"},
                 {"name": "discharge", "technique": "cc_discharge", "current_a": 1e-5, "duration_s": 1, "sample_period_s": 0.1, "voltage_cutoff_v": 3.0, "capacity_cutoff_ah": 1e-6},
-                {"name": "geis", "technique": "geis", "initial_freq_hz": 1000, "final_freq_hz": 10, "points_per_decade": 3, "ac_current_a": 1e-5, "dc_current_a": -1e-5, "estimated_z_ohm": 100},
+                {"name": "geis", "technique": "geis", "initial_freq_hz": 10, "final_freq_hz": 1000, "points_per_decade": 3, "ac_current_a": 1e-5, "dc_current_a": -1e-5, "estimated_z_ohm": 100, "speed": "slow", "output": "geis.csv"},
             ],
         }
         validated = validate_protocol_payload(payload)
@@ -85,11 +92,35 @@ class CurrentControlledTechniqueTest(unittest.TestCase):
         self.assertLess(validated["steps"][0]["current_a"], 0)
         self.assertEqual(validated["steps"][0]["voltage_limit_high_v"], 1)
         self.assertGreater(validated["steps"][1]["current_a"], 0)
+        self.assertEqual(validated["steps"][1]["expected_max_current_a"], 2e-5)
+        self.assertEqual(validated["steps"][1]["output"], "charge.DTA")
+        self.assertEqual(validated["steps"][3]["speed"], "low")
+        self.assertEqual(validated["steps"][3]["output"], "geis.DTA")
 
         bad = dict(payload)
         bad["steps"] = [{"name": "bad", "technique": "cc_discharge", "current_a": -1e-5}]
         with self.assertRaises(ProtocolError):
             validate_protocol_payload(bad)
+
+        bad["steps"] = [{"name": "bad speed", "technique": "geis", "initial_frequency_hz": 10, "final_frequency_hz": 100, "speed": "turbo"}]
+        with self.assertRaises(ProtocolError):
+            validate_protocol_payload(bad)
+
+    def test_mock_geis_supports_low_to_high_frequency_sweeps(self) -> None:
+        result, _, live_dir = self.mock_job(
+            "geis",
+            {
+                "initial_frequency_hz": 10,
+                "final_frequency_hz": 1000,
+                "points_per_decade": 2,
+                "ac_current_a": 1e-5,
+                "estimated_z_ohm": 100,
+            },
+        )
+        points = read_live_points(live_dir, limit=100)
+        self.assertAlmostEqual(points[0]["freq_hz"], 10)
+        self.assertAlmostEqual(points[-1]["freq_hz"], 1000)
+        self.assertEqual(result["result"]["result"]["stop_reason"], "frequency_sweep_complete")
 
     def test_real_dispatch_has_local_runner_for_each_new_technique(self) -> None:
         for technique in ("cp", "cc_charge", "cc_discharge", "geis"):

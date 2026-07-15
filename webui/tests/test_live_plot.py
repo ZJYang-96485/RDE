@@ -45,6 +45,14 @@ class LivePlotTest(unittest.TestCase):
         with state.automation_lock:
             state.automation_state["run_dir"] = str(run_dir)
 
+    def test_page_has_no_stale_empty_measurement_overlay(self) -> None:
+        response = self.client.get("/")
+        page = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("No active Gamry measurement.", page)
+        self.assertIn("#liveGamryEmpty[hidden]", page)
+        self.assertIn('id="liveGamryEmpty" hidden', page)
+
     def test_live_writer_initializes_and_sequences_points(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             live_dir = Path(tmpdir) / "_system" / "live"

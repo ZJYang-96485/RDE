@@ -54,6 +54,46 @@ def initialize_pstat(pstat: Any) -> None:
     pstat.set_dds_enable(False)
 
 
+def _last_curve_value(data: Any, field: str) -> float | None:
+    try:
+        values = data[field]
+        if len(values):
+            return float(values[-1])
+    except (KeyError, TypeError, ValueError):
+        pass
+    return None
+
+
+def _capacity_ah(data: Any) -> float:
+    """Integrate the installed PwrCurve time/im columns using trapezoids."""
+    try:
+        times = data["time"]
+        currents = data["im"]
+        count = min(len(times), len(currents))
+    except (KeyError, TypeError):
+        return 0.0
+
+    charge_c = 0.0
+    for index in range(1, count):
+        dt_s = max(0.0, float(times[index]) - float(times[index - 1]))
+        average_current_a = (abs(float(currents[index - 1])) + abs(float(currents[index]))) / 2.0
+        charge_c += average_current_a * dt_s
+    return charge_c / 3600.0
+
+
+def _stop_tests(data: Any) -> list[str]:
+    tests = []
+    for field in ("stop_test", "stop_test2"):
+        raw_value = _last_curve_value(data, field)
+        if raw_value is None or int(raw_value) == 0:
+            continue
+        try:
+            tests.append(str(tkp.interpret_stop_test_int(int(raw_value))))
+        except (TypeError, ValueError):
+            tests.append(f"{field}={int(raw_value)}")
+    return tests
+
+
 def run_single_cc(
     pstat: Any,
     step: dict[str, Any],
@@ -72,6 +112,7 @@ def run_single_cc(
     working_positive = bool(step.get("working_positive", True))
     capacity_raw = step.get("capacity_cutoff_ah")
     capacity_cutoff_ah = None if capacity_raw in {None, ""} else float(capacity_raw)
+    expected_max_current_a = float(step.get("expected_max_current_a", current_a))
     max_size = int(step.get("max_size", 100000))
 
     if current_a <= 0:
@@ -82,6 +123,8 @@ def run_single_cc(
         raise ValueError(f"{technique} voltage_cutoff_v is an absolute voltage magnitude and must be positive.")
     if capacity_cutoff_ah is not None and capacity_cutoff_ah <= 0:
         raise ValueError(f"{technique} capacity_cutoff_ah must be positive when supplied.")
+    if expected_max_current_a <= 0 or expected_max_current_a < current_a:
+        raise ValueError(f"{technique} expected_max_current_a must be at least current_a.")
 
     initialize_pstat(pstat)
     curve = tkp.PwrCurve(pstat, max_size)
@@ -118,14 +161,49 @@ def run_single_cc(
         pstat.set_signal_pwr_step(signal)
         pstat.init_signal()
         pstat.set_cell(tkp.CELL_RELAY)
+        started_at = time.monotonic()
         curve.run(True)
 
         while tkp.pstat_is_valid(pstat) and curve.running():
             emitter.emit_new(curve.acq_data())
             time.sleep(max(0.01, min(sample_period_s, 0.25)))
-        emitter.emit_new(curve.acq_data())
+        data = curve.acq_data()
+        emitter.emit_new(data)
+        pstat_valid = bool(tkp.pstat_is_valid(pstat))
+        elapsed_s = _last_curve_value(data, "time")
+        if elapsed_s is None:
+            elapsed_s = time.monotonic() - started_at
+        final_voltage_v = _last_curve_value(data, "vf")
+        capacity_ah = _capacity_ah(data)
+        stop_tests = _stop_tests(data)
 
-        if tkp.pstat_is_valid(pstat):
+        voltage_reached = any("STOP_V_" in stop_test for stop_test in stop_tests)
+        if final_voltage_v is not None:
+            tolerance_v = max(1e-6, voltage_cutoff_v * 1e-3)
+            if technique == "cc_charge":
+                voltage_reached = voltage_reached or final_voltage_v >= voltage_cutoff_v - tolerance_v
+            else:
+                voltage_reached = voltage_reached or final_voltage_v <= voltage_cutoff_v + tolerance_v
+        capacity_reached = (
+            any("STOP_Q_" in stop_test for stop_test in stop_tests)
+            or (
+                capacity_cutoff_ah is not None
+                and capacity_ah >= capacity_cutoff_ah * 0.999
+            )
+        )
+
+        if not pstat_valid:
+            stop_reason = "instrument_invalid"
+        elif voltage_reached:
+            stop_reason = "voltage_cutoff"
+        elif capacity_reached:
+            stop_reason = "capacity_cutoff"
+        elif elapsed_s + sample_period_s >= duration_s:
+            stop_reason = "duration_complete"
+        else:
+            stop_reason = "curve_complete"
+
+        if pstat_valid:
             pstat.set_cell(tkp.CELL_OFF)
         tkp.print_default_dta_file(curve, pstat, str(output.resolve()), dta_tag, working_positive)
 
@@ -135,11 +213,17 @@ def run_single_cc(
             "output": str(output),
             "current_a": current_a,
             "current_interpretation": "positive magnitude; technique and working_positive select direction",
+            "expected_max_current_a": expected_max_current_a,
             "duration_s": duration_s,
             "sample_period_s": sample_period_s,
             "voltage_cutoff_v": voltage_cutoff_v,
             "capacity_cutoff_ah": capacity_cutoff_ah,
             "working_positive": working_positive,
+            "elapsed_s": elapsed_s,
+            "final_voltage_v": final_voltage_v,
+            "capacity_ah": capacity_ah,
+            "stop_reason": stop_reason,
+            "stop_tests": stop_tests,
             "points": int(curve.count()),
         }
         result.update(emitter.result_fields())

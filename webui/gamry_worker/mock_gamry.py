@@ -203,21 +203,42 @@ def run_cp(
     sample_period_s = as_float(step.get("sample_period_s"), 0.5)
     voltage_min_v = as_float(step.get("voltage_limit_low_v", step.get("voltage_min_v")), -10)
     voltage_max_v = as_float(step.get("voltage_limit_high_v", step.get("voltage_max_v")), 10)
+    expected_max_current_a = as_float(step.get("expected_max_current_a"), abs(current_a))
+    if current_a == 0:
+        raise MockGamryError("CP current_a must not be zero.")
+    if voltage_min_v >= voltage_max_v:
+        raise MockGamryError("CP voltage_limit_low_v must be lower than voltage_limit_high_v.")
+    if expected_max_current_a <= 0 or expected_max_current_a < abs(current_a):
+        raise MockGamryError("CP expected_max_current_a must cover the applied current.")
     times = sample_times(duration_s, sample_period_s)
     lines = header(step, "cp")
-    lines.append("time_s\tpotential_v\tcurrent_a")
+    lines.append("Pt\tT\tVf\tIm\tQ_Ah")
     emitted = 0
+    final_voltage_v = None
+    elapsed_s = 0.0
+    capacity_ah = 0.0
+    stop_reason = "duration_complete"
+    stop_detail = None
 
-    for t in times:
+    for point, t in enumerate(times):
         polarity = 1.0 if current_a >= 0 else -1.0
         potential = 0.05 + polarity * (0.02 + 0.03 * (1 - math.exp(-t / max(duration_s / 4, 1e-9))))
-        if potential <= voltage_min_v or potential >= voltage_max_v:
-            break
-        lines.append(f"{t:.6f}\t{potential:.9f}\t{current_a:.12e}")
+        capacity_ah = abs(current_a) * t / 3600.0
+        lines.append(f"{point}\t{t:.6f}\t{potential:.9f}\t{current_a:.12e}\t{capacity_ah:.12e}")
         emitted += 1
+        elapsed_s = t
+        final_voltage_v = potential
         if emitter:
             emitter.emit("cp", {"t_s": t, "e_v": potential, "i_a": current_a})
             emitter.wait(sample_period_s)
+        if potential <= voltage_min_v:
+            stop_reason = "voltage_cutoff"
+            stop_detail = "voltage_limit_low_v"
+            break
+        if potential >= voltage_max_v:
+            stop_reason = "voltage_cutoff"
+            stop_detail = "voltage_limit_high_v"
+            break
 
     write_text(output_path, "\n".join(lines) + "\n")
     return {
@@ -225,6 +246,12 @@ def run_cp(
         "technique": "cp",
         "output_path": str(output_path),
         "current_a": current_a,
+        "expected_max_current_a": expected_max_current_a,
+        "elapsed_s": elapsed_s,
+        "final_voltage_v": final_voltage_v,
+        "capacity_ah": capacity_ah,
+        "stop_reason": stop_reason,
+        "stop_detail": stop_detail,
         "points": emitted,
     }
 
@@ -235,18 +262,27 @@ def run_cc(
     technique: str,
     emitter: LiveEmitter | None = None,
 ) -> dict[str, Any]:
-    current_a = abs(as_float(step.get("current_a"), 1e-5))
+    current_a = as_float(step.get("current_a"), 1e-5)
     duration_s = as_float(step.get("duration_s"), 60)
     sample_period_s = as_float(step.get("sample_period_s"), 1)
     cutoff_v = as_float(step.get("voltage_cutoff_v"), 4.2 if technique == "cc_charge" else 3.0)
     capacity_cutoff_ah = step.get("capacity_cutoff_ah")
     capacity_limit = None if capacity_cutoff_ah in {None, ""} else as_float(capacity_cutoff_ah)
+    expected_max_current_a = as_float(step.get("expected_max_current_a"), current_a)
+    if current_a <= 0:
+        raise MockGamryError(f"{technique} current_a is a positive magnitude; direction is selected by the technique.")
+    if expected_max_current_a <= 0 or expected_max_current_a < current_a:
+        raise MockGamryError(f"{technique} expected_max_current_a must be at least current_a.")
     times = sample_times(duration_s, sample_period_s)
     lines = header(step, technique)
-    lines.append("time_s\tpotential_v\tcurrent_a\tcapacity_ah")
+    lines.append("Pt\tT\tVf\tIm\tQ_Ah")
     emitted = 0
+    final_voltage_v = None
+    elapsed_s = 0.0
+    capacity_ah = 0.0
+    stop_reason = "duration_complete"
 
-    for t in times:
+    for point, t in enumerate(times):
         fraction = 0 if duration_s <= 0 else min(1.0, t / duration_s)
         if technique == "cc_charge":
             potential = cutoff_v - 0.4 * (1 - fraction)
@@ -257,14 +293,19 @@ def run_cc(
             measured_current = -current_a
             reached_voltage = potential <= cutoff_v
         capacity_ah = current_a * t / 3600.0
-        if capacity_limit is not None and capacity_ah >= capacity_limit:
-            break
-        lines.append(f"{t:.6f}\t{potential:.9f}\t{measured_current:.12e}\t{capacity_ah:.12e}")
+        reached_capacity = capacity_limit is not None and capacity_ah >= capacity_limit
+        lines.append(f"{point}\t{t:.6f}\t{potential:.9f}\t{measured_current:.12e}\t{capacity_ah:.12e}")
         emitted += 1
+        elapsed_s = t
+        final_voltage_v = potential
         if emitter:
             emitter.emit(technique, {"t_s": t, "e_v": potential, "i_a": measured_current})
             emitter.wait(sample_period_s)
+        if reached_capacity:
+            stop_reason = "capacity_cutoff"
+            break
         if reached_voltage:
+            stop_reason = "voltage_cutoff"
             break
 
     write_text(output_path, "\n".join(lines) + "\n")
@@ -273,6 +314,11 @@ def run_cc(
         "technique": technique,
         "output_path": str(output_path),
         "current_a": current_a,
+        "expected_max_current_a": expected_max_current_a,
+        "elapsed_s": elapsed_s,
+        "final_voltage_v": final_voltage_v,
+        "capacity_ah": capacity_ah,
+        "stop_reason": stop_reason,
         "points": emitted,
     }
 
@@ -362,7 +408,7 @@ def run_cv(
     }
 
 
-def logspace_descending(start: float, stop: float, points_per_decade: int) -> list[float]:
+def logspace_values(start: float, stop: float, points_per_decade: int) -> list[float]:
     start = max(start, 1e-12)
     stop = max(stop, 1e-12)
     points_per_decade = max(1, int(points_per_decade))
@@ -392,7 +438,7 @@ def run_eis(
         0.1,
     )
     points_per_decade = as_int(step.get("points_per_decade"), 10)
-    frequencies = logspace_descending(initial_frequency_hz, final_frequency_hz, points_per_decade)
+    frequencies = logspace_values(initial_frequency_hz, final_frequency_hz, points_per_decade)
 
     rs = 20.0
     rct = as_float(step.get("estimated_z_ohm"), 100)
@@ -440,15 +486,21 @@ def run_geis(
     geis_step = dict(step)
     estimated_z = as_float(step.get("estimated_z_ohm"), 100)
     dc_current = as_float(step.get("dc_current_a"), 0)
-    ac_current = abs(as_float(step.get("ac_current_a"), 1e-5))
+    ac_current = as_float(step.get("ac_current_a"), 1e-5)
     initial_frequency_hz = as_float(step.get("initial_frequency_hz", step.get("initial_freq_hz")), 100000)
     final_frequency_hz = as_float(step.get("final_frequency_hz", step.get("final_freq_hz")), 0.1)
     points_per_decade = as_int(step.get("points_per_decade"), 10)
-    frequencies = logspace_descending(initial_frequency_hz, final_frequency_hz, points_per_decade)
+    if ac_current <= 0:
+        raise MockGamryError("GEIS ac_current_a must be positive.")
+    if initial_frequency_hz <= 0 or final_frequency_hz <= 0 or initial_frequency_hz == final_frequency_hz:
+        raise MockGamryError("GEIS frequencies must be positive and different.")
+    if estimated_z <= 0 or points_per_decade < 1:
+        raise MockGamryError("GEIS estimated_z_ohm and points_per_decade must be positive.")
+    frequencies = logspace_values(initial_frequency_hz, final_frequency_hz, points_per_decade)
     lines = header(geis_step, "geis")
-    lines.append("frequency_hz\tzreal_ohm\tzimag_ohm\tzmod_ohm\tphase_deg\tdc_current_a\tac_current_a")
+    lines.append("Pt\tT\tFreq\tZreal\tZimag\tZmod\tZphz\tIdc\tVdc")
 
-    for freq in frequencies:
+    for point, freq in enumerate(frequencies):
         omega = 2 * math.pi * freq
         rs = 20.0
         cdl = 2e-5
@@ -457,7 +509,9 @@ def run_geis(
         zimag = -(omega * estimated_z * estimated_z * cdl) / denom
         zmod = math.sqrt(zreal * zreal + zimag * zimag)
         phase = math.degrees(math.atan2(zimag, zreal))
-        lines.append(f"{freq:.9e}\t{zreal:.9f}\t{zimag:.9f}\t{zmod:.9f}\t{phase:.9f}\t{dc_current:.12e}\t{ac_current:.12e}")
+        elapsed_s = point * 0.1
+        dc_voltage = dc_current * zreal
+        lines.append(f"{point}\t{elapsed_s:.6f}\t{freq:.9e}\t{zreal:.9f}\t{zimag:.9f}\t{zmod:.9f}\t{phase:.9f}\t{dc_current:.12e}\t{dc_voltage:.12e}")
         if emitter:
             emitter.emit(
                 "geis",
@@ -472,7 +526,16 @@ def run_geis(
             emitter.wait(0.1)
 
     write_text(output_path, "\n".join(lines) + "\n")
-    return {"ok": True, "technique": "geis", "output_path": str(output_path), "points": len(frequencies)}
+    return {
+        "ok": True,
+        "technique": "geis",
+        "output_path": str(output_path),
+        "initial_frequency_hz": initial_frequency_hz,
+        "final_frequency_hz": final_frequency_hz,
+        "points": len(frequencies),
+        "elapsed_s": max(0, len(frequencies) - 1) * 0.1,
+        "stop_reason": "frequency_sweep_complete",
+    }
 
 
 def _output_records(step: dict[str, Any], outputs: list[Any]) -> list[dict[str, Any]]:

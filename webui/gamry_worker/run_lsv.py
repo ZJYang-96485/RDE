@@ -8,8 +8,10 @@ import toolkitpy as tkp
 
 try:
     from gamry_worker.device import select_pstat_name
+    from gamry_worker.live_adapters import LiveCurveEmitter, normalize_lsv_acq_rows
 except ModuleNotFoundError:
     from device import select_pstat_name
+    from live_adapters import LiveCurveEmitter, normalize_lsv_acq_rows
 
 
 def initialize_pstat(pstat: Any) -> None:
@@ -43,6 +45,7 @@ def run_single_lsv(
     pstat: Any,
     step: dict[str, Any],
     output_path: str,
+    live_dir: str | None = None,
 ) -> dict[str, Any]:
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -83,6 +86,7 @@ def run_single_lsv(
 
     signal = None
     curve = tkp.RcvCurve(pstat, max_size)
+    emitter = LiveCurveEmitter(live_dir, normalize_lsv_acq_rows)
 
     try:
         signal = pstat.signal_ramp_new(
@@ -104,15 +108,17 @@ def run_single_lsv(
         curve.run(True)
 
         while tkp.pstat_is_valid(pstat) and curve.running():
-            curve.acq_data()
+            emitter.emit_new(curve.acq_data())
             time.sleep(max(0.01, min(sample_time, 0.25)))
+
+        emitter.emit_new(curve.acq_data())
 
         if tkp.pstat_is_valid(pstat):
             pstat.set_cell(False)
 
         tkp.print_default_dta_file(curve, pstat, str(output.resolve()), "LSV")
 
-        return {
+        result = {
             "ok": True,
             "technique": "lsv",
             "output": str(output),
@@ -124,6 +130,8 @@ def run_single_lsv(
             "estimated_time_s": estimated_time,
             "points": int(curve.count()),
         }
+        result.update(emitter.result_fields())
+        return result
 
     finally:
         try:
@@ -153,6 +161,7 @@ def run(
     step: dict[str, Any],
     outputs: list[str],
     sample_id: str | None = None,
+    live_dir: str | None = None,
 ) -> dict[str, Any]:
     if not outputs:
         raise ValueError("outputs must contain at least one path.")
@@ -172,6 +181,7 @@ def run(
             pstat=pstat,
             step=step,
             output_path=outputs[0],
+            live_dir=live_dir,
         )
 
         result["sample_id"] = sample_id

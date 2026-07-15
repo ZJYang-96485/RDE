@@ -8,8 +8,10 @@ import toolkitpy as tkp
 
 try:
     from gamry_worker.device import select_pstat_name
+    from gamry_worker.live_adapters import LiveCurveEmitter, normalize_ca_acq_rows
 except ModuleNotFoundError:
     from device import select_pstat_name
+    from live_adapters import LiveCurveEmitter, normalize_ca_acq_rows
 
 
 def initialize_pstat(pstat: Any) -> None:
@@ -36,6 +38,7 @@ def run_single_ca(
     step: dict[str, Any],
     output_path: str,
     voltage_v: float | None = None,
+    live_dir: str | None = None,
 ) -> dict[str, Any]:
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -87,6 +90,7 @@ def run_single_ca(
     initialize_pstat(pstat)
 
     curve = tkp.ChronoCurve(pstat, max_size)
+    emitter = LiveCurveEmitter(live_dir, normalize_ca_acq_rows)
     signal = None
 
     try:
@@ -110,8 +114,10 @@ def run_single_ca(
         curve.run(True)
 
         while tkp.pstat_is_valid(pstat) and curve.running():
-            curve.acq_data()
+            emitter.emit_new(curve.acq_data())
             time.sleep(max(0.01, min(sample_period_s, 0.25)))
+
+        emitter.emit_new(curve.acq_data())
 
         tkp.reset_hve(pstat)
 
@@ -120,7 +126,7 @@ def run_single_ca(
 
         tkp.print_default_dta_file(curve, pstat, str(output.resolve()), "CHRONOA")
 
-        return {
+        result = {
             "ok": True,
             "technique": "ca",
             "output": str(output),
@@ -129,6 +135,8 @@ def run_single_ca(
             "sample_period_s": sample_period_s,
             "points": int(curve.count()),
         }
+        result.update(emitter.result_fields())
+        return result
 
     finally:
         try:
@@ -158,6 +166,7 @@ def run_ca_staircase(
     pstat: Any,
     step: dict[str, Any],
     outputs: list[str],
+    live_dir: str | None = None,
 ) -> dict[str, Any]:
     start_voltage = float(step.get("start_voltage_v", 0.0))
     step_voltage = float(step.get("step_voltage_v", 0.0))
@@ -175,6 +184,7 @@ def run_ca_staircase(
             step=sub_step,
             output_path=output_path,
             voltage_v=voltage,
+            live_dir=live_dir,
         )
 
         record["index"] = index
@@ -194,6 +204,7 @@ def run(
     step: dict[str, Any],
     outputs: list[str],
     sample_id: str | None = None,
+    live_dir: str | None = None,
 ) -> dict[str, Any]:
     if not outputs:
         raise ValueError("outputs must contain at least one path.")
@@ -216,12 +227,14 @@ def run(
                 pstat=pstat,
                 step=step,
                 outputs=outputs,
+                live_dir=live_dir,
             )
         else:
             result = run_single_ca(
                 pstat=pstat,
                 step=step,
                 output_path=outputs[0],
+                live_dir=live_dir,
             )
 
         result["sample_id"] = sample_id

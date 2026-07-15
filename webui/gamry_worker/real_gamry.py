@@ -172,7 +172,18 @@ def run(
 ) -> dict[str, Any]:
     technique = str(step.get("technique", "")).strip().lower()
 
-    if technique not in {"ocp", "ca", "ca_staircase", "cv", "lsv", "eis"}:
+    if technique not in {
+        "ocp",
+        "ca",
+        "ca_staircase",
+        "cv",
+        "lsv",
+        "eis",
+        "cp",
+        "cc_charge",
+        "cc_discharge",
+        "geis",
+    }:
         raise RealGamryError(f"unsupported real Gamry technique: {technique}")
 
     return run_external_worker(job=job, outputs=outputs)

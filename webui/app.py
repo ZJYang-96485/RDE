@@ -42,7 +42,7 @@ from workflow.protocol_loader import (
     validate_protocol_payload,
 )
 from workflow.recipe_runner import RecipeRunnerError, abort_automation, run_plan_payload_background
-from gamry_worker.live_writer import read_live_points, read_live_status
+from gamry_worker.live_writer import clear_live_stream, read_live_points, read_live_status
 from workflow.run_plan_loader import (
     RunPlanError,
     default_run_plan_payload,
@@ -93,7 +93,10 @@ def config_payload() -> dict[str, Any]:
         "axis_limits": motion["axis_limits"],
         "axis_mapping": motion["axis_mapping"],
         "gamry_mode": gamry["mode"],
-        "gamry_real_runner_configured": real_runner_configured,
+        "gamry_real_runner_configured": bool(gamry_runtime.get("configured", False)),
+        "gamry_instrument_label": str(gamry.get("instrument_label", "") or ""),
+        "gamry_runtime": gamry_runtime,
+        "live_plot": get_live_plot_config(),
     }
 
 
@@ -214,6 +217,7 @@ def idle_live_status() -> dict[str, Any]:
         "point_count": 0,
         "status": "idle",
         "error": None,
+        "stream_error": None,
     }
 
 
@@ -275,6 +279,19 @@ def live_clear_view():
     # The first frontend version clears only its in-memory canvas. Keep this
     # endpoint intentionally non-destructive so it can never remove a DTA.
     return jsonify({"ok": True, "message": "Browser live view can be cleared without changing stored data."})
+
+
+@app.post("/api/live/clear")
+def live_clear():
+    """Clear only an inactive temporary stream; final DTA files are untouched."""
+    live_dir = current_live_dir()
+    if live_dir is None:
+        return jsonify({"ok": True, "message": "No live stream exists."})
+    current = read_live_status(live_dir)
+    if current and bool(current.get("active", False)):
+        return json_error("live acquisition is active; pause the display instead of clearing its stream.", 409)
+    clear_live_stream(live_dir)
+    return jsonify({"ok": True, "message": "Temporary live buffer cleared. Final DTA files are unchanged."})
 
 
 @app.post("/api/start")

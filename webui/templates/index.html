@@ -320,7 +320,7 @@
 
         <section class="live-gamry-panel" aria-labelledby="liveGamryTitle">
           <h3 id="liveGamryTitle">Live Gamry Plot</h3>
-          <p id="liveGamryMessage" class="hint">No live data exists yet.</p>
+          <p id="liveGamryMessage" class="hint">No active Gamry measurement.</p>
           <div class="live-gamry-meta">
             <span id="liveGamryStatus">Status: idle</span>
             <span id="liveGamrySample">Sample: —</span>
@@ -328,11 +328,12 @@
             <span id="liveGamryStep">EChem step: —</span>
             <span id="liveGamryTechnique">Technique: —</span>
             <span id="liveGamryCount">Points: 0</span>
+            <span id="liveGamryElapsed">Elapsed: —</span>
             <span id="liveGamryUpdated">Last update: —</span>
           </div>
           <div class="live-gamry-canvas-wrap">
             <canvas id="liveGamryCanvas" aria-label="Live Gamry data plot"></canvas>
-            <div id="liveGamryEmpty">No live data exists yet.</div>
+            <div id="liveGamryEmpty">No active Gamry measurement.</div>
           </div>
           <div class="cmd-buttons">
             <button id="livePauseBtn" class="home-btn" type="button">Pause Display</button>
@@ -374,8 +375,12 @@
             <button id="addEchemCaRangeBtn" class="home-btn" type="button">Add CA Range</button>
             <button id="addEchemLsvBtn" class="home-btn" type="button">Add LSV</button>
             <button id="addEchemCvBtn" class="home-btn" type="button">Add CV</button>
+            <button id="addEchemCpBtn" class="home-btn" type="button">Add CP</button>
+            <button id="addEchemCcChargeBtn" class="home-btn" type="button">Add CC Charge</button>
+            <button id="addEchemCcDischargeBtn" class="home-btn" type="button">Add CC Discharge</button>
+            <button id="addEchemGeisBtn" class="home-btn" type="button">Add GEIS</button>
           </div>
-          <p class="hint">Use CA Range for sequences like -0.1, -0.2, ... -1.6 V. Use individual CA for a single fixed-potential step.</p>
+          <p class="hint">Use CA Range for voltage sequences. CC charge/discharge current is a positive magnitude; technique and Working Positive wiring select direction. CP current is signed using the anodic current convention.</p>
         </div>
 
         <div id="echemStepList"></div>
@@ -524,6 +529,7 @@
       const liveGamryStepEl = document.getElementById("liveGamryStep");
       const liveGamryTechniqueEl = document.getElementById("liveGamryTechnique");
       const liveGamryCountEl = document.getElementById("liveGamryCount");
+      const liveGamryElapsedEl = document.getElementById("liveGamryElapsed");
       const liveGamryUpdatedEl = document.getElementById("liveGamryUpdated");
       const liveGamryCanvas = document.getElementById("liveGamryCanvas");
       const liveGamryEmptyEl = document.getElementById("liveGamryEmpty");
@@ -545,6 +551,10 @@
       const addEchemCaRangeBtn = document.getElementById("addEchemCaRangeBtn");
       const addEchemLsvBtn = document.getElementById("addEchemLsvBtn");
       const addEchemCvBtn = document.getElementById("addEchemCvBtn");
+      const addEchemCpBtn = document.getElementById("addEchemCpBtn");
+      const addEchemCcChargeBtn = document.getElementById("addEchemCcChargeBtn");
+      const addEchemCcDischargeBtn = document.getElementById("addEchemCcDischargeBtn");
+      const addEchemGeisBtn = document.getElementById("addEchemGeisBtn");
       const echemStepListEl = document.getElementById("echemStepList");
       const previewEchemProtocolBtn = document.getElementById("previewEchemProtocolBtn");
       const saveEchemProtocolBtn = document.getElementById("saveEchemProtocolBtn");
@@ -592,25 +602,37 @@
       let livePollIntervalMs = 500;
       let livePollTimer = null;
       let livePollBusy = false;
+      let liveStatus = {};
       const MIN_STEPS = 1;
       const MAX_STEPS = 300000;
 
       function liveValue(point, axis, technique) {
-        if (technique === "eis") {
+        if (technique === "eis" || technique === "geis") {
           return axis === "x" ? Number(point.zreal_ohm) : -Number(point.zimag_ohm);
         }
         if (axis === "x") {
           return technique === "cv" || technique === "lsv" ? Number(point.e_v) : Number(point.t_s);
         }
-        return technique === "ocp" || technique === "cp" ? Number(point.e_v) : Number(point.i_a);
+        return ["ocp", "cp", "cc_charge", "cc_discharge"].includes(technique) ? Number(point.e_v) : Number(point.i_a);
       }
 
       function livePlotLabels(technique) {
-        if (technique === "eis") return ["Zreal (ohm)", "-Zimag (ohm)"];
+        if (technique === "eis" || technique === "geis") return ["Zreal (ohm)", "-Zimag (ohm)"];
         if (technique === "ocp") return ["Time (s)", "Potential (V)"];
         if (technique === "ca") return ["Time (s)", "Current (A)"];
         if (technique === "cp") return ["Time (s)", "Potential (V)"];
+        if (technique === "cc_charge" || technique === "cc_discharge") return ["Time (s)", "Potential (V)"];
         return ["Potential (V)", "Current (A)"];
+      }
+
+      function formatLiveNumber(value, technique, axis) {
+        if (!Number.isFinite(value)) return "—";
+        const currentAxis = axis === "y" && ["ca", "cv", "lsv"].includes(technique);
+        const magnitude = Math.abs(value);
+        if ((currentAxis && magnitude > 0) || (magnitude > 0 && magnitude < 0.001) || magnitude >= 10000) {
+          return value.toExponential(2);
+        }
+        return Number(value.toPrecision(4)).toString();
       }
 
       function drawLivePlot(status = {}) {
@@ -630,7 +652,7 @@
         liveGamryEmptyEl.hidden = valid.length > 0;
         if (!valid.length) return;
 
-        const margin = { left: 58, right: 18, top: 16, bottom: 42 };
+        const margin = { left: 76, right: 18, top: 16, bottom: 48 };
         const plotWidth = width - margin.left - margin.right;
         const plotHeight = height - margin.top - margin.bottom;
         let xs = valid.map((point) => liveValue(point, "x", technique));
@@ -655,6 +677,26 @@
         ctx.stroke();
         ctx.fillStyle = "#234a68";
         ctx.font = "12px sans-serif";
+        ctx.textAlign = "center";
+        for (let tick = 0; tick <= 4; tick += 1) {
+          const xValue = xmin + (xmax - xmin) * tick / 4;
+          const x = sx(xValue);
+          ctx.beginPath();
+          ctx.moveTo(x, margin.top + plotHeight);
+          ctx.lineTo(x, margin.top + plotHeight + 5);
+          ctx.stroke();
+          ctx.fillText(formatLiveNumber(xValue, technique, "x"), x, margin.top + plotHeight + 18);
+
+          const yValue = ymin + (ymax - ymin) * tick / 4;
+          const y = sy(yValue);
+          ctx.beginPath();
+          ctx.moveTo(margin.left - 5, y);
+          ctx.lineTo(margin.left, y);
+          ctx.stroke();
+          ctx.textAlign = "right";
+          ctx.fillText(formatLiveNumber(yValue, technique, "y"), margin.left - 8, y + 4);
+          ctx.textAlign = "center";
+        }
         const labels = livePlotLabels(technique);
         ctx.fillText(labels[0], margin.left + plotWidth / 2 - 30, height - 10);
         ctx.save();
@@ -675,6 +717,7 @@
       }
 
       function updateLiveMeta(status) {
+        liveStatus = status || {};
         const state = String(status.status || "idle");
         liveGamryStatusEl.textContent = `Status: ${state}`;
         liveGamrySampleEl.textContent = `Sample: ${status.sample_label || status.sample_id || "—"}`;
@@ -682,11 +725,15 @@
         liveGamryStepEl.textContent = `EChem step: ${status.step_name || "—"}`;
         liveGamryTechniqueEl.textContent = `Technique: ${status.technique || "—"}`;
         liveGamryCountEl.textContent = `Points: ${status.point_count || livePoints.length || 0}`;
+        const startedMs = status.started_at ? Date.parse(status.started_at) : NaN;
+        const finishedMs = status.finished_at ? Date.parse(status.finished_at) : Date.now();
+        const elapsedS = Number.isFinite(startedMs) ? Math.max(0, (finishedMs - startedMs) / 1000) : null;
+        liveGamryElapsedEl.textContent = `Elapsed: ${elapsedS === null ? "—" : `${elapsedS.toFixed(1)} s`}`;
         liveGamryUpdatedEl.textContent = `Last update: ${status.last_update_at ? new Date(status.last_update_at).toLocaleTimeString() : "—"}`;
-        if (status.error) {
-          liveGamryMessageEl.textContent = `Live acquisition error: ${status.error}`;
+        if (status.error || status.stream_error) {
+          liveGamryMessageEl.textContent = `Live acquisition error: ${status.error || status.stream_error}`;
         } else if (!status.run_id) {
-          liveGamryMessageEl.textContent = "No live data exists yet.";
+          liveGamryMessageEl.textContent = "No active Gamry measurement.";
         } else if (!livePoints.length) {
           liveGamryMessageEl.textContent = state === "running" ? "Waiting for live points..." : "No live points were recorded.";
         } else {
@@ -1791,6 +1838,65 @@
             { key: "precharge_s", label: "Precharge time (s)", type: "number", value: 1, min: 0, step: "0.1" },
             { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
           ]
+        },
+        cp: {
+          label: "CP (Chronopotentiometry)",
+          defaultName: "cp",
+          defaultOutput: "CP.DTA",
+          fields: [
+            { key: "current_a", label: "Applied current (A, signed; + is anodic)", type: "number", value: 0.00001, step: "0.000001" },
+            { key: "duration_s", label: "Duration (s)", type: "number", value: 60, positive: true, step: "0.1" },
+            { key: "sample_period_s", label: "Sample period (s)", type: "number", value: 0.5, positive: true, step: "0.01" },
+            { key: "voltage_limit_low_v", label: "Lower voltage limit (V)", type: "number", value: -1, step: "0.001" },
+            { key: "voltage_limit_high_v", label: "Upper voltage limit (V)", type: "number", value: 1, step: "0.001" },
+            { key: "expected_max_current_a", label: "Expected maximum |current| (A)", type: "number", value: 0.00001, positive: true, step: "0.000001" },
+            { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
+          ]
+        },
+        cc_charge: {
+          label: "Constant-Current Charge",
+          defaultName: "cc_charge",
+          defaultOutput: "CC_CHARGE.DTA",
+          fields: [
+            { key: "current_a", label: "Current magnitude (A, positive)", type: "number", value: 0.00001, positive: true, step: "0.000001" },
+            { key: "duration_s", label: "Maximum duration (s)", type: "number", value: 60, positive: true, step: "0.1" },
+            { key: "sample_period_s", label: "Sample period (s)", type: "number", value: 1, positive: true, step: "0.01" },
+            { key: "voltage_cutoff_v", label: "Upper |voltage| cutoff (V)", type: "number", value: 4.2, positive: true, step: "0.001" },
+            { key: "capacity_cutoff_ah", label: "Capacity cutoff (Ah, optional)", type: "number", value: "", optional: true, positive: true, step: "0.000001" },
+            { key: "working_positive", label: "Working lead is positive electrode", type: "checkbox", value: true },
+            { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
+          ]
+        },
+        cc_discharge: {
+          label: "Constant-Current Discharge",
+          defaultName: "cc_discharge",
+          defaultOutput: "CC_DISCHARGE.DTA",
+          fields: [
+            { key: "current_a", label: "Current magnitude (A, positive)", type: "number", value: 0.00001, positive: true, step: "0.000001" },
+            { key: "duration_s", label: "Maximum duration (s)", type: "number", value: 60, positive: true, step: "0.1" },
+            { key: "sample_period_s", label: "Sample period (s)", type: "number", value: 1, positive: true, step: "0.01" },
+            { key: "voltage_cutoff_v", label: "Lower |voltage| cutoff (V)", type: "number", value: 3.0, positive: true, step: "0.001" },
+            { key: "capacity_cutoff_ah", label: "Capacity cutoff (Ah, optional)", type: "number", value: "", optional: true, positive: true, step: "0.000001" },
+            { key: "working_positive", label: "Working lead is positive electrode", type: "checkbox", value: true },
+            { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
+          ]
+        },
+        geis: {
+          label: "Galvanostatic EIS",
+          defaultName: "geis",
+          defaultOutput: "GEIS.DTA",
+          fields: [
+            { key: "initial_freq_hz", label: "Initial frequency (Hz)", type: "number", value: 100000, positive: true, step: "0.1" },
+            { key: "final_freq_hz", label: "Final frequency (Hz)", type: "number", value: 1, positive: true, step: "0.1" },
+            { key: "points_per_decade", label: "Points per decade", type: "integer", value: 10, positive: true, step: "1" },
+            { key: "ac_current_a", label: "AC current amplitude (A RMS)", type: "number", value: 0.0001, positive: true, step: "0.000001" },
+            { key: "dc_current_a", label: "DC current (A, signed)", type: "number", value: 0, step: "0.000001" },
+            { key: "estimated_z_ohm", label: "Estimated Z (Ω)", type: "number", value: 100, positive: true, step: "0.1" },
+            { key: "settle_s", label: "Settle time (s)", type: "number", value: 0, min: 0, step: "0.1" },
+            { key: "speed", label: "Speed", type: "text", value: "normal" },
+            { key: "drift_correction", label: "Drift correction", type: "checkbox", value: false },
+            { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
+          ]
         }
       };
 
@@ -1889,6 +1995,10 @@
             <option value="ca_range">CA Range</option>
             <option value="lsv">LSV</option>
             <option value="cv">CV</option>
+            <option value="cp">CP</option>
+            <option value="cc_charge">CC Charge</option>
+            <option value="cc_discharge">CC Discharge</option>
+            <option value="geis">GEIS</option>
           </select>
           <label>Step name</label>
           <input class="echem-step-name" type="text" />
@@ -1980,10 +2090,23 @@
           } else if (spec.type === "text") {
             payload[spec.key] = input.value.trim();
           } else if (spec.type === "integer") {
+            if (spec.optional && input.value.trim() === "") continue;
             payload[spec.key] = numberValueFromInput(input, `${name}: ${spec.label}`, Boolean(spec.positive), true);
           } else {
+            if (spec.optional && input.value.trim() === "") continue;
             payload[spec.key] = numberValueFromInput(input, `${name}: ${spec.label}`, Boolean(spec.positive), false);
           }
+        }
+
+        if (kind === "cp") {
+          if (payload.current_a === 0) throw new Error(`${name}: applied current must not be zero.`);
+          if (payload.voltage_limit_low_v >= payload.voltage_limit_high_v) throw new Error(`${name}: lower voltage limit must be below upper voltage limit.`);
+          if (payload.expected_max_current_a < Math.abs(payload.current_a)) throw new Error(`${name}: expected maximum current must cover the applied current.`);
+        }
+        const initialFreq = payload.initial_frequency_hz ?? payload.initial_freq_hz;
+        const finalFreq = payload.final_frequency_hz ?? payload.final_freq_hz;
+        if ((kind === "eis" || kind === "geis") && initialFreq <= finalFreq) {
+          throw new Error(`${name}: initial frequency must be greater than final frequency.`);
         }
 
         return payload;
@@ -2396,21 +2519,22 @@
       livePauseBtn.addEventListener("click", () => {
         livePaused = !livePaused;
         livePauseBtn.textContent = livePaused ? "Resume Display" : "Pause Display";
-        updateLiveMeta({ status: livePaused ? "paused" : "running", run_id: liveStreamKey ? "active" : null, technique: livePoints[0]?.technique, point_count: livePoints.length });
+        liveGamryMessageEl.textContent = livePaused ? "Display paused; acquisition continues." : "Live data stream connected.";
+        drawLivePlot(liveStatus);
       });
 
       liveClearBtn.addEventListener("click", () => {
         livePoints = [];
         liveLatestSeq = Number(liveGamryCountEl.textContent.match(/\d+/)?.[0] || liveLatestSeq);
         liveGamryMessageEl.textContent = "View cleared. Final DTA files are unchanged.";
-        drawLivePlot({ technique: livePoints[0]?.technique });
+        drawLivePlot(liveStatus);
         liveGamryEmptyEl.hidden = false;
       });
 
       liveScaleBtn.addEventListener("click", () => {
         liveAutoScale = !liveAutoScale;
         liveScaleBtn.textContent = `Auto Scale: ${liveAutoScale ? "On" : "Off"}`;
-        drawLivePlot({ technique: livePoints[0]?.technique });
+        drawLivePlot(liveStatus);
       });
 
 
@@ -2459,6 +2583,10 @@
       addEchemCaRangeBtn.addEventListener("click", () => addEchemStep("ca_range", { name: "ca_range" }));
       addEchemLsvBtn.addEventListener("click", () => addEchemStep("lsv", { name: "lsv" }));
       addEchemCvBtn.addEventListener("click", () => addEchemStep("cv", { name: "cv" }));
+      addEchemCpBtn.addEventListener("click", () => addEchemStep("cp", { name: "cp" }));
+      addEchemCcChargeBtn.addEventListener("click", () => addEchemStep("cc_charge", { name: "cc_charge" }));
+      addEchemCcDischargeBtn.addEventListener("click", () => addEchemStep("cc_discharge", { name: "cc_discharge" }));
+      addEchemGeisBtn.addEventListener("click", () => addEchemStep("geis", { name: "geis" }));
 
       previewEchemProtocolBtn.addEventListener("click", () => {
         try {

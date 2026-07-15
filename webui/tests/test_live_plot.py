@@ -94,6 +94,24 @@ class LivePlotTest(unittest.TestCase):
             points = read_live_points(live_dir, after=0, limit=10)
             self.assertEqual([point["seq"] for point in points], [1])
 
+    def test_clear_endpoint_removes_only_inactive_live_buffer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_dir = Path(tmpdir) / "run"
+            live_dir = run_dir / "_system" / "live"
+            final_dta = run_dir / "01_Sample" / "result.DTA"
+            final_dta.parent.mkdir(parents=True)
+            final_dta.write_text("authoritative data\n", encoding="utf-8")
+            initialize_live_stream(live_dir, run_id="run", technique="cp")
+            append_live_point(live_dir, {"technique": "cp", "t_s": 0.1, "e_v": 0.2, "i_a": 1e-5})
+            fail_live_stream(live_dir, "test finished", status="complete")
+            self.set_current_run(run_dir)
+
+            response = self.client.post("/api/live/clear")
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse((live_dir / "status.json").exists())
+            self.assertFalse((live_dir / "points.jsonl").exists())
+            self.assertTrue(final_dta.exists())
+
     def run_live_job(self, technique: str, step: dict, *, scale: float = 0.01) -> tuple[dict, Path, Path]:
         tmpdir = tempfile.TemporaryDirectory()
         self.addCleanup(tmpdir.cleanup)

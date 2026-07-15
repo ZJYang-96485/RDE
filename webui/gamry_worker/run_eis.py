@@ -9,8 +9,10 @@ import toolkitpy as tkp
 
 try:
     from gamry_worker.device import select_pstat_name
+    from gamry_worker.live_adapters import LiveCurveEmitter, normalize_eis_point
 except ModuleNotFoundError:
     from device import select_pstat_name
+    from live_adapters import LiveCurveEmitter, normalize_eis_point
 
 
 def initialize_pstat(pstat: Any) -> None:
@@ -70,6 +72,7 @@ def run_single_eis(
     pstat: Any,
     step: dict[str, Any],
     output_path: str,
+    live_dir: str | None = None,
 ) -> dict[str, Any]:
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -138,6 +141,7 @@ def run_single_eis(
 
     max_points = int(tkp.check_eis_points(initial_freq, final_freq, points_per_decade))
     zcurve = tkp.ZCurve(max_points)
+    emitter = LiveCurveEmitter(live_dir, normalize_eis_point)
 
     measured_points = 0
     bad_points = 0
@@ -162,6 +166,7 @@ def run_single_eis(
 
             zcurve.add_point(readz, temp)
             measured_points += 1
+            emitter.emit_point(zcurve.acq_data()[measured_points - 1])
             time.sleep(0.010)
 
         if tkp.pstat_is_valid(pstat):
@@ -169,7 +174,7 @@ def run_single_eis(
 
         tkp.print_default_dta_file(zcurve, pstat, str(output.resolve()), "EISPOT")
 
-        return {
+        result = {
             "ok": True,
             "technique": "eis",
             "output": str(output),
@@ -183,6 +188,8 @@ def run_single_eis(
             "bad_points": bad_points,
             "max_points": max_points,
         }
+        result.update(emitter.result_fields())
+        return result
 
     finally:
         try:
@@ -206,6 +213,7 @@ def run(
     step: dict[str, Any],
     outputs: list[str],
     sample_id: str | None = None,
+    live_dir: str | None = None,
 ) -> dict[str, Any]:
     if not outputs:
         raise ValueError("outputs must contain at least one path.")
@@ -225,6 +233,7 @@ def run(
             pstat=pstat,
             step=step,
             output_path=outputs[0],
+            live_dir=live_dir,
         )
 
         result["sample_id"] = sample_id

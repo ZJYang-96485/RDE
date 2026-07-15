@@ -71,6 +71,7 @@ def _default_status() -> dict[str, Any]:
         "point_count": 0,
         "status": "idle",
         "error": None,
+        "stream_error": None,
     }
 
 
@@ -165,6 +166,7 @@ def append_live_points(
                 if not technique:
                     raise ValueError("every live point needs a technique")
                 point["seq"] = next_seq
+                point.setdefault("index", next_seq)
                 point["timestamp_utc"] = str(point.get("timestamp_utc") or utc_now())
                 stream.write(json.dumps(point, separators=(",", ":"), allow_nan=False) + "\n")
                 written.append(point)

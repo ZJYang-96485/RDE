@@ -8,8 +8,10 @@ import toolkitpy as tkp
 
 try:
     from gamry_worker.device import select_pstat_name
+    from gamry_worker.live_adapters import LiveCurveEmitter, normalize_ocp_acq_rows
 except ModuleNotFoundError:
     from device import select_pstat_name
+    from live_adapters import LiveCurveEmitter, normalize_ocp_acq_rows
 
 
 def get_float(step: dict[str, Any], names: list[str], default: float) -> float:
@@ -24,6 +26,7 @@ def run_single_ocp(
     pstat: Any,
     step: dict[str, Any],
     output_path: str,
+    live_dir: str | None = None,
 ) -> dict[str, Any]:
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -41,6 +44,7 @@ def run_single_ocp(
     pstat.set_ctrl_mode(tkp.PSTATMODE)
 
     curve = tkp.OcvCurve(pstat, max_size)
+    emitter = LiveCurveEmitter(live_dir, normalize_ocp_acq_rows)
     signal = None
 
     try:
@@ -58,12 +62,14 @@ def run_single_ocp(
         curve.run(True)
 
         while tkp.pstat_is_valid(pstat) and curve.running():
-            curve.acq_data()
+            emitter.emit_new(curve.acq_data())
             time.sleep(max(0.01, min(sample_time, 0.25)))
+
+        emitter.emit_new(curve.acq_data())
 
         tkp.print_default_dta_file(curve, pstat, str(output.resolve()), "CORPOT")
 
-        return {
+        result = {
             "ok": True,
             "technique": "ocp",
             "output": str(output),
@@ -71,6 +77,8 @@ def run_single_ocp(
             "sample_period_s": sample_time,
             "points": int(curve.count()),
         }
+        result.update(emitter.result_fields())
+        return result
 
     finally:
         try:
@@ -99,6 +107,7 @@ def run(
     step: dict[str, Any],
     outputs: list[str],
     sample_id: str | None = None,
+    live_dir: str | None = None,
 ) -> dict[str, Any]:
     if not outputs:
         raise ValueError("outputs must contain at least one path.")
@@ -118,6 +127,7 @@ def run(
             pstat=pstat,
             step=step,
             output_path=outputs[0],
+            live_dir=live_dir,
         )
 
         result["sample_id"] = sample_id

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from workflow.config_loader import get_gamry_config
+from gamry_worker.live_writer import fail_live_stream
 
 
 class GamryClientError(RuntimeError):
@@ -197,11 +198,15 @@ class GamryClient:
                 timeout=float(self.config().get("real_timeout_s", 7200)),
             )
         except subprocess.TimeoutExpired as exc:
-            raise GamryClientError(
-                f"Gamry worker timed out after {exc.timeout} seconds."
-            ) from exc
+            message = f"Gamry worker timed out after {exc.timeout} seconds."
+            if job.get("live_enabled", False):
+                fail_live_stream(job["live_dir"], message)
+            raise GamryClientError(message) from exc
         except Exception as exc:
-            raise GamryClientError(f"unable to start Gamry worker: {exc}") from exc
+            message = f"unable to start Gamry worker: {exc}"
+            if job.get("live_enabled", False):
+                fail_live_stream(job["live_dir"], message)
+            raise GamryClientError(message) from exc
 
         if result_path.exists():
             result = read_json(result_path)
@@ -226,15 +231,23 @@ class GamryClient:
 
         if completed.returncode != 0 or not bool(result.get("ok", False)):
             error = result.get("error") or completed.stderr or "Gamry worker failed."
-            raise GamryClientError(str(error))
+            details = [str(error)]
+            if completed.stdout.strip():
+                details.append("Worker stdout:\n" + completed.stdout.strip())
+            if completed.stderr.strip() and completed.stderr.strip() != str(error).strip():
+                details.append("Worker stderr:\n" + completed.stderr.strip())
+            message = "\n".join(details)
+            if job.get("live_enabled", False):
+                fail_live_stream(job["live_dir"], message)
+            raise GamryClientError(message)
 
         missing_outputs = [output for output in job["outputs"] if not Path(output).is_file()]
 
         if missing_outputs:
-            raise GamryClientError(
-                "Gamry worker reported success but did not create: "
-                + ", ".join(missing_outputs)
-            )
+            message = "Gamry worker reported success but did not create: " + ", ".join(missing_outputs)
+            if job.get("live_enabled", False):
+                fail_live_stream(job["live_dir"], message)
+            raise GamryClientError(message)
 
         return result
 

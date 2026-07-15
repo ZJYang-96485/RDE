@@ -21,7 +21,7 @@ The web UI is organized around three main functions:
    - Create reusable electrochemistry protocols directly from the web app
    - Start from a blank protocol
    - Add, remove, reorder, duplicate, and edit EChem steps
-   - Supports OCP, CA, CA range, CA staircase, CV, LSV, and EIS
+   - Supports OCP, CA, CA range, CA staircase, CV, LSV, EIS, CP, constant-current charge/discharge, and GEIS
    - Save protocols to `webui/protocols/`
    - Saved protocols appear in each sample's EChem Protocol dropdown
 
@@ -109,7 +109,10 @@ RDE/
     │   ├── run_ca.py
     │   ├── run_cv.py
     │   ├── run_lsv.py
-    │   └── run_eis.py
+    │   ├── run_eis.py
+    │   ├── run_cp.py
+    │   ├── run_cc.py
+    │   └── run_geis.py
     ├── protocols/
     ├── run_plans/
     └── output/runs/
@@ -160,6 +163,9 @@ Compile-check the real Gamry worker files with the Gamry 32-bit Python: (Might b
 & "C:\Program Files (x86)\Gamry Instruments\Python\Python37-32\python.exe" -m py_compile .\gamry_worker\run_cv.py
 & "C:\Program Files (x86)\Gamry Instruments\Python\Python37-32\python.exe" -m py_compile .\gamry_worker\run_lsv.py
 & "C:\Program Files (x86)\Gamry Instruments\Python\Python37-32\python.exe" -m py_compile .\gamry_worker\run_eis.py
+& "C:\Program Files (x86)\Gamry Instruments\Python\Python37-32\python.exe" -m py_compile .\gamry_worker\run_cp.py
+& "C:\Program Files (x86)\Gamry Instruments\Python\Python37-32\python.exe" -m py_compile .\gamry_worker\run_cc.py
+& "C:\Program Files (x86)\Gamry Instruments\Python\Python37-32\python.exe" -m py_compile .\gamry_worker\run_geis.py
 ```
 
 ## How the workflow works
@@ -211,6 +217,10 @@ ca_staircase
 cv
 lsv
 eis
+cp
+cc_charge
+cc_discharge
+geis
 ```
 
 The web UI also supports compact protocol-builder blocks such as `ca_range`. These are expanded by `workflow/protocol_loader.py` into normal executable CA steps before the run starts.
@@ -236,6 +246,10 @@ It starts blank. Users can add steps such as:
 - CA Range
 - LSV
 - CV
+- CP (chronopotentiometry)
+- Constant-current charge
+- Constant-current discharge
+- GEIS (galvanostatic EIS)
 
 For each step, users can adjust parameters such as:
 
@@ -444,6 +458,20 @@ The real Gamry backend has been tested with ToolkitPy for:
 | LSV | Working |
 | CV | Working |
 | EIS | Working |
+| CP | Implemented from installed `Chronopotentiometry.exp`; connected-device cell test pending |
+| Constant-current charge/discharge | Implemented from installed `pwr_charge.py` / `pwr_discharge.py`; connected-device cell test pending |
+| GEIS | Implemented from installed `galvanostatic_eis.py`; connected-device cell test pending |
+
+The web screen streams temporary live points for every listed technique. Real
+curves are mapped from the exact acquisition fields in the installed ToolkitPy
+`OcvCurve`, `ChronoCurve`, `RcvCurve`, `PwrCurve`, and `ZCurve` classes. Final
+Gamry `.DTA` files remain the authoritative stored data.
+
+For CP, `current_a` is signed under the anodic current convention. For
+`cc_charge` and `cc_discharge`, `current_a` is always a positive magnitude;
+the selected technique and `working_positive` electrode wiring determine the
+physical direction. Do not reuse a current or voltage cutoff from a different
+cell chemistry without checking it first.
 
 For real EChem testing, close Gamry Framework or Instrument Manager before running direct ToolkitPy worker tests if the instrument is locked.
 

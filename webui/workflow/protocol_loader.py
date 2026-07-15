@@ -18,6 +18,10 @@ ALLOWED_TECHNIQUES = {
     "ca",
     "ca_staircase",
     "eis",
+    "cp",
+    "cc_charge",
+    "cc_discharge",
+    "geis",
 }
 
 
@@ -362,6 +366,72 @@ def validate_eis_step(raw_step: dict[str, Any], index: int) -> dict[str, Any]:
     return step
 
 
+def validate_cp_step(raw_step: dict[str, Any], index: int) -> dict[str, Any]:
+    step = validate_common_step_fields(raw_step, index)
+    current_a = parse_float(raw_step.get("current_a", 1e-5), f"{step['name']}: current_a")
+    if current_a == 0:
+        raise ProtocolError(f"{step['name']}: current_a must not be zero.")
+    voltage_min_v = parse_float(first_present(raw_step, ["voltage_limit_low_v", "voltage_min_v"], -10), f"{step['name']}: voltage_limit_low_v")
+    voltage_max_v = parse_float(first_present(raw_step, ["voltage_limit_high_v", "voltage_max_v"], 10), f"{step['name']}: voltage_limit_high_v")
+    if voltage_min_v >= voltage_max_v:
+        raise ProtocolError(f"{step['name']}: voltage_limit_low_v must be lower than voltage_limit_high_v.")
+    step["current_a"] = current_a
+    step["duration_s"] = parse_positive_float(raw_step.get("duration_s", 60), f"{step['name']}: duration_s")
+    step["sample_period_s"] = parse_positive_float(raw_step.get("sample_period_s", 0.5), f"{step['name']}: sample_period_s")
+    step["voltage_limit_low_v"] = voltage_min_v
+    step["voltage_limit_high_v"] = voltage_max_v
+    expected_max_current_a = parse_positive_float(raw_step.get("expected_max_current_a", abs(current_a)), f"{step['name']}: expected_max_current_a")
+    if expected_max_current_a < abs(current_a):
+        raise ProtocolError(f"{step['name']}: expected_max_current_a must be at least |current_a|.")
+    step["expected_max_current_a"] = expected_max_current_a
+    step["area_cm2"] = parse_positive_float(raw_step.get("area_cm2", 1), f"{step['name']}: area_cm2")
+    return step
+
+
+def validate_cc_step(raw_step: dict[str, Any], index: int) -> dict[str, Any]:
+    step = validate_common_step_fields(raw_step, index)
+    # The installed power scripts take a positive current magnitude. Direction
+    # comes from PWR_CHARGE/PWR_CURRENT_DISCHARGE plus working_positive wiring.
+    step["current_a"] = parse_positive_float(raw_step.get("current_a", 1e-5), f"{step['name']}: current_a")
+    step["duration_s"] = parse_positive_float(raw_step.get("duration_s", 60), f"{step['name']}: duration_s")
+    step["sample_period_s"] = parse_positive_float(raw_step.get("sample_period_s", 1), f"{step['name']}: sample_period_s")
+    default_cutoff = 4.2 if step["technique"] == "cc_charge" else 3.0
+    step["voltage_cutoff_v"] = parse_positive_float(raw_step.get("voltage_cutoff_v", default_cutoff), f"{step['name']}: voltage_cutoff_v")
+    capacity = raw_step.get("capacity_cutoff_ah")
+    if capacity not in {None, ""}:
+        step["capacity_cutoff_ah"] = parse_positive_float(capacity, f"{step['name']}: capacity_cutoff_ah")
+    step["working_positive"] = bool(raw_step.get("working_positive", True))
+    step["area_cm2"] = parse_positive_float(raw_step.get("area_cm2", 1), f"{step['name']}: area_cm2")
+    return step
+
+
+def validate_geis_step(raw_step: dict[str, Any], index: int) -> dict[str, Any]:
+    step = validate_common_step_fields(raw_step, index)
+    initial_frequency = parse_positive_float(
+        first_present(raw_step, ["initial_frequency_hz", "initial_freq_hz", "start_freq_hz"], 100000),
+        f"{step['name']}: initial_frequency_hz",
+    )
+    final_frequency = parse_positive_float(
+        first_present(raw_step, ["final_frequency_hz", "final_freq_hz", "end_freq_hz"], 1),
+        f"{step['name']}: final_frequency_hz",
+    )
+    if initial_frequency <= final_frequency:
+        raise ProtocolError(f"{step['name']}: initial_frequency_hz must be greater than final_frequency_hz.")
+    step["initial_frequency_hz"] = initial_frequency
+    step["final_frequency_hz"] = final_frequency
+    step["initial_freq_hz"] = initial_frequency
+    step["final_freq_hz"] = final_frequency
+    step["points_per_decade"] = parse_positive_int(raw_step.get("points_per_decade", 10), f"{step['name']}: points_per_decade")
+    step["ac_current_a"] = parse_positive_float(raw_step.get("ac_current_a", 1e-4), f"{step['name']}: ac_current_a")
+    step["dc_current_a"] = parse_float(raw_step.get("dc_current_a", 0), f"{step['name']}: dc_current_a")
+    step["estimated_z_ohm"] = parse_positive_float(raw_step.get("estimated_z_ohm", 100), f"{step['name']}: estimated_z_ohm")
+    step["speed"] = optional_string(raw_step.get("speed"), "normal")
+    step["drift_correction"] = bool(raw_step.get("drift_correction", False))
+    step["settle_s"] = parse_nonnegative_float(raw_step.get("settle_s", 0), f"{step['name']}: settle_s")
+    step["area_cm2"] = parse_positive_float(raw_step.get("area_cm2", 1), f"{step['name']}: area_cm2")
+    return step
+
+
 def expand_ca_range_step(raw_step: dict[str, Any], index: int) -> list[dict[str, Any]]:
     label = optional_string(
         raw_step.get("direction_label")
@@ -451,6 +521,10 @@ def validate_protocol_step(raw_step: dict[str, Any], index: int) -> dict[str, An
         "ca": validate_ca_step,
         "ca_staircase": validate_ca_staircase_step,
         "eis": validate_eis_step,
+        "cp": validate_cp_step,
+        "cc_charge": validate_cc_step,
+        "cc_discharge": validate_cc_step,
+        "geis": validate_geis_step,
     }
 
     if technique not in validators:

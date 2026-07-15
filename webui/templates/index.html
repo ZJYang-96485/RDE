@@ -244,8 +244,10 @@
             <option value="real">Real / Windows</option>
           </select>
           <button id="saveGamryModeBtn" class="home-btn" type="button">Apply</button>
+          <button id="checkGamryDeviceBtn" class="home-btn" type="button">Check Device</button>
         </div>
         <p id="gamryModeStatus" class="hint"></p>
+        <p id="gamryDeviceStatus" class="hint"></p>
 
         <label for="recipeNameInput">Run Plan Name</label>
         <input id="recipeNameInput" type="text" value="default" placeholder="e.g. AuNW ORR sample map" />
@@ -438,7 +440,9 @@
       const deleteRecipeBtn = document.getElementById("deleteRecipeBtn");
       const gamryModeSelect = document.getElementById("gamryModeSelect");
       const saveGamryModeBtn = document.getElementById("saveGamryModeBtn");
+      const checkGamryDeviceBtn = document.getElementById("checkGamryDeviceBtn");
       const gamryModeStatusEl = document.getElementById("gamryModeStatus");
+      const gamryDeviceStatusEl = document.getElementById("gamryDeviceStatus");
       const recipeNameInput = document.getElementById("recipeNameInput");
       const recipeSelect = document.getElementById("recipeSelect");
       const recipeGroupsEl = document.getElementById("recipeGroups");
@@ -586,10 +590,60 @@
         gamryModeDirty = false;
 
         if (gamryModeSelect.value === "real" && !gamryRealRunnerConfigured) {
-          gamryModeStatusEl.textContent = "Gamry backend: real (runner path not configured yet)";
+          gamryModeStatusEl.textContent = "Gamry backend: real (worker runtime is not ready)";
+        } else if (gamryModeSelect.value === "real") {
+          gamryModeStatusEl.textContent = "Gamry backend: real (worker runtime ready)";
         } else {
-          gamryModeStatusEl.textContent = `Gamry backend: ${gamryModeSelect.value}`;
+          gamryModeStatusEl.textContent = "Gamry backend: mock";
         }
+
+        updateGamryProbeButton();
+      }
+
+      function updateGamryProbeButton() {
+        checkGamryDeviceBtn.disabled = (
+          automationRunning
+          || gamryModeDirty
+          || gamryModeSelect.value !== "real"
+          || !gamryRealRunnerConfigured
+        );
+      }
+
+      async function checkGamryDevice() {
+        setAutomationError("");
+        gamryDeviceStatusEl.textContent = "Checking ToolkitPy and attached instruments...";
+
+        const res = await fetch("/api/gamry/probe", { method: "POST" });
+        const data = await res.json();
+
+        if (!res.ok) {
+          const message = data.error || "Unable to check the Gamry device.";
+          gamryDeviceStatusEl.textContent = message;
+          setAutomationError(message);
+          return false;
+        }
+
+        const probe = data.probe || {};
+        const sections = Array.isArray(probe.sections) ? probe.sections : [];
+
+        if (probe.connected) {
+          gamryDeviceStatusEl.textContent = (
+            `Connected: ${probe.selected_instrument}. `
+            + `ToolkitPy is using Python ${probe.python_version}.`
+          );
+        } else if (sections.length > 0) {
+          gamryDeviceStatusEl.textContent = (
+            `Detected ${sections.join(", ")}, but the configured instrument `
+            + `${probe.configured_instrument_label || `index ${probe.configured_instrument_index}`} is unavailable.`
+          );
+        } else {
+          gamryDeviceStatusEl.textContent = (
+            "ToolkitPy is installed, but no potentiostat is visible. Check power/connection "
+            + "and close Gamry Framework or Instrument Manager, then retry."
+          );
+        }
+
+        return Boolean(probe.connected);
       }
 
       async function fetchConfig() {
@@ -625,6 +679,7 @@
 
         const config = data.config || {};
         renderGamryModeStatus(config.gamry_mode || data.gamry_mode, config.gamry_real_runner_configured);
+        gamryDeviceStatusEl.textContent = "";
         return true;
       }
 
@@ -665,6 +720,7 @@
           automationRepetitionsInput.disabled = automationRunning;
           gamryModeSelect.disabled = automationRunning;
           saveGamryModeBtn.disabled = automationRunning;
+          updateGamryProbeButton();
           setRecipeDisabled(automationRunning);
           setProtocolBuilderDisabled(automationRunning);
           setError(data.last_error || "");
@@ -2047,6 +2103,20 @@
 
       gamryModeSelect.addEventListener("change", () => {
         gamryModeDirty = true;
+        gamryDeviceStatusEl.textContent = "Apply the backend selection before checking the device.";
+        updateGamryProbeButton();
+      });
+
+      checkGamryDeviceBtn.addEventListener("click", async () => {
+        checkGamryDeviceBtn.disabled = true;
+        try {
+          await checkGamryDevice();
+        } catch (err) {
+          gamryDeviceStatusEl.textContent = err.message;
+          setAutomationError(err.message);
+        } finally {
+          updateGamryProbeButton();
+        }
       });
 
       recipeSelect.addEventListener("change", async () => {

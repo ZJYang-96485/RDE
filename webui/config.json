@@ -86,6 +86,8 @@
     "mode": "real",
     "worker_python": "C:\\Program Files (x86)\\Gamry Instruments\\Python\\Python37-32\\python.exe",
     "worker_script": "gamry_worker/worker.py",
+    "probe_timeout_s": 15,
+    "real_timeout_s": 7200,
     "instrument_index": 0,
     "instrument_label": "IFC1010-36030",
     "default_file_extension": ".DTA"

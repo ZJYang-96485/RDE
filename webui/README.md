@@ -401,6 +401,17 @@ The worker is launched with:
 --job <job.json> --result <result.json>
 ```
 
+The web screen also has a **Check Device** button. It runs a read-only ToolkitPy
+probe through the configured 32-bit Python, lists attached potentiostats, and
+confirms that the configured `instrument_label` or `instrument_index` is
+available. The probe does not turn on the cell or start an acquisition.
+
+The equivalent command-line probe is:
+
+```powershell
+& "C:\Program Files (x86)\Gamry Instruments\Python\Python37-32\python.exe" .\gamry_worker\worker.py --probe
+```
+
 The worker reads the job JSON, runs the requested technique, creates every file listed in `outputs`, and writes a result JSON.
 
 Successful result example:
@@ -447,27 +458,42 @@ webui/output/runs/
 Each run creates a timestamped folder containing:
 
 ```text
-run_plan.json
-manifest.json
-log.txt
-protocol_snapshots/
-_jobs/
-samples/
+README_DATA.txt
+run.log
+run_summary.json
+01_Sample_Name/
+_system/
+  manifest.json
+  run_plan.json
+  jobs/
+  protocols/
+  samples/
 ```
 
-Mock or real Gamry `.DTA` files are saved inside the corresponding sample folder.
+Mock or real Gamry `.DTA` files are saved directly inside the corresponding
+sample/group folder at the run root. Worker jobs, protocol snapshots, detailed
+metadata, and per-sample JSON are kept under `_system/` so user-facing folders
+contain only measurement data. Repeated runs use prefixes such as `R01_` and
+`R02_` to prevent overwriting.
 
 Example sample output folder:
 
 ```text
-webui/output/runs/20260630T191016Z_default/
-└── samples/
-    └── 001_sample_001_Sample_1/
-        ├── OCP_before.DTA
-        ├── EIS_before.DTA
-        ├── CA_forward_m0p1V.DTA
-        ├── CA_forward_m0p2V.DTA
-        └── ...
+webui/output/runs/20260715-143000_default/
+├── README_DATA.txt
+├── run.log
+├── run_summary.json
+├── 01_Sample_1/
+│   ├── 01_OCP_before.DTA
+│   ├── 02_EIS_before.DTA
+│   ├── 03_CA_forward_m0p1V.DTA
+│   └── ...
+└── _system/
+    ├── manifest.json
+    ├── run_plan.json
+    ├── jobs/
+    ├── protocols/
+    └── samples/
 ```
 
 ## Recommended protocol cleanup

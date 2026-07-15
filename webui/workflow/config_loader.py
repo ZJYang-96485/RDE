@@ -92,6 +92,7 @@ _DEFAULT_CONFIG = {
         "real_worker_script": "",
         "real_worker_command": [],
         "real_timeout_s": 7200,
+        "probe_timeout_s": 15,
         "instrument_index": 0,
         "instrument_label": "",
         "default_file_extension": ".DTA"
@@ -338,6 +339,16 @@ def validate_gamry_config(config: dict[str, Any]) -> None:
 
     if real_timeout_s <= 0:
         raise ConfigError("gamry.real_timeout_s must be > 0.")
+
+    probe_timeout_s = float(gamry.get("probe_timeout_s", 15))
+
+    if probe_timeout_s <= 0:
+        raise ConfigError("gamry.probe_timeout_s must be > 0.")
+
+    instrument_index = int(gamry.get("instrument_index", 0))
+
+    if instrument_index < 0:
+        raise ConfigError("gamry.instrument_index must be >= 0.")
 
 
 def validate_config(config: dict[str, Any]) -> None:

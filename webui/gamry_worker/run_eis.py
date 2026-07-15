@@ -7,6 +7,11 @@ from typing import Any
 
 import toolkitpy as tkp
 
+try:
+    from gamry_worker.device import select_pstat_name
+except ModuleNotFoundError:
+    from device import select_pstat_name
+
 
 def initialize_pstat(pstat: Any) -> None:
     pstat.set_cell(False)
@@ -30,15 +35,6 @@ def initialize_pstat(pstat: Any) -> None:
     pstat.set_analog_out(0.0)
     pstat.set_pos_feed_enable(False)
     pstat.set_irupt_mode(tkp.IRUPTOFF)
-
-
-def first_pstat_name() -> str:
-    names = list(tkp.enum_sections())
-
-    if not names:
-        raise RuntimeError("No Gamry potentiostat found by ToolkitPy.")
-
-    return str(names[0])
 
 
 def get_float(step: dict[str, Any], names: list[str], default: float) -> float:
@@ -219,7 +215,7 @@ def run(
     pstat = None
 
     try:
-        pstat_name = str(step.get("instrument_label") or first_pstat_name())
+        pstat_name = select_pstat_name(tkp, step)
         pstat = tkp.Pstat(pstat_name)
 
         if hasattr(pstat, "open"):

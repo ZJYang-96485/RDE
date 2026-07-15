@@ -14,6 +14,7 @@ from hardware.motion_controller import (
     move_linear_steps,
     move_vertical_steps,
 )
+from hardware.gamry_client import GamryClientError, get_gamry_client
 from hardware.rde_controller import send_rpm, stop_rde
 from hardware.rotation_controller import send_rotation_text
 from workflow.config_loader import (
@@ -71,16 +72,7 @@ def config_payload() -> dict[str, Any]:
     rde = get_rde_limits()
     motion = get_motion_config()
     gamry = config["gamry"]
-    real_command = gamry.get("real_worker_command", [])
-    real_runner_configured = bool(str(gamry.get("real_worker_script", "") or "").strip())
-
-    if isinstance(real_command, list):
-        real_runner_configured = real_runner_configured or any(
-            str(item).strip()
-            for item in real_command
-        )
-    else:
-        real_runner_configured = real_runner_configured or bool(str(real_command or "").strip())
+    gamry_runtime = get_gamry_client().runtime_status()
 
     return {
         "baud_rate": get_baud_rate(),
@@ -97,7 +89,9 @@ def config_payload() -> dict[str, Any]:
         "axis_limits": motion["axis_limits"],
         "axis_mapping": motion["axis_mapping"],
         "gamry_mode": gamry["mode"],
-        "gamry_real_runner_configured": real_runner_configured,
+        "gamry_real_runner_configured": gamry_runtime["configured"],
+        "gamry_instrument_label": str(gamry.get("instrument_label", "") or ""),
+        "gamry_runtime": gamry_runtime,
     }
 
 
@@ -158,6 +152,21 @@ def api_config_gamry_mode():
             "config": config_payload(),
         }
     )
+
+
+@app.post("/api/gamry/probe")
+def api_gamry_probe():
+    if automation_is_running():
+        return json_error("automation is running; the Gamry device cannot be checked.", 409)
+
+    try:
+        probe = get_gamry_client().probe()
+    except GamryClientError as exc:
+        return json_error(str(exc), 503)
+    except Exception as exc:
+        return json_error(f"Unable to check the Gamry device: {exc}", 500)
+
+    return jsonify({"ok": True, "probe": probe})
 
 
 @app.get("/api/status")

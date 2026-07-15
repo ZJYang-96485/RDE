@@ -1,58 +1,36 @@
 from __future__ import annotations
 
-import json
-import sys
 import tempfile
-import textwrap
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from gamry_worker.worker import run_job
+from gamry_worker.device import GamryDeviceError, configured_step, select_pstat_name
+from gamry_worker.worker import GamryWorkerError, run_job
+
+
+class FakeToolkit:
+    def __init__(self, sections: list[str]) -> None:
+        self.sections = sections
+
+    def enum_sections(self) -> list[str]:
+        return self.sections
 
 
 class RealGamryWorkerTest(unittest.TestCase):
-    def write_runner(self, tmpdir: str) -> Path:
-        runner_path = Path(tmpdir) / "fake_real_runner.py"
-        runner_path.write_text(
-            textwrap.dedent(
-                """
-                from __future__ import annotations
+    def test_real_mode_dispatches_direct_runner_with_configured_instrument(self) -> None:
+        captured = {}
 
-                import argparse
-                import json
-                from pathlib import Path
+        def fake_runner(step, outputs, sample_id=None):
+            captured["step"] = step
+            captured["sample_id"] = sample_id
 
-                parser = argparse.ArgumentParser()
-                parser.add_argument("--job", required=True)
-                parser.add_argument("--result", required=True)
-                args = parser.parse_args()
+            for output in outputs:
+                Path(output).write_text("direct ToolkitPy output\n", encoding="utf-8")
 
-                with open(args.job, "r", encoding="utf-8") as f:
-                    job = json.load(f)
+            return {"ok": True, "pstat": step["instrument_label"]}
 
-                for output in job["outputs"]:
-                    output_path = Path(output)
-                    output_path.parent.mkdir(parents=True, exist_ok=True)
-                    output_path.write_text("real runner output\\n", encoding="utf-8")
-
-                result = {
-                    "ok": True,
-                    "job_id": job["job_id"],
-                    "instrument": "fake Windows Gamry",
-                }
-                Path(args.result).write_text(json.dumps(result), encoding="utf-8")
-                """
-            ).strip()
-            + "\n",
-            encoding="utf-8",
-        )
-        return runner_path
-
-    def test_real_mode_runs_external_runner(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            runner_path = self.write_runner(tmpdir)
-            job_path = Path(tmpdir) / "job.json"
-            result_path = Path(tmpdir) / "result.json"
             output_path = Path(tmpdir) / "sample_001_ocp.DTA"
             job = {
                 "job_id": "test_real_ocp",
@@ -65,46 +43,71 @@ class RealGamryWorkerTest(unittest.TestCase):
                     "sample_period_s": 1,
                 },
                 "outputs": [str(output_path)],
-                "result_path": str(result_path),
-                "_job_path": str(job_path),
                 "gamry": {
-                    "real_worker_python": sys.executable,
-                    "real_worker_script": str(runner_path),
-                    "real_timeout_s": 5,
+                    "instrument_label": "IFC1010-36030",
+                    "instrument_index": 0,
                 },
             }
-            job_path.write_text(json.dumps(job), encoding="utf-8")
 
-            result = run_job(job)
+            with patch(
+                "gamry_worker.worker.real_runner_for_technique",
+                return_value=fake_runner,
+            ):
+                result = run_job(job)
 
             self.assertTrue(result["ok"])
             self.assertEqual(result["mode"], "real")
             self.assertTrue(output_path.exists())
-            self.assertEqual(result["result"]["backend"], "external")
-            self.assertEqual(result["result"]["runner"]["instrument"], "fake Windows Gamry")
+            self.assertEqual(captured["sample_id"], "sample_001")
+            self.assertEqual(captured["step"]["instrument_label"], "IFC1010-36030")
+            self.assertEqual(captured["step"]["instrument_index"], 0)
 
-    def test_real_mode_requires_configured_runner(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            job_path = Path(tmpdir) / "job.json"
-            output_path = Path(tmpdir) / "sample_001_ocp.DTA"
-            job = {
-                "job_id": "test_missing_real_runner",
-                "mode": "real",
-                "sample_id": "sample_001",
-                "step": {
-                    "name": "ocp",
-                    "technique": "ocp",
-                },
-                "outputs": [str(output_path)],
-                "_job_path": str(job_path),
-                "gamry": {},
-            }
-            job_path.write_text(json.dumps(job), encoding="utf-8")
+    def test_step_instrument_label_overrides_global_config(self) -> None:
+        step = configured_step(
+            {
+                "technique": "ocp",
+                "instrument_label": "IFC1010-LOCAL",
+            },
+            {
+                "instrument_label": "IFC1010-GLOBAL",
+                "instrument_index": 2,
+            },
+        )
 
-            with self.assertRaises(Exception) as context:
-                run_job(job)
+        self.assertEqual(step["instrument_label"], "IFC1010-LOCAL")
+        self.assertEqual(step["instrument_index"], 2)
 
-            self.assertIn("real_worker_script", str(context.exception))
+    def test_selects_configured_label_or_index(self) -> None:
+        toolkit = FakeToolkit(["IFC1010-A", "IFC1010-B"])
+
+        self.assertEqual(
+            select_pstat_name(toolkit, {"instrument_label": "IFC1010-B"}),
+            "IFC1010-B",
+        )
+        self.assertEqual(
+            select_pstat_name(toolkit, {"instrument_index": 0}),
+            "IFC1010-A",
+        )
+
+    def test_missing_configured_instrument_has_actionable_error(self) -> None:
+        with self.assertRaises(GamryDeviceError) as context:
+            select_pstat_name(
+                FakeToolkit(["IFC1010-A"]),
+                {"instrument_label": "IFC1010-B"},
+            )
+
+        self.assertIn("IFC1010-A", str(context.exception))
+
+    def test_real_mode_rejects_unsupported_technique(self) -> None:
+        with self.assertRaises(GamryWorkerError):
+            run_job(
+                {
+                    "mode": "real",
+                    "step": {"technique": "unsupported"},
+                    "outputs": ["unused.DTA"],
+                    "gamry": {},
+                }
+            )
 
 
 if __name__ == "__main__":

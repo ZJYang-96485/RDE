@@ -5,7 +5,26 @@ import math
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+
+try:
+    from gamry_worker.live_adapters import (
+        normalize_ca_acq_rows,
+        normalize_cv_acq_rows,
+        normalize_eis_point,
+        normalize_lsv_acq_rows,
+        normalize_ocp_acq_rows,
+    )
+    from gamry_worker.live_writer import append_live_point
+except ModuleNotFoundError:
+    from live_adapters import (
+        normalize_ca_acq_rows,
+        normalize_cv_acq_rows,
+        normalize_eis_point,
+        normalize_lsv_acq_rows,
+        normalize_ocp_acq_rows,
+    )
+    from live_writer import append_live_point
 
 
 class MockGamryError(ValueError):
@@ -58,11 +77,42 @@ def header(step: dict[str, Any], technique: str) -> list[str]:
         "PARAMETERS_JSON",
         json.dumps(step, indent=2),
         "END_PARAMETERS_JSON",
-        ""
+        "",
     ]
 
 
-def run_ocp(step: dict[str, Any], output_path: str | Path) -> dict[str, Any]:
+class LiveEmitter:
+    """Emit normalized mock points and scale only the wall-clock delay."""
+
+    def __init__(self, live_dir: str | Path | None, mock_time_scale: float = 0.05) -> None:
+        self.live_dir = Path(live_dir) if live_dir else None
+        self.mock_time_scale = max(0.0, float(mock_time_scale))
+
+    def emit(self, technique: str, point: dict[str, Any]) -> None:
+        if self.live_dir is None:
+            return
+
+        normalizers: dict[str, Callable[[Any], dict[str, Any]]] = {
+            "ocp": normalize_ocp_acq_rows,
+            "ca": normalize_ca_acq_rows,
+            "cv": normalize_cv_acq_rows,
+            "lsv": normalize_lsv_acq_rows,
+            "eis": normalize_eis_point,
+        }
+        normalized = normalizers[technique](point)
+        append_live_point(self.live_dir, normalized)
+
+    def wait(self, acquisition_seconds: float = 0.1) -> None:
+        delay = max(0.0, float(acquisition_seconds)) * self.mock_time_scale
+        if delay > 0:
+            time.sleep(min(delay, 0.25))
+
+
+def run_ocp(
+    step: dict[str, Any],
+    output_path: str | Path,
+    emitter: LiveEmitter | None = None,
+) -> dict[str, Any]:
     duration_s = as_float(step.get("duration_s"), 60)
     sample_period_s = as_float(step.get("sample_period_s"), 0.5)
     times = sample_times(duration_s, sample_period_s)
@@ -73,6 +123,9 @@ def run_ocp(step: dict[str, Any], output_path: str | Path) -> dict[str, Any]:
     for t in times:
         potential = 0.02 + 0.004 * math.exp(-t / max(duration_s, 1)) + 0.0005 * math.sin(t / 8)
         lines.append(f"{t:.6f}\t{potential:.9f}")
+        if emitter:
+            emitter.emit("ocp", {"t_s": t, "e_v": potential})
+            emitter.wait(sample_period_s)
 
     write_text(output_path, "\n".join(lines) + "\n")
 
@@ -80,11 +133,17 @@ def run_ocp(step: dict[str, Any], output_path: str | Path) -> dict[str, Any]:
         "ok": True,
         "technique": "ocp",
         "output_path": str(output_path),
-        "points": len(times)
+        "points": len(times),
     }
 
 
-def run_ca(step: dict[str, Any], output_path: str | Path, voltage_v: float | None = None) -> dict[str, Any]:
+def run_ca(
+    step: dict[str, Any],
+    output_path: str | Path,
+    voltage_v: float | None = None,
+    emitter: LiveEmitter | None = None,
+    time_offset_s: float = 0.0,
+) -> dict[str, Any]:
     voltage = as_float(step.get("voltage_v"), 0.0) if voltage_v is None else float(voltage_v)
     duration_s = as_float(step.get("duration_s", step.get("step_time_s")), 300)
     sample_period_s = as_float(step.get("sample_period_s"), 1)
@@ -99,6 +158,16 @@ def run_ca(step: dict[str, Any], output_path: str | Path, voltage_v: float | Non
         decay = math.exp(-t / max(duration_s / 4, 1))
         current = base_current * (1 + 0.35 * decay) + 1e-7 * math.sin(t / 12)
         lines.append(f"{t:.6f}\t{voltage:.9f}\t{current:.12e}")
+        if emitter:
+            emitter.emit(
+                "ca",
+                {
+                    "t_s": time_offset_s + t,
+                    "e_v": voltage,
+                    "i_a": current,
+                },
+            )
+            emitter.wait(sample_period_s)
 
     write_text(output_path, "\n".join(lines) + "\n")
 
@@ -107,13 +176,18 @@ def run_ca(step: dict[str, Any], output_path: str | Path, voltage_v: float | Non
         "technique": "ca",
         "output_path": str(output_path),
         "voltage_v": voltage,
-        "points": len(times)
+        "points": len(times),
+        "duration_s": duration_s,
     }
 
 
-def run_lsv(step: dict[str, Any], output_path: str | Path) -> dict[str, Any]:
-    start_v = as_float(step.get("start_voltage_v"), 0.2)
-    end_v = as_float(step.get("end_voltage_v"), -0.8)
+def run_lsv(
+    step: dict[str, Any],
+    output_path: str | Path,
+    emitter: LiveEmitter | None = None,
+) -> dict[str, Any]:
+    start_v = as_float(step.get("start_voltage_v", step.get("initial_voltage_v")), 0.2)
+    end_v = as_float(step.get("end_voltage_v", step.get("final_voltage_v")), -0.8)
     scan_rate_v_s = as_float(step.get("scan_rate_v_s"), 0.01)
     sample_period_s = as_float(step.get("sample_period_s"), 0.1)
 
@@ -127,6 +201,9 @@ def run_lsv(step: dict[str, Any], output_path: str | Path) -> dict[str, Any]:
         potential = start_v + (end_v - start_v) * fraction
         current = -2e-6 - 2e-5 / (1 + math.exp((potential + 0.35) / 0.08))
         lines.append(f"{t:.6f}\t{potential:.9f}\t{current:.12e}")
+        if emitter:
+            emitter.emit("lsv", {"t_s": t, "e_v": potential, "i_a": current})
+            emitter.wait(sample_period_s)
 
     write_text(output_path, "\n".join(lines) + "\n")
 
@@ -134,21 +211,24 @@ def run_lsv(step: dict[str, Any], output_path: str | Path) -> dict[str, Any]:
         "ok": True,
         "technique": "lsv",
         "output_path": str(output_path),
-        "points": len(times)
+        "points": len(times),
     }
 
 
-def run_cv(step: dict[str, Any], output_path: str | Path) -> dict[str, Any]:
+def run_cv(
+    step: dict[str, Any],
+    output_path: str | Path,
+    emitter: LiveEmitter | None = None,
+) -> dict[str, Any]:
     initial_v = as_float(step.get("initial_voltage_v"), 0)
-    first_v = as_float(step.get("first_vertex_v"), 1)
-    second_v = as_float(step.get("second_vertex_v"), -1)
+    first_v = as_float(step.get("first_vertex_v", step.get("apex1_voltage_v")), 1)
+    second_v = as_float(step.get("second_vertex_v", step.get("apex2_voltage_v")), -1)
     final_v = as_float(step.get("final_voltage_v"), initial_v)
     scan_rate_v_s = as_float(step.get("scan_rate_v_s"), 0.05)
     sample_period_s = as_float(step.get("sample_period_s"), 0.01)
     cycles = max(1, as_int(step.get("cycles"), 1))
 
     voltage_points = []
-
     for _ in range(cycles):
         voltage_points.extend([initial_v, first_v, second_v, final_v])
 
@@ -163,13 +243,16 @@ def run_cv(step: dict[str, Any], output_path: str | Path) -> dict[str, Any]:
             fraction = 0 if segment_duration == 0 else t / segment_duration
             potential = start + (end - start) * fraction
             current = 8e-6 * math.tanh((potential - 0.1) / 0.18) + 2e-6 * math.sin(3 * potential)
-            rows.append((current_time + t, potential, current))
+            absolute_time = current_time + t
+            rows.append((absolute_time, potential, current))
+            if emitter:
+                emitter.emit("cv", {"t_s": absolute_time, "e_v": potential, "i_a": current})
+                emitter.wait(sample_period_s)
 
         current_time += segment_duration
 
     lines = header(step, "cv")
     lines.append("time_s\tpotential_v\tcurrent_a")
-
     for t, potential, current in rows:
         lines.append(f"{t:.6f}\t{potential:.9f}\t{current:.12e}")
 
@@ -179,7 +262,7 @@ def run_cv(step: dict[str, Any], output_path: str | Path) -> dict[str, Any]:
         "ok": True,
         "technique": "cv",
         "output_path": str(output_path),
-        "points": len(rows)
+        "points": len(rows),
     }
 
 
@@ -191,9 +274,7 @@ def logspace_descending(start: float, stop: float, points_per_decade: int) -> li
     log_start = math.log10(start)
     log_stop = math.log10(stop)
     total_points = int(abs(log_start - log_stop) * points_per_decade) + 1
-
-    if total_points < 2:
-        total_points = 2
+    total_points = max(total_points, 2)
 
     return [
         10 ** (log_start + (log_stop - log_start) * i / (total_points - 1))
@@ -201,11 +282,20 @@ def logspace_descending(start: float, stop: float, points_per_decade: int) -> li
     ]
 
 
-def run_eis(step: dict[str, Any], output_path: str | Path) -> dict[str, Any]:
-    initial_frequency_hz = as_float(step.get("initial_frequency_hz"), 100000)
-    final_frequency_hz = as_float(step.get("final_frequency_hz"), 0.1)
+def run_eis(
+    step: dict[str, Any],
+    output_path: str | Path,
+    emitter: LiveEmitter | None = None,
+) -> dict[str, Any]:
+    initial_frequency_hz = as_float(
+        step.get("initial_frequency_hz", step.get("initial_freq_hz")),
+        100000,
+    )
+    final_frequency_hz = as_float(
+        step.get("final_frequency_hz", step.get("final_freq_hz")),
+        0.1,
+    )
     points_per_decade = as_int(step.get("points_per_decade"), 10)
-
     frequencies = logspace_descending(initial_frequency_hz, final_frequency_hz, points_per_decade)
 
     rs = 20.0
@@ -223,6 +313,18 @@ def run_eis(step: dict[str, Any], output_path: str | Path) -> dict[str, Any]:
         zmod = math.sqrt(zreal * zreal + zimag * zimag)
         phase = math.degrees(math.atan2(zimag, zreal))
         lines.append(f"{freq:.9e}\t{zreal:.9f}\t{zimag:.9f}\t{zmod:.9f}\t{phase:.9f}")
+        if emitter:
+            emitter.emit(
+                "eis",
+                {
+                    "freq_hz": freq,
+                    "zreal_ohm": zreal,
+                    "zimag_ohm": zimag,
+                    "zmod_ohm": zmod,
+                    "phase_deg": phase,
+                },
+            )
+            emitter.wait(0.1)
 
     write_text(output_path, "\n".join(lines) + "\n")
 
@@ -230,61 +332,82 @@ def run_eis(step: dict[str, Any], output_path: str | Path) -> dict[str, Any]:
         "ok": True,
         "technique": "eis",
         "output_path": str(output_path),
-        "points": len(frequencies)
+        "points": len(frequencies),
     }
 
 
-def run_ca_staircase(step: dict[str, Any], outputs: list[dict[str, Any]]) -> dict[str, Any]:
-    results = []
+def _output_records(step: dict[str, Any], outputs: list[Any]) -> list[dict[str, Any]]:
+    records = []
     start_voltage_v = as_float(step.get("start_voltage_v"), -0.1)
     step_voltage_v = as_float(step.get("step_voltage_v"), -0.1)
 
-    for output in outputs:
-        staircase_index = as_int(output.get("index"), 1)
-        voltage = output.get("voltage_v")
+    for index, output in enumerate(outputs, start=1):
+        if isinstance(output, dict):
+            record = dict(output)
+            record["path"] = str(record.get("path") or record.get("output") or "")
+        else:
+            record = {"path": str(output)}
+        record["index"] = as_int(record.get("index"), index)
+        record.setdefault(
+            "voltage_v",
+            start_voltage_v + step_voltage_v * (record["index"] - 1),
+        )
+        records.append(record)
+    return records
 
-        if voltage is None:
-            voltage = start_voltage_v + step_voltage_v * (staircase_index - 1)
 
+def run_ca_staircase(
+    step: dict[str, Any],
+    outputs: list[Any],
+    emitter: LiveEmitter | None = None,
+) -> dict[str, Any]:
+    results = []
+    time_offset_s = 0.0
+
+    for output in _output_records(step, outputs):
+        voltage = float(output["voltage_v"])
         ca_step = {
             **step,
             "technique": "ca",
             "voltage_v": voltage,
-            "duration_s": step.get("step_time_s", 300)
+            "duration_s": step.get("step_time_s", 300),
         }
+        result = run_ca(
+            ca_step,
+            output["path"],
+            voltage_v=voltage,
+            emitter=emitter,
+            time_offset_s=time_offset_s,
+        )
+        results.append(result)
+        time_offset_s += float(result.get("duration_s", 0))
 
-        results.append(run_ca(ca_step, output["path"], voltage_v=float(voltage)))
-
-    return {
-        "ok": True,
-        "technique": "ca_staircase",
-        "outputs": results
-    }
+    return {"ok": True, "technique": "ca_staircase", "outputs": results}
 
 
-def run_step(step: dict[str, Any], outputs: list[dict[str, Any]]) -> dict[str, Any]:
+def run_step(
+    step: dict[str, Any],
+    outputs: list[Any],
+    emitter: LiveEmitter | None = None,
+) -> dict[str, Any]:
     if not outputs:
         raise MockGamryError("outputs cannot be empty.")
 
     technique = str(step.get("technique", "")).lower().strip()
+    records = _output_records(step, outputs)
 
     if technique == "ocp":
-        return run_ocp(step, outputs[0]["path"])
-
+        return run_ocp(step, records[0]["path"], emitter=emitter)
     if technique == "ca":
-        return run_ca(step, outputs[0]["path"])
-
+        return run_ca(step, records[0]["path"], emitter=emitter)
     if technique == "ca_staircase":
-        return run_ca_staircase(step, outputs)
-
+        return run_ca_staircase(step, records, emitter=emitter)
     if technique == "cv":
-        return run_cv(step, outputs[0]["path"])
-
+        return run_cv(step, records[0]["path"], emitter=emitter)
     if technique == "lsv":
-        return run_lsv(step, outputs[0]["path"])
-
+        return run_lsv(step, records[0]["path"], emitter=emitter)
     if technique == "eis":
-        return run_eis(step, outputs[0]["path"])
+        return run_eis(step, records[0]["path"], emitter=emitter)
 
     raise MockGamryError(f"unsupported mock technique: {technique}")
 
@@ -292,23 +415,32 @@ def run_step(step: dict[str, Any], outputs: list[dict[str, Any]]) -> dict[str, A
 def run_job(job: dict[str, Any]) -> dict[str, Any]:
     step = job.get("step")
     outputs = job.get("outputs")
-
     if not isinstance(step, dict):
         raise MockGamryError("job.step must be an object.")
-
     if not isinstance(outputs, list):
         raise MockGamryError("job.outputs must be a list.")
 
     delay_s = as_float(job.get("mock_delay_s"), 0.2)
-
     if delay_s > 0:
         time.sleep(min(delay_s, 5))
 
-    result = run_step(step, outputs)
+    gamry_config = job.get("gamry", {})
+    if not isinstance(gamry_config, dict):
+        gamry_config = {}
+    live_config = gamry_config.get("live_plot", {})
+    if not isinstance(live_config, dict):
+        live_config = {}
+
+    live_enabled = bool(job.get("live_enabled", live_config.get("enabled", True)))
+    emitter = LiveEmitter(
+        job.get("live_dir") if live_enabled else None,
+        mock_time_scale=as_float(live_config.get("mock_time_scale"), 0.05),
+    )
+    result = run_step(step, outputs, emitter=emitter)
 
     return {
         "ok": True,
         "mode": "mock",
         "created_at": now_iso(),
-        "result": result
+        "result": result,
     }

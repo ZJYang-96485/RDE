@@ -1,0 +1,25 @@
+{
+  "protocol_name": "CP",
+  "display_name": "CP",
+  "description": "",
+  "source": {
+    "type": "ui_flexible_builder",
+    "created_by": "RDE EChem Automation"
+  },
+  "steps": [
+    {
+      "name": "cp",
+      "enabled": true,
+      "technique": "cp",
+      "output": "CP.DTA",
+      "current_a": 1e-05,
+      "duration_s": 60,
+      "sample_period_s": 0.5,
+      "voltage_limit_low_v": -1,
+      "voltage_limit_high_v": 1,
+      "expected_max_current_a": 1e-05,
+      "area_cm2": 1
+    }
+  ],
+  "saved_at": "2026-07-15T13:50:00.408103+00:00"
+}

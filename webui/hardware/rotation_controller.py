@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+
 from hardware.serial_base import SerialDevice
 from workflow.config_loader import get_baud_rate, get_serial_port, load_config
 
@@ -22,6 +24,9 @@ class RotationController:
             startup_delay_s=float(timeouts.get("startup_delay_s", 2.0)),
         )
         self.completion_timeout_s = float(timeouts.get("rotation_ack_s", 10.0))
+        # Reject concurrent callers instead of letting Flask threads queue
+        # commands that could move the stage much later.
+        self.command_lock = threading.Lock()
 
     def rotation_config(self) -> dict:
         return load_config()["rotation"]
@@ -54,14 +59,28 @@ class RotationController:
                 f"ACK MOCK Rotation {command}",
             )
 
-        try:
-            return self.device.send_line_wait_for_response(
-                command,
-                timeout_s=self.completion_timeout_s,
-                expected_prefixes=expected_prefixes,
+        if not self.command_lock.acquire(blocking=False):
+            raise RotationControllerError(
+                "another rotation command is still in progress; "
+                "this command was rejected and was not queued"
             )
-        except Exception as exc:
-            raise RotationControllerError(f"Unable to send rotation command '{command}': {exc}") from exc
+
+        try:
+            try:
+                return self.device.send_line_wait_for_response(
+                    command,
+                    timeout_s=self.completion_timeout_s,
+                    expected_prefixes=expected_prefixes,
+                )
+            except Exception as exc:
+                # A failed transaction must not keep a serial connection with
+                # stale input/output around for the next request.
+                self.device.close()
+                raise RotationControllerError(
+                    f"Unable to send rotation command '{command}': {exc}"
+                ) from exc
+        finally:
+            self.command_lock.release()
 
     def send_command(self, value: int | str) -> str | None:
         return self.send_text(str(value))
@@ -77,13 +96,16 @@ class RotationController:
 
 
 _default_rotation_controller: RotationController | None = None
+_default_rotation_controller_lock = threading.Lock()
 
 
 def get_rotation_controller() -> RotationController:
     global _default_rotation_controller
 
     if _default_rotation_controller is None:
-        _default_rotation_controller = RotationController()
+        with _default_rotation_controller_lock:
+            if _default_rotation_controller is None:
+                _default_rotation_controller = RotationController()
 
     return _default_rotation_controller
 

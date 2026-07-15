@@ -205,6 +205,16 @@ class SerialDevice:
                 if not line:
                     break
 
+    def discard_pending_output(self) -> None:
+        """Cancel bytes not yet transmitted by the host serial driver."""
+        if not self.is_open():
+            return
+
+        try:
+            self.conn.reset_output_buffer()
+        except Exception:
+            pass
+
     def send_line(self, text: str) -> None:
         with self.lock:
             try:
@@ -248,6 +258,7 @@ class SerialDevice:
             # Rotation responses can arrive after an older short timeout. Never
             # let one of those stale lines acknowledge the next command.
             self.discard_stale_input()
+            self.discard_pending_output()
 
             try:
                 self.write_line(text)

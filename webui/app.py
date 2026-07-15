@@ -359,16 +359,32 @@ def rotation_send():
     if not command:
         return json_error("command must be a non-empty string.", 400)
 
+    com_port = get_serial_port("rotation")
+    app.logger.info(
+        "Sending manual rotation command %r to %s and waiting for completion.",
+        command,
+        com_port,
+    )
     try:
         ack = send_rotation_text(command)
     except Exception as exc:
-        return json_error(f"Unable to send '{command}' to rotation controller: {exc}", 500)
+        app.logger.exception(
+            "Manual rotation command %r failed on %s.",
+            command,
+            com_port,
+        )
+        return json_error(
+            f"Rotation command '{command}' failed on {com_port}: {exc}",
+            500,
+        )
+
+    app.logger.info("Rotation command %r completed on %s: %s", command, com_port, ack)
 
     return jsonify(
         {
             "ok": True,
             "command": command,
-            "com_port": get_serial_port("rotation"),
+            "com_port": com_port,
             "ack": ack,
         }
     )
@@ -388,17 +404,33 @@ def rotation_send_with_command(command: str):
     if automation_is_running():
         return json_error("automation is running; manual rotation commands are disabled.", 409)
 
+    com_port = get_serial_port("rotation")
+    app.logger.info(
+        "Sending manual rotation command %r to %s and waiting for completion.",
+        command,
+        com_port,
+    )
     try:
         ack = send_rotation_text(command)
     except Exception as exc:
-        return json_error(f"Unable to send '{command}' to rotation controller: {exc}", 500)
+        app.logger.exception(
+            "Manual rotation command %r failed on %s.",
+            command,
+            com_port,
+        )
+        return json_error(
+            f"Rotation command '{command}' failed on {com_port}: {exc}",
+            500,
+        )
+
+    app.logger.info("Rotation command %r completed on %s: %s", command, com_port, ack)
 
     return jsonify(
         {
             "ok": True,
             "value": command,
             "command": command,
-            "com_port": get_serial_port("rotation"),
+            "com_port": com_port,
             "ack": ack,
         }
     )

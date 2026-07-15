@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from hardware.rotation_controller import RotationController
+from hardware.rotation_controller import RotationController, RotationControllerError
 from hardware.serial_base import MockSerialConnection, SerialConnectionError, SerialDevice
 
 
@@ -71,6 +71,32 @@ class MockSerialTest(unittest.TestCase):
             response = controller.send_text("1")
 
         self.assertEqual(response, "ACK MOCK Rotation 1")
+
+    def test_rotation_controller_rejects_concurrent_command_without_queueing(self) -> None:
+        controller = RotationController()
+        controller.command_lock.acquire()
+
+        try:
+            with self.assertRaisesRegex(RotationControllerError, "rejected and was not queued"):
+                controller.send_text("0")
+        finally:
+            controller.command_lock.release()
+
+    def test_rotation_controller_closes_serial_connection_after_failure(self) -> None:
+        controller = RotationController()
+
+        with (
+            patch.object(
+                controller.device,
+                "send_line_wait_for_response",
+                side_effect=SerialConnectionError("no response"),
+            ),
+            patch.object(controller.device, "close") as close,
+        ):
+            with self.assertRaisesRegex(RotationControllerError, "no response"):
+                controller.send_text("1")
+
+        close.assert_called_once_with()
 
 
 if __name__ == "__main__":

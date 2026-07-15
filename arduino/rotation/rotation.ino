@@ -25,6 +25,14 @@ void stepMany(unsigned int count, bool dirLevel) {
   }
 }
 
+void discardPendingCommands() {
+  // Drop extra button presses so they cannot execute much later. This is
+  // called both before and after the intentionally blocking move.
+  while (Serial.available()) {
+    Serial.read();
+  }
+}
+
 void setup() {
   pinMode(PUL_PIN, OUTPUT);
   pinMode(DIR_PIN, OUTPUT);
@@ -50,10 +58,19 @@ void loop() {
 
   String line = Serial.readStringUntil('\n');
   line.trim();
+  discardPendingCommands();
 
-  if (line == "1") {
+  if (line.equalsIgnoreCase("PING")) {
+    Serial.println("ACK PONG Rotation");
+  } else if (line.equalsIgnoreCase("STATUS")) {
+    Serial.print("STATUS ");
+    Serial.println(atHome ? "HOME" : "CCW");
+  } else if (line.equalsIgnoreCase("HELP") || line == "?") {
+    Serial.println("Rotation commands: 1, 0, PING, STATUS, HELP");
+  } else if (line == "1") {
     if (atHome) {
       stepMany(HALF_TURN_STEPS, CCW_LEVEL);
+      discardPendingCommands();
       atHome = false;
       Serial.println("Moved 180 deg CCW");
     } else {
@@ -62,10 +79,13 @@ void loop() {
   } else if (line == "0") {
     if (!atHome) {
       stepMany(HALF_TURN_STEPS, CW_LEVEL);
+      discardPendingCommands();
       atHome = true;
       Serial.println("Returned to home");
     } else {
       Serial.println("Already at home");
     }
+  } else if (line.length() > 0) {
+    Serial.println("ERR rotation command must be 1, 0, PING, STATUS, or HELP");
   }
 }

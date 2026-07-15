@@ -25,6 +25,7 @@ _DEFAULT_CONFIG = {
             "rde_s": 1.0,
             "axis_s": 0.4,
             "rotation_s": 0.4,
+            "rotation_ack_s": 10.0,
             "write_s": 1.0,
             "startup_delay_s": 2.0
         }
@@ -176,11 +177,14 @@ def validate_serial_config(config: dict[str, Any]) -> None:
     if not isinstance(timeouts, dict):
         raise ConfigError("serial.timeouts must be an object.")
 
-    for name in ["rde_s", "axis_s", "rotation_s", "write_s", "startup_delay_s"]:
+    for name in ["rde_s", "axis_s", "rotation_s", "rotation_ack_s", "write_s", "startup_delay_s"]:
         value = float(timeouts.get(name, 0))
 
         if value < 0:
             raise ConfigError(f"serial.timeouts.{name} cannot be negative.")
+
+    if float(timeouts.get("rotation_ack_s", 0)) <= 0:
+        raise ConfigError("serial.timeouts.rotation_ack_s must be > 0.")
 
 
 def validate_rde_config(config: dict[str, Any]) -> None:

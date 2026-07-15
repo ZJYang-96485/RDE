@@ -2302,23 +2302,27 @@
 
       sendOneBtn.addEventListener("click", async () => {
         sendOneBtn.disabled = true;
+        sendZeroBtn.disabled = true;
         try {
           await sendRotation("1");
         } catch (err) {
           setError(err.message);
         } finally {
-          sendOneBtn.disabled = false;
+          sendOneBtn.disabled = automationRunning;
+          sendZeroBtn.disabled = automationRunning;
         }
       });
 
       sendZeroBtn.addEventListener("click", async () => {
+        sendOneBtn.disabled = true;
         sendZeroBtn.disabled = true;
         try {
           await sendRotation("0");
         } catch (err) {
           setError(err.message);
         } finally {
-          sendZeroBtn.disabled = false;
+          sendOneBtn.disabled = automationRunning;
+          sendZeroBtn.disabled = automationRunning;
         }
       });
 

@@ -14,6 +14,7 @@
       "rde_s": 1.0,
       "axis_s": 0.4,
       "rotation_s": 0.4,
+      "rotation_ack_s": 10.0,
       "write_s": 1.0,
       "startup_delay_s": 2.0
     }

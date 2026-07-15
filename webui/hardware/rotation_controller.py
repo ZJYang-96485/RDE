@@ -21,6 +21,7 @@ class RotationController:
             write_timeout_s=float(timeouts.get("write_s", 1.0)),
             startup_delay_s=float(timeouts.get("startup_delay_s", 2.0)),
         )
+        self.completion_timeout_s = float(timeouts.get("rotation_ack_s", 10.0))
 
     def rotation_config(self) -> dict:
         return load_config()["rotation"]
@@ -37,8 +38,28 @@ class RotationController:
         if not command:
             raise RotationControllerError("rotation command cannot be empty.")
 
+        expected_prefixes: tuple[str, ...] = ()
+        if command == self.ccw_command():
+            expected_prefixes = (
+                "Moved 180 deg CCW",
+                "Already at 180 deg CCW position",
+                f"ACK DONE {command}",
+                f"ACK MOCK Rotation {command}",
+            )
+        elif command == self.home_command():
+            expected_prefixes = (
+                "Returned to home",
+                "Already at home",
+                f"ACK DONE {command}",
+                f"ACK MOCK Rotation {command}",
+            )
+
         try:
-            return self.device.send_line_read_first_response(command, attempts=4)
+            return self.device.send_line_wait_for_response(
+                command,
+                timeout_s=self.completion_timeout_s,
+                expected_prefixes=expected_prefixes,
+            )
         except Exception as exc:
             raise RotationControllerError(f"Unable to send rotation command '{command}': {exc}") from exc
 

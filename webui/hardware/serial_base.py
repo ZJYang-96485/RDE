@@ -235,6 +235,52 @@ class SerialDevice:
 
             return response
 
+    def send_line_wait_for_response(
+        self,
+        text: str,
+        timeout_s: float,
+        expected_prefixes: tuple[str, ...] = (),
+    ) -> str:
+        """Send one command and wait for its matching completion response."""
+        expected = tuple(str(prefix) for prefix in expected_prefixes if str(prefix))
+
+        with self.lock:
+            # Rotation responses can arrive after an older short timeout. Never
+            # let one of those stale lines acknowledge the next command.
+            self.discard_stale_input()
+
+            try:
+                self.write_line(text)
+            except Exception:
+                self.reconnect()
+                self.discard_stale_input()
+                self.write_line(text)
+
+            deadline = time.monotonic() + float(timeout_s)
+            received: list[str] = []
+
+            while time.monotonic() < deadline:
+                line = self.read_line()
+                if not line:
+                    continue
+
+                received.append(line)
+
+                if line.startswith("ERR"):
+                    raise SerialConnectionError(
+                        f"{self.name} reported error: {line}"
+                    )
+
+                if not expected or any(line.startswith(prefix) for prefix in expected):
+                    return line
+
+            detail = f" Received: {received}" if received else " No response was received."
+            expectation = f" Expected one of: {expected}." if expected else ""
+            raise SerialConnectionError(
+                f"Timeout waiting for completion response from {self.name} on {self.port}."
+                f"{expectation}{detail}"
+            )
+
     def send_line_wait_for_ack(
         self,
         text: str,

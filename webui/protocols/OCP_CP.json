@@ -1,0 +1,35 @@
+{
+  "protocol_name": "OCP_CP",
+  "display_name": "OCP+CP",
+  "description": "",
+  "source": {
+    "type": "ui_flexible_builder",
+    "created_by": "RDE EChem Automation"
+  },
+  "steps": [
+    {
+      "name": "ocp",
+      "enabled": true,
+      "technique": "ocp",
+      "output": "OCP.DTA",
+      "duration_s": 300,
+      "sample_period_s": 0.5,
+      "stability_mv_s": 0,
+      "area_cm2": 1
+    },
+    {
+      "name": "cp",
+      "enabled": true,
+      "technique": "cp",
+      "output": "CP.DTA",
+      "current_a": -0.00057,
+      "duration_s": 3600,
+      "sample_period_s": 1,
+      "voltage_limit_low_v": -10,
+      "voltage_limit_high_v": 10,
+      "expected_max_current_a": 0.3,
+      "area_cm2": 1
+    }
+  ],
+  "saved_at": "2026-07-16T10:58:14.293152+00:00"
+}

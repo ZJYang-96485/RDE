@@ -52,6 +52,34 @@ class RotationApiTests(unittest.TestCase):
         )
         self.assertIn("Manual rotation command '0' failed on COM3", "\n".join(captured.output))
 
+    @patch("app.stop_rde")
+    @patch("app.emergency_stop_rotation", return_value=True)
+    @patch(
+        "app.emergency_stop_motion",
+        return_value={"linear": True, "horizontal": True, "vertical": False},
+    )
+    @patch("app.abort_automation")
+    @patch("app.automation_is_running", return_value=True)
+    def test_automation_abort_stops_rotation_and_axes(
+        self,
+        _automation_is_running,
+        abort_automation,
+        _emergency_stop_motion,
+        emergency_stop_rotation,
+        _stop_rde,
+    ) -> None:
+        response = self.client.post("/api/automation/abort")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["rotation_stop_sent"])
+        self.assertEqual(
+            payload["motion_stop_sent"],
+            {"linear": True, "horizontal": True, "vertical": False},
+        )
+        abort_automation.assert_called_once_with()
+        emergency_stop_rotation.assert_called_once_with()
+
 
 if __name__ == "__main__":
     unittest.main()

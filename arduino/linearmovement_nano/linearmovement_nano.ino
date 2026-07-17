@@ -51,9 +51,13 @@ const uint8_t CCW_LEVEL =
 // Change to HIGH if the driver remains disabled with LOW.
 const uint8_t ENABLE_LEVEL = LOW;
 
-// Preserve the existing Nano speed behavior.
-const unsigned int BASE_STEP_PULSE_US = 2000;
+// Start each move at the previously proven X-axis speed, then ramp to a
+// moderately faster cruise speed. Each value is the HIGH or LOW half-period;
+// a complete step therefore takes twice this delay plus GPIO overhead.
+const unsigned int START_BASE_STEP_PULSE_US = 2000;
+const unsigned int CRUISE_BASE_STEP_PULSE_US = 1500;
 const unsigned int MIN_STEP_PULSE_US = 50;
+const unsigned long ACCELERATION_STEPS = 1000UL;
 
 String emergencyBuffer;
 
@@ -72,15 +76,52 @@ uint8_t speedMultiplierFor(unsigned long stepsAbs) {
 }
 
 
-unsigned int pulseWidthFor(unsigned long stepsAbs) {
+unsigned int pulseWidthFor(
+  unsigned long stepsAbs,
+  unsigned int basePulseUs
+) {
   const uint8_t multiplier = speedMultiplierFor(stepsAbs);
-  unsigned int pulseUs = BASE_STEP_PULSE_US / multiplier;
+  unsigned int pulseUs = basePulseUs / multiplier;
 
   if (pulseUs < MIN_STEP_PULSE_US) {
     pulseUs = MIN_STEP_PULSE_US;
   }
 
   return pulseUs;
+}
+
+
+unsigned int rampedPulseWidthFor(
+  unsigned long executedSteps,
+  unsigned long requestedSteps,
+  unsigned int startPulseUs,
+  unsigned int cruisePulseUs
+) {
+  if (requestedSteps < 3UL || startPulseUs <= cruisePulseUs) {
+    return startPulseUs;
+  }
+
+  unsigned long rampSteps = requestedSteps / 2UL;
+  if (rampSteps > ACCELERATION_STEPS) {
+    rampSteps = ACCELERATION_STEPS;
+  }
+
+  const unsigned long stepsFromStart = executedSteps;
+  const unsigned long stepsFromEnd = requestedSteps - 1UL - executedSteps;
+  const unsigned long stepsFromEdge = stepsFromStart < stepsFromEnd
+      ? stepsFromStart
+      : stepsFromEnd;
+
+  if (stepsFromEdge >= rampSteps) {
+    return cruisePulseUs;
+  }
+
+  const unsigned long pulseReduction =
+      (unsigned long)(startPulseUs - cruisePulseUs)
+      * stepsFromEdge
+      / rampSteps;
+
+  return startPulseUs - (unsigned int)pulseReduction;
 }
 
 
@@ -148,7 +189,8 @@ bool emergencyStopRequested() {
 unsigned long stepManyInterruptible(
   uint8_t directionLevel,
   unsigned long requestedSteps,
-  unsigned int pulseUs,
+  unsigned int startPulseUs,
+  unsigned int cruisePulseUs,
   bool &stopped
 ) {
   digitalWrite(DIR_PIN, directionLevel);
@@ -163,6 +205,12 @@ unsigned long stepManyInterruptible(
       break;
     }
 
+    const unsigned int pulseUs = rampedPulseWidthFor(
+        executedSteps,
+        requestedSteps,
+        startPulseUs,
+        cruisePulseUs
+    );
     pulseOnce(pulseUs);
     executedSteps++;
   }
@@ -221,13 +269,21 @@ void runMovement(long signedSteps) {
       ? (unsigned long)signedSteps
       : (unsigned long)(-signedSteps);
 
-  const unsigned int pulseUs = pulseWidthFor(requestedSteps);
+  const unsigned int startPulseUs = pulseWidthFor(
+      requestedSteps,
+      START_BASE_STEP_PULSE_US
+  );
+  const unsigned int cruisePulseUs = pulseWidthFor(
+      requestedSteps,
+      CRUISE_BASE_STEP_PULSE_US
+  );
 
   bool stopped = false;
   const unsigned long executedSteps = stepManyInterruptible(
       clockwise ? CW_LEVEL : CCW_LEVEL,
       requestedSteps,
-      pulseUs,
+      startPulseUs,
+      cruisePulseUs,
       stopped
   );
 

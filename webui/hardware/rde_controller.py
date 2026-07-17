@@ -33,12 +33,21 @@ class RDEController:
     def stop_rpm(self) -> int:
         return int(self.limits()["stop_rpm"])
 
-    def send_raw_rpm(self, rpm: int) -> None:
-        self.device.send_line(str(int(rpm)))
+    def send_raw_rpm(self, rpm: int) -> str:
+        rpm = int(rpm)
+        return self.device.send_line_wait_for_response(
+            str(rpm),
+            timeout_s=float(load_config()["serial"]["timeouts"].get("rde_s", 1.0)),
+            expected_prefixes=(
+                f"ACK RPM {rpm}",
+                f"RPM: {rpm}",  # Compatibility with the previous firmware.
+                f"ACK MOCK RDE {rpm}",
+            ),
+        )
 
-    def set_rpm(self, rpm: int) -> None:
+    def set_rpm(self, rpm: int) -> str:
         validate_rpm(int(rpm))
-        self.send_raw_rpm(int(rpm))
+        return self.send_raw_rpm(int(rpm))
 
     def stop(self, error: str | None = None) -> None:
         try:
@@ -105,8 +114,8 @@ def get_rde_controller() -> RDEController:
     return _default_rde_controller
 
 
-def send_rpm(rpm: int) -> None:
-    get_rde_controller().set_rpm(int(rpm))
+def send_rpm(rpm: int) -> str:
+    return get_rde_controller().set_rpm(int(rpm))
 
 
 def stop_rde(error: str | None = None) -> None:

@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from hardware.rotation_controller import RotationController, RotationControllerError
 from hardware.serial_base import MockSerialConnection, SerialConnectionError, SerialDevice
+from workflow.state import AutomationAbortRequested
 
 
 class MockSerialTest(unittest.TestCase):
@@ -71,6 +72,32 @@ class MockSerialTest(unittest.TestCase):
             response = controller.send_text("1")
 
         self.assertEqual(response, "ACK MOCK Rotation 1")
+
+    def test_rotation_controller_propagates_stop_as_abort(self) -> None:
+        controller = RotationController()
+
+        with (
+            patch.object(
+                controller.device,
+                "send_line_wait_for_response",
+                return_value="ACK STOP 120/800 POSITION 120",
+            ),
+            patch.object(controller.device, "close") as close,
+        ):
+            with self.assertRaisesRegex(AutomationAbortRequested, "Rotation arm stopped"):
+                controller.send_text("1")
+
+        close.assert_called_once_with()
+
+    def test_rotation_emergency_stop_bypasses_active_transaction(self) -> None:
+        controller = RotationController()
+        controller.device.conn = MockSerialConnection("Rotation", "MOCK")
+
+        self.assertTrue(controller.emergency_stop())
+        self.assertEqual(
+            controller.device.conn.readline().decode("utf-8").strip(),
+            "ACK STOP MOCK Rotation",
+        )
 
     def test_rotation_controller_rejects_concurrent_command_without_queueing(self) -> None:
         controller = RotationController()

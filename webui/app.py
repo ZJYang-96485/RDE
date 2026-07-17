@@ -17,7 +17,7 @@ from hardware.motion_controller import (
 )
 from hardware.gamry_client import GamryClientError, get_gamry_client
 from hardware.rde_controller import send_rpm, stop_rde
-from hardware.rotation_controller import send_rotation_text
+from hardware.rotation_controller import emergency_stop_rotation, send_rotation_text
 from workflow.config_loader import (
     ConfigError,
     get_baud_rate,
@@ -1011,6 +1011,7 @@ def automation_abort_route():
     # Send STOP directly to every open axis serial connection. This bypasses
     # the normal transaction lock held by the thread waiting for an axis ACK.
     motion_stop_result = emergency_stop_motion()
+    rotation_stop_sent = emergency_stop_rotation()
 
     # Stop RDE immediately instead of waiting for recipe-runner cleanup.
     rde_stop_error = None
@@ -1022,10 +1023,11 @@ def automation_abort_route():
     payload = {
         "ok": True,
         "message": (
-            "Emergency abort sent: RDE stop and X/Z STOP commands were issued "
-            "immediately. Axes remain in place."
+            "Emergency abort sent: RDE stop and X/Z/rotation STOP commands "
+            "were issued immediately. Motion remains in place."
         ),
         "motion_stop_sent": motion_stop_result,
+        "rotation_stop_sent": rotation_stop_sent,
     }
 
     if rde_stop_error:

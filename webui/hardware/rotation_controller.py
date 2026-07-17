@@ -4,6 +4,7 @@ import threading
 
 from hardware.serial_base import SerialDevice
 from workflow.config_loader import get_baud_rate, get_serial_port, load_config
+from workflow.state import AutomationAbortRequested
 
 
 class RotationControllerError(RuntimeError):
@@ -48,6 +49,7 @@ class RotationController:
             expected_prefixes = (
                 "Moved 180 deg CCW",
                 "Already at 180 deg CCW position",
+                "ACK STOP",
                 f"ACK DONE {command}",
                 f"ACK MOCK Rotation {command}",
             )
@@ -55,6 +57,7 @@ class RotationController:
             expected_prefixes = (
                 "Returned to home",
                 "Already at home",
+                "ACK STOP",
                 f"ACK DONE {command}",
                 f"ACK MOCK Rotation {command}",
             )
@@ -67,11 +70,19 @@ class RotationController:
 
         try:
             try:
-                return self.device.send_line_wait_for_response(
+                response = self.device.send_line_wait_for_response(
                     command,
                     timeout_s=self.completion_timeout_s,
                     expected_prefixes=expected_prefixes,
                 )
+                if response.startswith("ACK STOP"):
+                    raise AutomationAbortRequested(
+                        f"Rotation arm stopped during command '{command}': {response}"
+                    )
+                return response
+            except AutomationAbortRequested:
+                self.device.close()
+                raise
             except Exception as exc:
                 # A failed transaction must not keep a serial connection with
                 # stale input/output around for the next request.
@@ -90,6 +101,9 @@ class RotationController:
 
     def ccw(self) -> str | None:
         return self.send_text(self.ccw_command())
+
+    def emergency_stop(self) -> bool:
+        return self.device.send_emergency_line_if_open("STOP")
 
     def close(self) -> None:
         self.device.close()
@@ -124,3 +138,7 @@ def rotation_home() -> str | None:
 
 def rotation_ccw() -> str | None:
     return get_rotation_controller().ccw()
+
+
+def emergency_stop_rotation() -> bool:
+    return get_rotation_controller().emergency_stop()

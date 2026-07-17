@@ -268,6 +268,29 @@ class MotionController:
             max_workers=2,
             thread_name_prefix="xz-motion",
         ) as executor:
+            # Open and stabilize both independent serial controllers before
+            # releasing the movement barrier. If connection setup happened
+            # after the barrier, different USB startup times could visibly
+            # stagger X and Z even though the worker threads started together.
+            devices = {
+                "x": self.device_for_axis("horizontal"),
+                "z": self.device_for_axis("linear"),
+            }
+            preparation = {
+                axis: executor.submit(device.connect)
+                for axis, device in devices.items()
+            }
+
+            try:
+                for future in preparation.values():
+                    future.result()
+            except Exception as exc:
+                for device in devices.values():
+                    device.close()
+                raise MotionControllerError(
+                    f"Unable to prepare concurrent X/Z movement: {exc}"
+                ) from exc
+
             futures = {
                 "x": executor.submit(move_x),
                 "z": executor.submit(move_z),

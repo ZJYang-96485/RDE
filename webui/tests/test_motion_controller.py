@@ -6,7 +6,8 @@ import unittest
 from typing import Callable
 
 from hardware.motion_controller import MotionController
-from workflow.state import reset_axis_positions
+from workflow.safety import SafetyError, validate_axis_move, validate_axis_position
+from workflow.state import reset_axis_positions, set_axis_position
 
 
 class CoordinatedFakeDevice:
@@ -74,6 +75,15 @@ class MotionControllerParallelTest(unittest.TestCase):
         self.assertEqual(result, {"x_ack": "ACK 1000", "z_ack": "ACK 700"})
         self.assertEqual(devices["horizontal"].command, "1000")
         self.assertEqual(devices["linear"].command, "700")
+
+    def test_relative_z_move_is_not_blocked_by_estimated_position(self) -> None:
+        set_axis_position("linear", 32000)
+
+        self.assertEqual(validate_axis_move("linear", 70000), 70000)
+
+        # Absolute targets retain the configured Z position limit.
+        with self.assertRaisesRegex(SafetyError, "linear position must be between"):
+            validate_axis_position("linear", 102000)
 
 
 if __name__ == "__main__":

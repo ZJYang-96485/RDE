@@ -983,7 +983,7 @@
           automationStatusEl.textContent = automationRunning
             ? `Running: ${data.automation_step || "working..."}`
             : data.automation_step || "Idle";
-          positionStatusEl.textContent = `Position: X ${data.horizontal_position ?? 0}, Z ${data.linear_position ?? 0}`;
+          positionStatusEl.textContent = `Tracked relative total: X ${data.horizontal_position ?? 0}, Z ${data.linear_position ?? 0}`;
           setAutomationError(data.automation_error || "");
           startExperimentBtn.disabled = automationRunning;
           abortHomeBtn.disabled = !automationRunning;

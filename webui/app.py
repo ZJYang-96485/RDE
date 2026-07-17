@@ -999,14 +999,19 @@ def automation_start():
     )
 
 
-@app.post("/api/automation/abort")
-@app.post("/api/automation/abort-home")
-def automation_abort_route():
-    if not automation_is_running():
-        return json_error("automation is not running.", 409)
+def perform_emergency_stop(reason: str) -> dict[str, Any]:
+    """Stop every motor immediately, during either manual or automated use."""
+    global stop_timer
 
-    # Set the shared abort flag first so wait/motion loops can exit.
-    abort_automation()
+    automation_was_running = automation_is_running()
+
+    if automation_was_running:
+        # Set the shared abort flag first so automation wait/motion loops exit.
+        abort_automation()
+
+    if stop_timer is not None:
+        stop_timer.cancel()
+        stop_timer = None
 
     # Send STOP directly to every open axis serial connection. This bypasses
     # the normal transaction lock held by the thread waiting for an axis ACK.
@@ -1016,16 +1021,17 @@ def automation_abort_route():
     # Stop RDE immediately instead of waiting for recipe-runner cleanup.
     rde_stop_error = None
     try:
-        stop_rde("Immediate automation abort requested.")
+        stop_rde(reason)
     except Exception as exc:
         rde_stop_error = str(exc)
 
     payload = {
         "ok": True,
         "message": (
-            "Emergency abort sent: RDE stop and X/Z/rotation STOP commands "
+            "Emergency stop sent: RDE stop and X/Z/rotation STOP commands "
             "were issued immediately. Motion remains in place."
         ),
+        "automation_was_running": automation_was_running,
         "motion_stop_sent": motion_stop_result,
         "rotation_stop_sent": rotation_stop_sent,
     }
@@ -1033,7 +1039,21 @@ def automation_abort_route():
     if rde_stop_error:
         payload["rde_stop_error"] = rde_stop_error
 
-    return jsonify(payload)
+    return payload
+
+
+@app.post("/api/motors/emergency-stop")
+def motor_emergency_stop_route():
+    return jsonify(perform_emergency_stop("Manual motor emergency stop requested."))
+
+
+@app.post("/api/automation/abort")
+@app.post("/api/automation/abort-home")
+def automation_abort_route():
+    if not automation_is_running():
+        return json_error("automation is not running.", 409)
+
+    return jsonify(perform_emergency_stop("Immediate automation abort requested."))
 
 
 if __name__ == "__main__":

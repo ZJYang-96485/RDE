@@ -9,7 +9,7 @@ const bool CCW_LEVEL = LOW;
 
 // Preserve the previous speed at launch, then accelerate moderately.
 const unsigned int START_STEP_PULSE_US = 2000;
-const unsigned int CRUISE_STEP_PULSE_US = 1500;
+const unsigned int CRUISE_STEP_PULSE_US = 1200;
 const unsigned int ACCELERATION_STEPS = 200;
 
 const unsigned int MOTOR_FULL_STEPS_PER_REV = 200;

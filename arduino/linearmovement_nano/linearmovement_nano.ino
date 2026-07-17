@@ -55,7 +55,7 @@ const uint8_t ENABLE_LEVEL = LOW;
 // moderately faster cruise speed. Each value is the HIGH or LOW half-period;
 // a complete step therefore takes twice this delay plus GPIO overhead.
 const unsigned int START_BASE_STEP_PULSE_US = 2000;
-const unsigned int CRUISE_BASE_STEP_PULSE_US = 1500;
+const unsigned int CRUISE_BASE_STEP_PULSE_US = 1200;
 const unsigned int MIN_STEP_PULSE_US = 50;
 const unsigned long ACCELERATION_STEPS = 1000UL;
 

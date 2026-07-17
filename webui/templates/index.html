@@ -249,6 +249,9 @@
         </div>
         <p id="horizontalStatus" class="hint"></p>
 
+        <button id="motorEmergencyStopBtn" class="abort-btn" type="button">Emergency Stop — Stop RDE, X/Z, and Arm Now</button>
+        <p id="motorEmergencyStatus" class="hint">Available during every manual motor movement.</p>
+
         <div class="unused-y-axis" aria-hidden="true">
         <label for="verticalStepsSlider">Vertical / Y Movement ({{ vertical_com_port }})</label>
         <div class="linear-row">
@@ -500,6 +503,8 @@
       const horizontalLeftBtn = document.getElementById("horizontalLeftBtn");
       const horizontalRightBtn = document.getElementById("horizontalRightBtn");
       const horizontalStatusEl = document.getElementById("horizontalStatus");
+      const motorEmergencyStopBtn = document.getElementById("motorEmergencyStopBtn");
+      const motorEmergencyStatusEl = document.getElementById("motorEmergencyStatus");
       const verticalStepsSlider = document.getElementById("verticalStepsSlider");
       const verticalStepsInput = document.getElementById("verticalStepsInput");
       const verticalStepsValue = document.getElementById("verticalStepsValue");
@@ -1753,6 +1758,29 @@
         return true;
       }
 
+      async function emergencyStopAllMotors() {
+        setError("");
+        motorEmergencyStatusEl.textContent = "Sending emergency STOP to all motor controllers...";
+
+        const res = await fetch("/api/motors/emergency-stop", { method: "POST" });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || "Unable to send the motor emergency stop.");
+        }
+
+        running = false;
+        endsAt = null;
+        motorEmergencyStatusEl.textContent = data.message || "Emergency stop sent.";
+
+        if (data.rde_stop_error) {
+          setError(`RDE stop reported an error: ${data.rde_stop_error}`);
+        }
+
+        await fetchStatus();
+        return true;
+      }
+
 
       function setEchemProtocolError(message) {
         echemProtocolErrorEl.hidden = !message;
@@ -2405,6 +2433,18 @@
           setError(err.message);
         } finally {
           horizontalRightBtn.disabled = false;
+        }
+      });
+
+      motorEmergencyStopBtn.addEventListener("click", async () => {
+        motorEmergencyStopBtn.disabled = true;
+        try {
+          await emergencyStopAllMotors();
+        } catch (err) {
+          motorEmergencyStatusEl.textContent = "Emergency stop request failed.";
+          setError(err.message);
+        } finally {
+          motorEmergencyStopBtn.disabled = false;
         }
       });
 

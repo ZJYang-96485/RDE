@@ -80,6 +80,37 @@ class RotationApiTests(unittest.TestCase):
         abort_automation.assert_called_once_with()
         emergency_stop_rotation.assert_called_once_with()
 
+    @patch("app.stop_rde")
+    @patch("app.emergency_stop_rotation", return_value=True)
+    @patch(
+        "app.emergency_stop_motion",
+        return_value={"linear": True, "horizontal": True, "vertical": False},
+    )
+    @patch("app.abort_automation")
+    @patch("app.automation_is_running", return_value=False)
+    def test_manual_motor_emergency_stop_works_without_automation(
+        self,
+        _automation_is_running,
+        abort_automation,
+        emergency_stop_motion,
+        emergency_stop_rotation,
+        stop_rde,
+    ) -> None:
+        response = self.client.post("/api/motors/emergency-stop")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertFalse(payload["automation_was_running"])
+        self.assertTrue(payload["rotation_stop_sent"])
+        self.assertEqual(
+            payload["motion_stop_sent"],
+            {"linear": True, "horizontal": True, "vertical": False},
+        )
+        abort_automation.assert_not_called()
+        emergency_stop_motion.assert_called_once_with()
+        emergency_stop_rotation.assert_called_once_with()
+        stop_rde.assert_called_once_with("Manual motor emergency stop requested.")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,339 @@
+{
+  "schema_version": 2,
+  "run_name": "Demo run plan",
+  "display_name": "Demo run plan",
+  "description": "Grouped atomic-step run plan created in the web app.",
+  "repetitions": 1,
+  "groups": [
+    {
+      "group_id": "group_001",
+      "label": "Sample 1",
+      "enabled": true,
+      "steps": [
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "0"
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": 70000
+        },
+        {
+          "name": "Set RDE RPM",
+          "action": "set_rpm",
+          "enabled": true,
+          "rpm": 1600
+        },
+        {
+          "name": "Wait",
+          "action": "wait",
+          "enabled": true,
+          "duration_s": 60.0
+        },
+        {
+          "name": "Stop RDE",
+          "action": "stop_rpm",
+          "enabled": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "Move X + Z Together",
+          "action": "move_xz_parallel",
+          "enabled": true,
+          "x_steps": 50000,
+          "z_steps": -35000
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "1"
+        }
+      ]
+    },
+    {
+      "group_id": "group_002",
+      "label": "Sample 2",
+      "enabled": true,
+      "steps": [
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "0"
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": 70000
+        },
+        {
+          "name": "Set RDE RPM",
+          "action": "set_rpm",
+          "enabled": true,
+          "rpm": 1600
+        },
+        {
+          "name": "Wait",
+          "action": "wait",
+          "enabled": true,
+          "duration_s": 60.0
+        },
+        {
+          "name": "Stop RDE",
+          "action": "stop_rpm",
+          "enabled": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "Move X + Z Together",
+          "action": "move_xz_parallel",
+          "enabled": true,
+          "x_steps": 50000,
+          "z_steps": -35000
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "1"
+        }
+      ]
+    },
+    {
+      "group_id": "group_003",
+      "label": "Sample 3",
+      "enabled": true,
+      "steps": [
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "0"
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": 70000
+        },
+        {
+          "name": "Set RDE RPM",
+          "action": "set_rpm",
+          "enabled": true,
+          "rpm": 1600
+        },
+        {
+          "name": "Wait",
+          "action": "wait",
+          "enabled": true,
+          "duration_s": 60.0
+        },
+        {
+          "name": "Stop RDE",
+          "action": "stop_rpm",
+          "enabled": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "Move X + Z Together",
+          "action": "move_xz_parallel",
+          "enabled": true,
+          "x_steps": 50000,
+          "z_steps": -35000
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "1"
+        }
+      ]
+    },
+    {
+      "group_id": "group_004",
+      "label": "Sample 4",
+      "enabled": true,
+      "steps": [
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "0"
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": 70000
+        },
+        {
+          "name": "Set RDE RPM",
+          "action": "set_rpm",
+          "enabled": true,
+          "rpm": 1600
+        },
+        {
+          "name": "Wait",
+          "action": "wait",
+          "enabled": true,
+          "duration_s": 60.0
+        },
+        {
+          "name": "Stop RDE",
+          "action": "stop_rpm",
+          "enabled": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "Move X + Z Together",
+          "action": "move_xz_parallel",
+          "enabled": true,
+          "x_steps": 50000,
+          "z_steps": -35000
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "1"
+        }
+      ]
+    },
+    {
+      "group_id": "group_005",
+      "label": "Sample 5",
+      "enabled": true,
+      "steps": [
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "0"
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": 70000
+        },
+        {
+          "name": "Set RDE RPM",
+          "action": "set_rpm",
+          "enabled": true,
+          "rpm": 1600
+        },
+        {
+          "name": "Wait",
+          "action": "wait",
+          "enabled": true,
+          "duration_s": 60.0
+        },
+        {
+          "name": "Stop RDE",
+          "action": "stop_rpm",
+          "enabled": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "Move X + Z Together",
+          "action": "move_xz_parallel",
+          "enabled": true,
+          "x_steps": 50000,
+          "z_steps": -35000
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "1"
+        }
+      ]
+    },
+    {
+      "group_id": "group_006",
+      "label": "Sample 6",
+      "enabled": true,
+      "steps": [
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "0"
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": 70000
+        },
+        {
+          "name": "Set RDE RPM",
+          "action": "set_rpm",
+          "enabled": true,
+          "rpm": 1600
+        },
+        {
+          "name": "Wait",
+          "action": "wait",
+          "enabled": true,
+          "duration_s": 60.0
+        },
+        {
+          "name": "Stop RDE",
+          "action": "stop_rpm",
+          "enabled": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -70000
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "1"
+        },
+        {
+          "name": "Move X \u2014 Relative Steps",
+          "action": "move_x",
+          "enabled": true,
+          "steps": -250000
+        }
+      ]
+    }
+  ],
+  "saved_at": "2026-07-17T14:49:07.625510+00:00"
+}

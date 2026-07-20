@@ -80,6 +80,27 @@ class GamryCellClientTests(unittest.TestCase):
                 with self.assertRaises(gamry_cell_client.GamryCellClientError):
                     gamry_cell_client.gamry_cell_on(duration)
 
+    @patch.object(gamry_cell_client, "run_real_command")
+    @patch.object(
+        gamry_cell_client,
+        "missing_configured_station_ports",
+        return_value=["rde=COM6", "linear=COM4"],
+    )
+    @patch.object(gamry_cell_client, "get_gamry_config", return_value={"mode": "real"})
+    def test_real_on_is_blocked_before_worker_when_configured_ports_are_missing(
+        self,
+        _get_config,
+        _missing_ports,
+        run_real_command,
+    ) -> None:
+        with self.assertRaisesRegex(
+            gamry_cell_client.GamryCellClientError,
+            r"configured station ports are unavailable: rde=COM6, linear=COM4",
+        ):
+            gamry_cell_client.gamry_cell_on(5)
+
+        run_real_command.assert_not_called()
+
 
 class GamryCellApiTests(unittest.TestCase):
     def setUp(self) -> None:

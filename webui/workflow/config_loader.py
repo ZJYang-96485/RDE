@@ -145,14 +145,6 @@ def read_config_file() -> dict[str, Any]:
     return payload
 
 
-def write_config_file(payload: dict[str, Any]) -> None:
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-    with CONFIG_PATH.open("w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
-        f.write("\n")
-
-
 def validate_serial_config(config: dict[str, Any]) -> None:
     serial = config.get("serial")
 
@@ -384,23 +376,21 @@ def reload_config() -> dict[str, Any]:
 
 
 def set_gamry_mode(mode: str) -> dict[str, Any]:
+    """Validate the configured Gamry mode without rewriting config.json."""
     normalized = str(mode or "").strip().lower()
 
     if normalized not in {"mock", "real", "toolkitpy", "gamry"}:
         raise ConfigError("gamry.mode must be mock, real, toolkitpy, or gamry.")
 
-    user_config = read_config_file()
-    gamry = user_config.setdefault("gamry", {})
+    config = reload_config()
+    configured = str(config["gamry"]["mode"]).strip().lower()
+    if normalized != configured:
+        raise ConfigError(
+            "Gamry backend is fixed by config.json and cannot be changed from the web UI. "
+            f"Configured mode: {configured}."
+        )
 
-    if not isinstance(gamry, dict):
-        raise ConfigError("gamry config must be an object.")
-
-    gamry["mode"] = normalized
-    merged = deep_merge(_DEFAULT_CONFIG, user_config)
-    validate_config(merged)
-    write_config_file(user_config)
-
-    return reload_config()
+    return config
 
 
 def get_baud_rate() -> int:

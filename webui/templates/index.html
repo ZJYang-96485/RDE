@@ -289,11 +289,11 @@
 
         <label for="gamryModeSelect">Gamry Backend</label>
         <div class="inline-control-row">
-          <select id="gamryModeSelect">
+          <select id="gamryModeSelect" disabled>
             <option value="mock">Mock</option>
             <option value="real">Real / Windows</option>
           </select>
-          <button id="saveGamryModeBtn" class="home-btn" type="button">Apply</button>
+          <button id="saveGamryModeBtn" class="home-btn" type="button" disabled>Configured</button>
           <button id="checkGamryDeviceBtn" class="home-btn" type="button">Check Device</button>
         </div>
         <p id="gamryModeStatus" class="hint"></p>
@@ -977,12 +977,15 @@
         gamryModeDirty = false;
 
         if (gamryModeSelect.value === "real" && !gamryRealRunnerConfigured) {
-          gamryModeStatusEl.textContent = "Gamry backend: real (worker runtime is not ready)";
+          gamryModeStatusEl.textContent = "Gamry backend: real (read-only from config.json; worker runtime is not ready)";
         } else if (gamryModeSelect.value === "real") {
-          gamryModeStatusEl.textContent = "Gamry backend: real (worker runtime ready)";
+          gamryModeStatusEl.textContent = "Gamry backend: real (read-only from config.json; worker runtime ready)";
         } else {
-          gamryModeStatusEl.textContent = "Gamry backend: mock";
+          gamryModeStatusEl.textContent = "Gamry backend: mock (read-only from config.json)";
         }
+
+        gamryModeSelect.disabled = true;
+        saveGamryModeBtn.disabled = true;
 
         updateGamryProbeButton();
       }
@@ -1050,29 +1053,6 @@
         return true;
       }
 
-      async function saveGamryMode() {
-        setAutomationError("");
-        gamryModeStatusEl.textContent = "Updating Gamry backend...";
-
-        const res = await fetch("/api/config/gamry-mode", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode: gamryModeSelect.value }),
-        });
-        const data = await res.json();
-
-        if (!res.ok) {
-          setAutomationError(data.error || "Unable to update Gamry backend.");
-          await fetchConfig();
-          return false;
-        }
-
-        const config = data.config || {};
-        renderGamryModeStatus(config.gamry_mode || data.gamry_mode, config.gamry_real_runner_configured);
-        gamryDeviceStatusEl.textContent = "";
-        return true;
-      }
-
       async function fetchStatus() {
         try {
           const res = await fetch("/api/status");
@@ -1108,8 +1088,8 @@
           verticalStepsSlider.disabled = automationRunning;
           verticalStepsInput.disabled = automationRunning;
           automationRepetitionsInput.disabled = automationRunning;
-          gamryModeSelect.disabled = automationRunning;
-          saveGamryModeBtn.disabled = automationRunning;
+          gamryModeSelect.disabled = true;
+          saveGamryModeBtn.disabled = true;
           updateGamryProbeButton();
           setRecipeDisabled(automationRunning);
           setProtocolBuilderDisabled(automationRunning);
@@ -2677,23 +2657,6 @@
         }
       });
 
-      saveGamryModeBtn.addEventListener("click", async () => {
-        saveGamryModeBtn.disabled = true;
-        try {
-          await saveGamryMode();
-        } catch (err) {
-          setAutomationError(err.message);
-        } finally {
-          saveGamryModeBtn.disabled = automationRunning;
-        }
-      });
-
-      gamryModeSelect.addEventListener("change", () => {
-        gamryModeDirty = true;
-        gamryDeviceStatusEl.textContent = "Apply the backend selection before checking the device.";
-        updateGamryProbeButton();
-      });
-
       checkGamryDeviceBtn.addEventListener("click", async () => {
         checkGamryDeviceBtn.disabled = true;
         try {
@@ -2857,7 +2820,6 @@
       });
 
       fetchConfig()
-        .then(() => refreshGamryCellStatus())
         .then(() => refreshProtocolList())
         .then(() => refreshRecipeList("default"))
         .then(() => loadRecipe())

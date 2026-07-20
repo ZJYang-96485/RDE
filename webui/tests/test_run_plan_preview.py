@@ -17,13 +17,43 @@ class RunPlanPreviewUiTest(unittest.TestCase):
     def test_preview_panel_and_human_friendly_icons_are_rendered(self) -> None:
         self.assertIn('id="runPlanTimeline"', self.page)
         self.assertIn('id="runPlanStepDetail"', self.page)
-        self.assertIn('id="runPlanHumanSummary"', self.page)
+        self.assertIn('id="runPlanReturnStatus"', self.page)
         self.assertIn('id="runPlanWarnings"', self.page)
         self.assertIn("const runPlanIconPaths = {", self.page)
         self.assertIn('motionX: \'<path d="M3 12h18', self.page)
         self.assertIn('rinse: \'<path d="M12 3s6', self.page)
         self.assertIn('echem: \'<path d="M3 18h18', self.page)
         self.assertNotIn("cdnjs.cloudflare.com", self.page)
+
+    def test_preview_is_after_the_builder_and_never_parallel(self) -> None:
+        builder_position = self.page.index('class="run-plan-builder-column"')
+        preview_position = self.page.index('id="runPlanPreviewPanel"')
+        self.assertLess(builder_position, preview_position)
+        self.assertIn(".run-plan-layout {\n        display: block;", self.source)
+        self.assertIn("position: static;", self.source)
+        self.assertNotIn("grid-template-columns: minmax(0, 1.2fr)", self.source)
+
+    def test_preview_and_timeline_groups_are_collapsible(self) -> None:
+        self.assertIn('id="runPlanPreviewCollapseBtn"', self.page)
+        self.assertIn("function setRunPlanPreviewCollapsed(collapsed)", self.source)
+        self.assertIn("const collapsedRunPlanPreviewGroups = new Set()", self.source)
+        self.assertIn('class="preview-group-label preview-group-toggle"', self.source)
+        self.assertIn('class="preview-group-steps"', self.source)
+
+    def test_z_direction_is_explicit_and_matches_hardware_convention(self) -> None:
+        self.assertIn("motionZDown:", self.source)
+        self.assertIn("motionZUp:", self.source)
+        self.assertIn('if (steps > 0) return "Down"', self.source)
+        self.assertIn('if (steps < 0) return "Up"', self.source)
+        self.assertIn("later.step.steps > 0", self.source)
+        self.assertIn("state.z > 0", self.source)
+        self.assertIn("Z signed relative steps (+ = Down, - = Up)", self.source)
+
+    def test_return_to_start_replaces_repetitive_plan_summary(self) -> None:
+        self.assertIn("Return-to-start check", self.page)
+        self.assertIn("function renderRunPlanReturnStatus(model)", self.source)
+        self.assertIn("Does not return to the tracked X/Z starting position", self.source)
+        self.assertNotIn("What this plan does", self.page)
 
     def test_all_atomic_actions_have_preview_metadata(self) -> None:
         for action in (

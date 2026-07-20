@@ -156,10 +156,7 @@
       }
 
       .run-plan-layout {
-        display: grid;
-        grid-template-columns: minmax(0, 1.2fr) minmax(390px, 0.8fr);
-        gap: 18px;
-        align-items: start;
+        display: block;
       }
 
       .run-plan-builder-column {
@@ -175,10 +172,10 @@
       }
 
       .run-plan-preview-panel {
-        position: sticky;
-        top: 84px;
-        max-height: calc(100vh - 104px);
-        overflow-y: auto;
+        position: static;
+        max-height: none;
+        overflow: visible;
+        margin-top: 18px;
         border: 1px solid #afc8db;
         border-radius: 14px;
         padding: 16px;
@@ -188,9 +185,32 @@
 
       .run-plan-preview-header {
         display: flex;
-        align-items: flex-start;
+        align-items: center;
         justify-content: space-between;
         gap: 12px;
+      }
+
+      .run-plan-preview-header-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      .run-plan-preview-collapse {
+        width: auto;
+        min-width: 154px;
+        margin: 0;
+        padding: 8px 12px;
+        font-size: 0.82rem;
+      }
+
+      .run-plan-preview-panel.is-collapsed {
+        padding-bottom: 16px;
+      }
+
+      .run-plan-preview-body[hidden] {
+        display: none !important;
       }
 
       .run-plan-preview-heading {
@@ -289,25 +309,85 @@
       .preview-group-label {
         display: flex;
         align-items: center;
+        justify-content: space-between;
         gap: 7px;
+        width: 100%;
         margin-top: 8px;
+        border: 0;
+        padding: 5px 2px;
+        background: transparent;
         color: #284e69;
+        font: inherit;
         font-size: 0.82rem;
         font-weight: 800;
         letter-spacing: 0.02em;
+        text-align: left;
         text-transform: uppercase;
+        cursor: pointer;
       }
 
-      .preview-group-label:first-child {
+      .preview-timeline-group:first-child .preview-group-label {
         margin-top: 0;
       }
 
-      .preview-group-label::before {
+      .preview-group-label-copy {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      .preview-group-label-copy::before {
         content: "";
         width: 16px;
         height: 2px;
         border-radius: 999px;
         background: #6f9bb9;
+      }
+
+      .preview-group-collapse-state {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        padding: 4px 8px;
+        background: #e6f0f6;
+        color: #3d6179;
+        font-size: 0.68rem;
+        letter-spacing: 0;
+        text-transform: none;
+      }
+
+      .preview-group-collapse-state::after {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-right: 2px solid currentColor;
+        border-bottom: 2px solid currentColor;
+        transform: rotate(45deg) translateY(-2px);
+        transition: transform 120ms ease;
+      }
+
+      .preview-timeline-group.is-collapsed .preview-group-collapse-state::after {
+        transform: rotate(-45deg) translate(-1px, -1px);
+      }
+
+      .preview-group-label:hover .preview-group-collapse-state,
+      .preview-group-label:focus-visible .preview-group-collapse-state {
+        background: #d6e8f3;
+      }
+
+      .preview-group-label:focus-visible {
+        outline: 3px solid rgba(47, 99, 143, 0.25);
+        outline-offset: 2px;
+      }
+
+      .preview-group-steps {
+        display: grid;
+        gap: 10px;
+      }
+
+      .preview-timeline-group.is-collapsed .preview-group-steps {
+        display: none;
       }
 
       .preview-step-wrap {
@@ -587,21 +667,23 @@
           grid-template-columns: 1fr;
         }
 
+        .run-plan-preview-header,
+        .run-plan-preview-header-actions {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .run-plan-preview-header-actions {
+          width: 100%;
+        }
+
+        .run-plan-preview-collapse {
+          width: 100%;
+        }
+
         .preview-parallel-lanes,
         .preview-state-grid {
           grid-template-columns: 1fr;
-        }
-      }
-
-      @media (max-width: 1080px) {
-        .run-plan-layout {
-          grid-template-columns: 1fr;
-        }
-
-        .run-plan-preview-panel {
-          position: static;
-          max-height: none;
-          overflow-y: visible;
         }
       }
     </style>
@@ -747,14 +829,18 @@
             <p id="automationError" class="error" hidden></p>
           </div>
 
-          <aside class="run-plan-preview-panel" aria-labelledby="runPlanPreviewTitle">
+          <section id="runPlanPreviewPanel" class="run-plan-preview-panel" aria-labelledby="runPlanPreviewTitle">
             <div class="run-plan-preview-header">
               <div class="run-plan-preview-heading">
                 <span id="runPlanPreviewHeadingIcon" aria-hidden="true"></span>
                 <h3 id="runPlanPreviewTitle">Run Plan Preview</h3>
               </div>
-              <span id="runPlanPreviewTotal" class="preview-total" aria-live="polite">No steps</span>
+              <div class="run-plan-preview-header-actions">
+                <span id="runPlanPreviewTotal" class="preview-total" aria-live="polite">No steps</span>
+                <button id="runPlanPreviewCollapseBtn" class="home-btn run-plan-preview-collapse" type="button" aria-expanded="true" aria-controls="runPlanPreviewBody">Collapse Preview</button>
+              </div>
             </div>
+            <div id="runPlanPreviewBody" class="run-plan-preview-body">
             <p class="preview-safety-note">
               <span id="runPlanPreviewSafetyIcon" aria-hidden="true"></span>
               <span>Preview only — reviewing this panel never sends a hardware command.</span>
@@ -767,16 +853,17 @@
               <div id="runPlanStepDetail" class="preview-detail-card">Select a timeline step to inspect its parameters and expected state.</div>
             </section>
 
-            <section class="preview-subsection" aria-labelledby="runPlanSummaryTitle">
-              <h4 id="runPlanSummaryTitle"><span id="runPlanSummaryIcon" aria-hidden="true"></span>What this plan does</h4>
-              <div id="runPlanHumanSummary"></div>
+            <section class="preview-subsection" aria-labelledby="runPlanReturnTitle">
+              <h4 id="runPlanReturnTitle"><span id="runPlanReturnIcon" aria-hidden="true"></span>Return-to-start check</h4>
+              <div id="runPlanReturnStatus" class="preview-detail-card"></div>
             </section>
 
             <section class="preview-subsection" aria-labelledby="runPlanWarningsTitle">
               <h4 id="runPlanWarningsTitle"><span id="runPlanWarningsIcon" aria-hidden="true"></span>Things to confirm</h4>
               <ul id="runPlanWarnings" class="preview-warning-list"></ul>
             </section>
-          </aside>
+            </div>
+          </section>
         </div>
 
         <section class="live-gamry-panel" aria-labelledby="gamryCellTitle">
@@ -1013,15 +1100,18 @@
       const automationStatusEl = document.getElementById("automationStatus");
       const automationErrorEl = document.getElementById("automationError");
       const automationRepetitionsInput = document.getElementById("automationRepetitions");
+      const runPlanPreviewPanelEl = document.getElementById("runPlanPreviewPanel");
+      const runPlanPreviewBodyEl = document.getElementById("runPlanPreviewBody");
+      const runPlanPreviewCollapseBtn = document.getElementById("runPlanPreviewCollapseBtn");
       const runPlanTimelineEl = document.getElementById("runPlanTimeline");
       const runPlanPreviewTotalEl = document.getElementById("runPlanPreviewTotal");
       const runPlanStepDetailEl = document.getElementById("runPlanStepDetail");
-      const runPlanHumanSummaryEl = document.getElementById("runPlanHumanSummary");
+      const runPlanReturnStatusEl = document.getElementById("runPlanReturnStatus");
       const runPlanWarningsEl = document.getElementById("runPlanWarnings");
       const runPlanPreviewHeadingIconEl = document.getElementById("runPlanPreviewHeadingIcon");
       const runPlanPreviewSafetyIconEl = document.getElementById("runPlanPreviewSafetyIcon");
       const runPlanDetailIconEl = document.getElementById("runPlanDetailIcon");
-      const runPlanSummaryIconEl = document.getElementById("runPlanSummaryIcon");
+      const runPlanReturnIconEl = document.getElementById("runPlanReturnIcon");
       const runPlanWarningsIconEl = document.getElementById("runPlanWarningsIcon");
       const gamryCellMessageEl = document.getElementById("gamryCellMessage");
       const gamryCellInstrumentEl = document.getElementById("gamryCellInstrument");
@@ -1111,6 +1201,7 @@
       let previewRinseDurationS = null;
       let selectedRunPlanPreviewKey = "";
       let runPlanPreviewQueued = false;
+      const collapsedRunPlanPreviewGroups = new Set();
       let liveStreamKey = "";
       let livePoints = [];
       let liveLatestSeq = 0;
@@ -1835,6 +1926,8 @@
         plan: '<path d="M7 5h13M7 12h13M7 19h13"/><circle cx="3.5" cy="5" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="19" r="1"/>',
         motionX: '<path d="M3 12h18M3 12l4-4M3 12l4 4M21 12l-4-4M21 12l-4 4"/>',
         motionZ: '<path d="M12 3v18M12 3L8 7M12 3l4 4M12 21l-4-4M12 21l4-4"/>',
+        motionZDown: '<path d="M12 3v16M7 14l5 5 5-5M6 21h12"/>',
+        motionZUp: '<path d="M12 21V5M7 10l5-5 5 5M6 3h12"/>',
         motionXZ: '<path d="M4 19h15M4 19V4M4 19l5-5M19 19l-4-4M4 4l4 4"/>',
         rotation: '<path d="M18.5 7.5A8 8 0 1 0 20 14M18.5 7.5V3.5M18.5 7.5h-4"/><circle cx="12" cy="12" r="2"/>',
         rde: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="1.6"/><path d="M12 10V6M13.7 13l3.5 2M10.3 13l-3.5 2"/>',
@@ -1853,6 +1946,21 @@
         const path = runPlanIconPaths[iconName] || runPlanIconPaths.unknown;
         const smallClass = small ? " preview-icon-small" : "";
         return `<span class="preview-icon preview-icon-${category}${smallClass}" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false">${path}</svg></span>`;
+      }
+
+      function zDirectionLabel(value) {
+        const steps = previewFiniteNumber(value) ?? 0;
+        if (steps > 0) return "Down";
+        if (steps < 0) return "Up";
+        return "No movement";
+      }
+
+      function runPlanStepIconName(step, fallbackIcon) {
+        if (step.action === "move_z") {
+          if (step.steps > 0) return "motionZDown";
+          if (step.steps < 0) return "motionZUp";
+        }
+        return fallbackIcon;
       }
 
       function runPlanActionMeta(action) {
@@ -2129,9 +2237,9 @@
 
       function runPlanStepParameterSummary(step) {
         if (step.action === "move_x") return `Move X: ${formatSignedPreviewNumber(step.steps)} steps`;
-        if (step.action === "move_z") return `Move Z: ${formatSignedPreviewNumber(step.steps)} steps`;
+        if (step.action === "move_z") return `Move Z: ${formatSignedPreviewNumber(step.steps)} steps · ${zDirectionLabel(step.steps)}`;
         if (step.action === "move_xz_parallel") {
-          return `Move X ${formatSignedPreviewNumber(step.x_steps)} and Z ${formatSignedPreviewNumber(step.z_steps)} together`;
+          return `Move X ${formatSignedPreviewNumber(step.x_steps)} and Z ${formatSignedPreviewNumber(step.z_steps)} (${zDirectionLabel(step.z_steps)}) together`;
         }
         if (step.action === "rotation") return `Arm command: ${step.command}`;
         if (step.action === "set_rpm") return step.rpm > 20 ? `Set RDE: ${step.rpm} RPM` : "Stop RDE";
@@ -2176,31 +2284,6 @@
         return state;
       }
 
-      function previewActionPhrase(step) {
-        if (step.action === "move_x") return `move X by ${formatSignedPreviewNumber(step.steps)} relative steps`;
-        if (step.action === "move_z") return `move Z by ${formatSignedPreviewNumber(step.steps)} relative steps`;
-        if (step.action === "move_xz_parallel") {
-          return `move X ${formatSignedPreviewNumber(step.x_steps)} and Z ${formatSignedPreviewNumber(step.z_steps)} together`;
-        }
-        if (step.action === "rotation") return `rotate the RDE arm using command ${step.command}`;
-        if (step.action === "set_rpm") return step.rpm > 20 ? `set the RDE to ${step.rpm} RPM` : "stop the RDE";
-        if (step.action === "stop_rpm") return "stop the RDE";
-        if (step.action === "wait") return `wait ${formatRunPlanDuration(step.duration_s, false)}`;
-        if (step.action === "echem") return `run the ${step.protocol || "selected"} EChem protocol`;
-        if (step.action === "rpm_echem") return `run ${step.protocol || "EChem"} while spinning at ${step.rpm} RPM`;
-        if (step.action === "rinse") return "run the configured rinse cycle";
-        if (step.action === "gamry_cell_on") return step.duration_s === null ? "turn the Gamry cell on until OFF" : `turn the Gamry cell on for ${formatRunPlanDuration(step.duration_s, false)}`;
-        if (step.action === "gamry_cell_off") return "turn the Gamry cell off";
-        return `perform the unknown step type ${step.action || "empty"}`;
-      }
-
-      function humanList(items) {
-        if (items.length === 0) return "do nothing";
-        if (items.length === 1) return items[0];
-        if (items.length === 2) return `${items[0]} and ${items[1]}`;
-        return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
-      }
-
       function buildRunPlanWarnings(groups, flatSteps, finalState) {
         const warnings = [];
         const addWarning = (message) => {
@@ -2224,8 +2307,8 @@
             const laterZDown = flatSteps.slice(flatIndex + 1).some((later) => (
               later.effectiveEnabled
               && later.groupIndex === item.groupIndex
-              && ((later.step.action === "move_z" && later.step.steps < 0)
-                || (later.step.action === "move_xz_parallel" && later.step.z_steps < 0))
+              && ((later.step.action === "move_z" && later.step.steps > 0)
+                || (later.step.action === "move_xz_parallel" && later.step.z_steps > 0))
             ));
             if (laterZDown) {
               addWarning("RDE may start spinning before the electrode reaches its target Z height. Confirm the order.");
@@ -2234,7 +2317,7 @@
 
           const hasXMotion = (step.action === "move_x" && step.steps !== 0)
             || (step.action === "move_xz_parallel" && step.x_steps !== 0);
-          if (hasXMotion && (state.z < 0 || (step.action === "move_xz_parallel" && step.z_steps < 0))) {
+          if (hasXMotion && (state.z > 0 || (step.action === "move_xz_parallel" && step.z_steps > 0))) {
             addWarning("X movement may occur while Z is lowered. Confirm physical clearance.");
           }
 
@@ -2260,6 +2343,9 @@
 
         if (finalState.rpm > 20) {
           addWarning("RDE may remain spinning at the end of the run. Confirm whether a Stop RDE step is needed.");
+        }
+        if (finalState.x !== 0 || finalState.z !== 0) {
+          addWarning(`Plan does not return to the tracked X/Z starting position. Final offset: X ${formatSignedPreviewNumber(finalState.x)} steps, Z ${formatSignedPreviewNumber(finalState.z)} steps (${zDirectionLabel(finalState.z)} from start).`);
         }
         return warnings;
       }
@@ -2322,9 +2408,10 @@
           </div>`;
         }
         if (step.action === "move_xz_parallel") {
+          const zIcon = step.z_steps > 0 ? "motionZDown" : (step.z_steps < 0 ? "motionZUp" : "motionZ");
           return `<div class="preview-parallel-lanes">
             <span class="preview-parallel-lane">${runPlanIcon("motionX", "motion", true)}<span>X ${escapeRunPlanHtml(formatSignedPreviewNumber(step.x_steps))}</span></span>
-            <span class="preview-parallel-lane">${runPlanIcon("motionZ", "motion", true)}<span>Z ${escapeRunPlanHtml(formatSignedPreviewNumber(step.z_steps))}</span></span>
+            <span class="preview-parallel-lane">${runPlanIcon(zIcon, "motion", true)}<span>Z ${escapeRunPlanHtml(formatSignedPreviewNumber(step.z_steps))} · ${escapeRunPlanHtml(zDirectionLabel(step.z_steps))}</span></span>
           </div>`;
         }
         return "";
@@ -2350,14 +2437,14 @@
           : '<p><strong>Disabled — skipped.</strong> The state below is unchanged by this step.</p>';
         runPlanStepDetailEl.innerHTML = `
           <p><strong>${escapeRunPlanHtml(item.groupLabel)} · Step ${item.stepIndex + 1}</strong></p>
-          <p>${runPlanIcon(item.meta.icon, item.meta.category, true)} <strong>${escapeRunPlanHtml(item.step.name)}</strong> · ${escapeRunPlanHtml(item.meta.categoryLabel)}</p>
+          <p>${runPlanIcon(runPlanStepIconName(item.step, item.meta.icon), item.meta.category, true)} <strong>${escapeRunPlanHtml(item.step.name)}</strong> · ${escapeRunPlanHtml(item.meta.categoryLabel)}</p>
           <p>${escapeRunPlanHtml(item.parameterSummary)}</p>
           <p><strong>Estimated duration:</strong> ${escapeRunPlanHtml(runPlanDurationLabel(item))}</p>
           ${skipNote}
           <p><strong>After this step:</strong></p>
           <div class="preview-state-grid">
             <span class="preview-state-item">X relative: ${escapeRunPlanHtml(formatSignedPreviewNumber(state.x))} steps</span>
-            <span class="preview-state-item">Z relative: ${escapeRunPlanHtml(formatSignedPreviewNumber(state.z))} steps</span>
+            <span class="preview-state-item">Z relative: ${escapeRunPlanHtml(formatSignedPreviewNumber(state.z))} steps · ${escapeRunPlanHtml(zDirectionLabel(state.z))} from start</span>
             <span class="preview-state-item">RPM: ${escapeRunPlanHtml(rpmText)}</span>
             <span class="preview-state-item">Gamry cell: ${escapeRunPlanHtml(state.cell)}</span>
             <span class="preview-state-item">EChem: idle</span>
@@ -2367,19 +2454,25 @@
         `;
       }
 
-      function renderRunPlanSummary(model) {
-        if (model.groups.length === 0) {
-          runPlanHumanSummaryEl.innerHTML = '<p class="preview-summary">Add a group and steps to see a plain-language summary.</p>';
+      function renderRunPlanReturnStatus(model) {
+        const xOffset = model.finalState.x;
+        const zOffset = model.finalState.z;
+        const returnsToStart = xOffset === 0 && zOffset === 0;
+
+        if (model.flatSteps.length === 0) {
+          runPlanReturnStatusEl.innerHTML = '<p>No enabled X/Z movement is currently planned.</p>';
           return;
         }
 
-        runPlanHumanSummaryEl.innerHTML = model.groups.map((group) => {
-          if (!group.enabled) {
-            return `<p class="preview-summary"><strong>${escapeRunPlanHtml(group.label)}:</strong> this group is disabled and will be skipped.</p>`;
-          }
-          const actions = group.steps.filter((step) => step.enabled).map(previewActionPhrase);
-          return `<p class="preview-summary"><strong>${escapeRunPlanHtml(group.label)}:</strong> The system will ${escapeRunPlanHtml(humanList(actions))}.</p>`;
-        }).join("");
+        if (returnsToStart) {
+          runPlanReturnStatusEl.innerHTML = `<p>${runPlanIcon("check", "cell", true)} <strong>Returns to the tracked X/Z starting position.</strong></p>
+            <p>Final relative offset: X 0 steps · Z 0 steps.</p>`;
+          return;
+        }
+
+        runPlanReturnStatusEl.innerHTML = `<p>${runPlanIcon("warning", "warning", true)} <strong>Does not return to the tracked X/Z starting position.</strong></p>
+          <p>Final relative offset: X ${escapeRunPlanHtml(formatSignedPreviewNumber(xOffset))} steps · Z ${escapeRunPlanHtml(formatSignedPreviewNumber(zOffset))} steps (${escapeRunPlanHtml(zDirectionLabel(zOffset))} from start).</p>
+          <p>Confirm this is intentional or add return moves before starting.</p>`;
       }
 
       function renderRunPlanWarnings(model) {
@@ -2406,12 +2499,19 @@
             let timeline = "";
             model.groups.forEach((group, groupIndex) => {
               const groupItems = model.flatSteps.filter((item) => item.groupIndex === groupIndex);
-              timeline += `<div class="preview-group-label">${escapeRunPlanHtml(group.label)}${group.enabled ? "" : " · disabled"}</div>`;
+              const groupKey = `group-${groupIndex}`;
+              const groupCollapsed = collapsedRunPlanPreviewGroups.has(groupKey);
+              timeline += `<section class="preview-timeline-group${groupCollapsed ? " is-collapsed" : ""}" data-preview-group-key="${groupKey}">
+                <button type="button" class="preview-group-label preview-group-toggle" aria-expanded="${groupCollapsed ? "false" : "true"}">
+                  <span class="preview-group-label-copy">${escapeRunPlanHtml(group.label)}${group.enabled ? "" : " · disabled"}</span>
+                  <span class="preview-group-collapse-state">${groupCollapsed ? "Expand group" : "Collapse group"}</span>
+                </button>
+                <div class="preview-group-steps">`;
               groupItems.forEach((item) => {
                 const selected = item.key === selectedRunPlanPreviewKey;
                 timeline += `<div class="preview-step-wrap">
                   <button type="button" class="preview-step-card${selected ? " is-selected" : ""}${item.effectiveEnabled ? "" : " is-disabled"}" data-preview-key="${escapeRunPlanHtml(item.key)}" aria-pressed="${selected ? "true" : "false"}">
-                    ${runPlanIcon(item.meta.icon, item.meta.category)}
+                    ${runPlanIcon(runPlanStepIconName(item.step, item.meta.icon), item.meta.category)}
                     <span class="preview-step-copy">
                       <span class="preview-step-kicker">Step ${item.stepIndex + 1} · ${escapeRunPlanHtml(item.meta.categoryLabel)}</span>
                       <span class="preview-step-name">${escapeRunPlanHtml(item.step.name)}</span>
@@ -2423,6 +2523,7 @@
                   </button>
                 </div>`;
               });
+              timeline += "</div></section>";
             });
             runPlanTimelineEl.innerHTML = timeline;
           }
@@ -2443,7 +2544,7 @@
 
           const selected = model.flatSteps.find((item) => item.key === selectedRunPlanPreviewKey);
           renderRunPlanStepDetail(selected);
-          renderRunPlanSummary(model);
+          renderRunPlanReturnStatus(model);
           renderRunPlanWarnings(model);
         } catch (error) {
           runPlanTimelineEl.innerHTML = `<div class="preview-empty">Preview is temporarily unavailable: ${escapeRunPlanHtml(error.message)}</div>`;
@@ -2460,17 +2561,42 @@
         });
       }
 
+      function setRunPlanPreviewCollapsed(collapsed) {
+        const isCollapsed = Boolean(collapsed);
+        runPlanPreviewPanelEl.classList.toggle("is-collapsed", isCollapsed);
+        runPlanPreviewBodyEl.hidden = isCollapsed;
+        runPlanPreviewCollapseBtn.textContent = isCollapsed ? "Expand Preview" : "Collapse Preview";
+        runPlanPreviewCollapseBtn.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+      }
+
       function initializeRunPlanPreview() {
         runPlanPreviewHeadingIconEl.innerHTML = runPlanIcon("plan", "plan");
         runPlanPreviewSafetyIconEl.innerHTML = runPlanIcon("check", "cell", true);
         runPlanDetailIconEl.innerHTML = runPlanIcon("unknown", "plan", true);
-        runPlanSummaryIconEl.innerHTML = runPlanIcon("plan", "plan", true);
+        runPlanReturnIconEl.innerHTML = runPlanIcon("motionXZ", "plan", true);
         runPlanWarningsIconEl.innerHTML = runPlanIcon("warning", "warning", true);
 
         recipeGroupsEl.addEventListener("input", scheduleRunPlanPreview);
         recipeGroupsEl.addEventListener("change", scheduleRunPlanPreview);
         automationRepetitionsInput.addEventListener("input", scheduleRunPlanPreview);
+        runPlanPreviewCollapseBtn.addEventListener("click", () => {
+          setRunPlanPreviewCollapsed(!runPlanPreviewPanelEl.classList.contains("is-collapsed"));
+        });
         runPlanTimelineEl.addEventListener("click", (event) => {
+          const groupToggle = event.target.closest(".preview-group-toggle");
+          if (groupToggle) {
+            const groupBlock = groupToggle.closest(".preview-timeline-group");
+            const groupKey = groupBlock?.dataset.previewGroupKey || "";
+            if (groupKey) {
+              if (collapsedRunPlanPreviewGroups.has(groupKey)) {
+                collapsedRunPlanPreviewGroups.delete(groupKey);
+              } else {
+                collapsedRunPlanPreviewGroups.add(groupKey);
+              }
+              updateRunPlanPreview();
+            }
+            return;
+          }
           const card = event.target.closest(".preview-step-card");
           if (!card) return;
           selectedRunPlanPreviewKey = card.dataset.previewKey || "";
@@ -2479,6 +2605,7 @@
 
         const observer = new MutationObserver(scheduleRunPlanPreview);
         observer.observe(recipeGroupsEl, { childList: true, subtree: true });
+        setRunPlanPreviewCollapsed(false);
         updateRunPlanPreview();
       }
 
@@ -2553,15 +2680,17 @@
           input.className = "atomic-steps";
           input.value = String(values.steps ?? values.position ?? 1);
           addField(
-            `${action === "move_x" ? "X" : "Z"} signed relative steps`,
+            action === "move_x"
+              ? "X signed relative steps"
+              : "Z signed relative steps (+ = Down, - = Up)",
             input
           );
 
           const note = document.createElement("p");
           note.className = "hint";
-          note.textContent =
-            "This sends the exact same signed step command as Motor Control. " +
-            "Example: +1000 and -1000 move in the same directions as the manual buttons.";
+          note.textContent = action === "move_z"
+            ? "Z direction convention: positive steps move Down; negative steps move Up."
+            : "This sends the exact same signed X step command as Motor Control.";
           container.appendChild(note);
         } else if (action === "move_xz_parallel") {
           const xInput = document.createElement("input");
@@ -2576,13 +2705,14 @@
           zInput.step = "1";
           zInput.className = "atomic-z-steps";
           zInput.value = String(values.z_steps ?? 1000);
-          addField("Z signed relative steps", zInput);
+          addField("Z signed relative steps (+ = Down, - = Up)", zInput);
 
           const note = document.createElement("p");
           note.className = "hint";
           note.textContent =
             "X and Z commands are issued together to their independent " +
-            "controllers. Emergency Abort sends STOP to both axes.";
+            "controllers. For Z, positive is Down and negative is Up. " +
+            "Emergency Abort sends STOP to both axes.";
           container.appendChild(note);
 
           const warning = document.createElement("p");

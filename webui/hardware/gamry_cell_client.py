@@ -17,8 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from hardware.serial_base import available_serial_ports
-from workflow.config_loader import get_gamry_config, load_config
+from workflow.config_loader import get_gamry_config
 
 
 class GamryCellClientError(RuntimeError):
@@ -34,8 +33,6 @@ CELL_WORKER_PATH = WEBUI_ROOT / "gamry_worker" / "cell_control.py"
 
 _command_lock = threading.Lock()
 _state_lock = threading.RLock()
-
-REQUIRED_STATION_PORTS = ("rde", "rotation", "linear", "horizontal")
 
 
 def utc_now() -> str:
@@ -131,20 +128,6 @@ def validate_duration(duration_s: float | None) -> float | None:
     if not math.isfinite(duration) or duration <= 0:
         raise GamryCellClientError("duration_s must be greater than 0.")
     return duration
-
-
-def missing_configured_station_ports() -> list[str]:
-    """Return configured station ports that Windows does not currently expose."""
-    configured = load_config()["serial"]["ports"]
-    detected = {port.upper() for port in available_serial_ports()}
-    missing: list[str] = []
-
-    for name in REQUIRED_STATION_PORTS:
-        port = str(configured[name]).strip()
-        if port.upper() not in detected:
-            missing.append(f"{name}={port}")
-
-    return missing
 
 
 def command_name(state: str, duration_s: float | None) -> str:
@@ -264,15 +247,6 @@ def execute_command(state: str, duration_s: float | None = None) -> dict[str, An
         mode = str(config.get("mode", "mock") or "mock").strip().lower()
 
         try:
-            if state == "on" and mode != "mock":
-                missing_ports = missing_configured_station_ports()
-                if missing_ports:
-                    raise GamryCellClientError(
-                        "Gamry Cell ON is blocked because configured station ports "
-                        f"are unavailable: {', '.join(missing_ports)}. "
-                        "No port was remapped and no Gamry command was sent."
-                    )
-
             if mode == "mock":
                 result = run_mock_command(state, duration, config)
             else:

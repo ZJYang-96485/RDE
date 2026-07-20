@@ -80,26 +80,33 @@ class GamryCellClientTests(unittest.TestCase):
                 with self.assertRaises(gamry_cell_client.GamryCellClientError):
                     gamry_cell_client.gamry_cell_on(duration)
 
-    @patch.object(gamry_cell_client, "run_real_command")
+    @patch("hardware.serial_base.available_serial_ports", side_effect=AssertionError("serial ports consulted"))
     @patch.object(
         gamry_cell_client,
-        "missing_configured_station_ports",
-        return_value=["rde=COM6", "linear=COM4"],
+        "run_real_command",
+        return_value={
+            "ok": True,
+            "instrument": "IFC1010-test",
+            "requested_state": "on",
+            "duration_s": 5,
+            "final_state": "off",
+            "actual_state": "off",
+            "message": "Isolated Gamry command completed.",
+            "time": "2026-07-20T00:00:00+00:00",
+        },
     )
     @patch.object(gamry_cell_client, "get_gamry_config", return_value={"mode": "real"})
-    def test_real_on_is_blocked_before_worker_when_configured_ports_are_missing(
+    def test_real_gamry_command_is_independent_of_serial_ports(
         self,
         _get_config,
-        _missing_ports,
         run_real_command,
+        available_serial_ports,
     ) -> None:
-        with self.assertRaisesRegex(
-            gamry_cell_client.GamryCellClientError,
-            r"configured station ports are unavailable: rde=COM6, linear=COM4",
-        ):
-            gamry_cell_client.gamry_cell_on(5)
+        result = gamry_cell_client.gamry_cell_on(5)
 
-        run_real_command.assert_not_called()
+        self.assertEqual(result["known_state"], "off")
+        run_real_command.assert_called_once()
+        available_serial_ports.assert_not_called()
 
 
 class GamryCellApiTests(unittest.TestCase):

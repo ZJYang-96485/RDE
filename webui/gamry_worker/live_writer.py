@@ -11,6 +11,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -18,6 +19,10 @@ from typing import Any, Iterable
 
 _stream_locks: dict[str, threading.RLock] = {}
 _stream_locks_guard = threading.Lock()
+
+_STATUS_REPLACE_ATTEMPTS = 8
+_STATUS_REPLACE_INITIAL_DELAY_S = 0.01
+_STATUS_REPLACE_MAX_DELAY_S = 0.20
 
 
 def utc_now() -> str:
@@ -48,7 +53,22 @@ def _write_status_atomic(path: Path, payload: dict[str, Any]) -> None:
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temp_name, path)
+
+        # Windows can briefly deny replacement while Flask is polling the
+        # destination file. Keep the atomic replace, but allow the reader's
+        # short-lived handle time to close before treating it as a failure.
+        delay_s = _STATUS_REPLACE_INITIAL_DELAY_S
+        for attempt in range(_STATUS_REPLACE_ATTEMPTS):
+            try:
+                os.replace(temp_name, path)
+                break
+            except OSError as exc:
+                winerror = getattr(exc, "winerror", None)
+                retryable = isinstance(exc, PermissionError) or winerror in {5, 32, 33}
+                if not retryable or attempt + 1 >= _STATUS_REPLACE_ATTEMPTS:
+                    raise
+                time.sleep(delay_s)
+                delay_s = min(delay_s * 2, _STATUS_REPLACE_MAX_DELAY_S)
     finally:
         try:
             os.unlink(temp_name)
@@ -158,24 +178,43 @@ def append_live_points(
         status = read_live_status(directory) or _default_status()
         next_seq = int(status.get("point_count", 0) or 0) + 1
         written: list[dict[str, Any]] = []
+        encoded_lines: list[bytes] = []
         directory.mkdir(parents=True, exist_ok=True)
 
-        with live_path(directory, "points.jsonl").open("a", encoding="utf-8") as stream:
-            for point in normalized:
-                technique = str(point.get("technique", "") or "").strip().lower()
-                if not technique:
-                    raise ValueError("every live point needs a technique")
-                point["seq"] = next_seq
-                point.setdefault("index", next_seq)
-                point["timestamp_utc"] = str(point.get("timestamp_utc") or utc_now())
-                stream.write(json.dumps(point, separators=(",", ":"), allow_nan=False) + "\n")
-                written.append(point)
-                next_seq += 1
-            stream.flush()
+        for point in normalized:
+            technique = str(point.get("technique", "") or "").strip().lower()
+            if not technique:
+                raise ValueError("every live point needs a technique")
+            point["seq"] = next_seq
+            point.setdefault("index", next_seq)
+            point["timestamp_utc"] = str(point.get("timestamp_utc") or utc_now())
+            encoded_lines.append(
+                (json.dumps(point, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
+            )
+            written.append(point)
+            next_seq += 1
 
         status["point_count"] = next_seq - 1
         status["last_update_at"] = utc_now()
-        _write_status_atomic(live_path(directory, "status.json"), status)
+        points_path = live_path(directory, "points.jsonl")
+
+        # Treat the JSONL append and status count as one logical transaction.
+        # If the status commit still fails after retries, remove the appended
+        # bytes so the acquisition loop can retry without duplicate points.
+        with points_path.open("ab+") as stream:
+            stream.seek(0, os.SEEK_END)
+            original_size = stream.tell()
+            for line in encoded_lines:
+                stream.write(line)
+            stream.flush()
+
+            try:
+                _write_status_atomic(live_path(directory, "status.json"), status)
+            except Exception:
+                stream.seek(original_size)
+                stream.truncate()
+                stream.flush()
+                raise
 
     return written
 

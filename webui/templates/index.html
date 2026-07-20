@@ -777,8 +777,10 @@
         const elapsedS = Number.isFinite(startedMs) ? Math.max(0, (finishedMs - startedMs) / 1000) : null;
         liveGamryElapsedEl.textContent = `Elapsed: ${elapsedS === null ? "—" : `${elapsedS.toFixed(1)} s`}`;
         liveGamryUpdatedEl.textContent = `Last update: ${status.last_update_at ? new Date(status.last_update_at).toLocaleTimeString() : "—"}`;
-        if (status.error || status.stream_error) {
-          liveGamryMessageEl.textContent = `Live acquisition error: ${status.error || status.stream_error}`;
+        if (status.error) {
+          liveGamryMessageEl.textContent = `Acquisition error: ${status.error}`;
+        } else if (status.stream_error) {
+          liveGamryMessageEl.textContent = `Live display warning (measurement continues; final DTA is unaffected): ${status.stream_error}`;
         } else if (!status.run_id) {
           liveGamryMessageEl.textContent = "Live plot ready.";
         } else if (!livePoints.length) {

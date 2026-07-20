@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from app import app
@@ -52,6 +54,7 @@ class LivePlotTest(unittest.TestCase):
         self.assertNotIn("No active Gamry measurement.", page)
         self.assertIn("#liveGamryEmpty[hidden]", page)
         self.assertIn('id="liveGamryEmpty" hidden', page)
+        self.assertIn("Live display warning (measurement continues; final DTA is unaffected)", page)
 
     def test_live_writer_initializes_and_sequences_points(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -70,6 +73,48 @@ class LivePlotTest(unittest.TestCase):
             second = append_live_point(live_dir, {"technique": "ocp", "t_s": 0.2, "e_v": 0.21})
             self.assertEqual([first["seq"], second["seq"]], [1, 2])
             self.assertEqual(read_live_status(live_dir)["point_count"], 2)
+
+    def test_status_replace_retries_a_transient_windows_file_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            live_dir = Path(tmpdir)
+            original_replace = os.replace
+            attempts = 0
+
+            def replace_after_two_locks(source, destination):
+                nonlocal attempts
+                attempts += 1
+                if attempts < 3:
+                    raise PermissionError(5, "status file is temporarily locked")
+                return original_replace(source, destination)
+
+            with patch(
+                "gamry_worker.live_writer.os.replace",
+                side_effect=replace_after_two_locks,
+            ), patch("gamry_worker.live_writer.time.sleep") as sleep:
+                initialize_live_stream(live_dir, run_id="retry", technique="cp")
+
+            self.assertEqual(attempts, 3)
+            self.assertEqual(sleep.call_count, 2)
+            self.assertEqual(read_live_status(live_dir)["run_id"], "retry")
+            self.assertEqual(list(live_dir.glob("*.tmp")), [])
+
+    def test_failed_status_commit_rolls_back_appended_live_points(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            live_dir = Path(tmpdir)
+            initialize_live_stream(live_dir, run_id="rollback", technique="cp")
+            append_live_point(live_dir, {"technique": "cp", "t_s": 1, "e_v": -0.5})
+            original_points = (live_dir / "points.jsonl").read_bytes()
+
+            with patch(
+                "gamry_worker.live_writer.os.replace",
+                side_effect=PermissionError(5, "status file remains locked"),
+            ), patch("gamry_worker.live_writer.time.sleep"):
+                with self.assertRaises(PermissionError):
+                    append_live_point(live_dir, {"technique": "cp", "t_s": 2, "e_v": -0.6})
+
+            self.assertEqual((live_dir / "points.jsonl").read_bytes(), original_points)
+            self.assertEqual(read_live_status(live_dir)["point_count"], 1)
+            self.assertEqual(list(live_dir.glob("*.tmp")), [])
 
     def test_idle_status_and_incremental_points_endpoint(self) -> None:
         response = self.client.get("/api/live/status")

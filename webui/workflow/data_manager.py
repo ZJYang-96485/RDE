@@ -402,6 +402,8 @@ def prepare_protocol_outputs(
     for step_index, step in enumerate(protocol.get("steps", []), start=1):
         if not bool(step.get("enabled", True)):
             continue
+        if str(step.get("technique") or "").lower() == "wait":
+            continue
 
         outputs = build_step_outputs(
             sample_dir,

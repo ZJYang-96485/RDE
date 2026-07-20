@@ -118,14 +118,26 @@ def run_protocol_for_sample(
 
         check_abort("Abort requested before EChem step.")
         step_name = str(step.get("name") or f"Step {step_index}")
-        technique = str(step.get("technique") or "echem")
-        output_record = outputs_by_step.get(step_index)
-
-        if output_record is None:
-            raise RecipeRunnerError(f"No output path prepared for step {step_index}: {step_name}")
+        technique = str(step.get("technique") or "echem").lower()
 
         set_automation_state(step=f"{label} - EChem {step_index}: {technique} / {step_name}")
         append_log(run_dir, f"{label}: starting EChem step {step_index}: {technique} / {step_name}.")
+
+        if technique == "wait":
+            duration_s = float(step["duration_s"])
+            sleep_interruptible(
+                duration_s,
+                "Abort requested during EChem protocol wait.",
+            )
+            append_log(
+                run_dir,
+                f"{label}: finished EChem step {step_index}: waited {duration_s:g} s.",
+            )
+            continue
+
+        output_record = outputs_by_step.get(step_index)
+        if output_record is None:
+            raise RecipeRunnerError(f"No output path prepared for step {step_index}: {step_name}")
 
         result = run_gamry_step(
             step=step,

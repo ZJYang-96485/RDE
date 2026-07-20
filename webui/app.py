@@ -99,6 +99,7 @@ def config_payload() -> dict[str, Any]:
         "max_axis_command": get_max_axis_command(),
         "axis_limits": motion["axis_limits"],
         "axis_mapping": motion["axis_mapping"],
+        "rinse_duration_s": float(config.get("rinse", {}).get("duration_s", 0) or 0),
         "gamry_mode": gamry["mode"],
         "gamry_real_runner_configured": bool(gamry_runtime.get("configured", False)),
         "gamry_instrument_label": str(gamry.get("instrument_label", "") or ""),

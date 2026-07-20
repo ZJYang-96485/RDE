@@ -12,6 +12,7 @@ from workflow.config_loader import get_path, load_config
 MAX_PROTOCOL_NAME_LENGTH = 80
 
 ALLOWED_TECHNIQUES = {
+    "wait",
     "ocp",
     "cv",
     "lsv",
@@ -258,6 +259,18 @@ def validate_common_step_fields(raw_step: dict[str, Any], index: int) -> dict[st
         "enabled": bool(raw_step.get("enabled", True)),
         "output": optional_string(raw_step.get("output"), f"{name}.DTA"),
     }
+
+
+def validate_wait_step(raw_step: dict[str, Any], index: int) -> dict[str, Any]:
+    step = validate_common_step_fields(raw_step, index)
+    # A wait is a protocol-control step, not a Gamry measurement, so it does
+    # not reserve or create a DTA output file.
+    step.pop("output", None)
+    step["duration_s"] = parse_positive_float(
+        raw_step.get("duration_s", 30),
+        f"{step['name']}: duration_s",
+    )
+    return step
 
 
 def validate_ocp_step(raw_step: dict[str, Any], index: int) -> dict[str, Any]:
@@ -563,6 +576,7 @@ def validate_protocol_step(raw_step: dict[str, Any], index: int) -> dict[str, An
     technique = optional_string(raw_step.get("technique")).lower()
 
     validators = {
+        "wait": validate_wait_step,
         "ocp": validate_ocp_step,
         "cv": validate_cv_step,
         "lsv": validate_lsv_step,

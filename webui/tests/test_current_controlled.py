@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from app import app
 from gamry_worker.live_adapters import (
     normalize_cc_charge_acq_rows,
     normalize_cp_acq_rows,
@@ -15,6 +16,22 @@ from workflow.protocol_loader import ProtocolError, validate_protocol_payload
 
 
 class CurrentControlledTechniqueTest(unittest.TestCase):
+    def test_current_controlled_buttons_share_automation_lockout(self) -> None:
+        page = app.test_client().get("/").get_data(as_text=True)
+        disable_block = page.split("function setProtocolBuilderDisabled", 1)[1].split(
+            "function renderGamryModeStatus",
+            1,
+        )[0]
+
+        for button in (
+            "addEchemCpBtn",
+            "addEchemCcChargeBtn",
+            "addEchemCcDischargeBtn",
+            "addEchemGeisBtn",
+        ):
+            with self.subTest(button=button):
+                self.assertIn(button, disable_block)
+
     def mock_job(self, technique: str, step: dict) -> tuple[dict, Path, Path]:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)

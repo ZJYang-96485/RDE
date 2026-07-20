@@ -662,6 +662,132 @@
         display: none !important;
       }
 
+      .same-trial-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .same-trial-header h3,
+      .same-trial-plot-title {
+        margin: 0;
+      }
+
+      .figure-view-mode {
+        flex: 0 0 auto;
+        border-radius: 999px;
+        padding: 6px 10px;
+        background: #e5f1f8;
+        color: #275b7b;
+        font-size: 0.78rem;
+        font-weight: 800;
+      }
+
+      .figure-view-mode.is-saved {
+        background: #eee7f7;
+        color: #68458a;
+      }
+
+      .same-trial-layout {
+        display: grid;
+        grid-template-columns: minmax(240px, 0.65fr) minmax(0, 1.35fr);
+        gap: 14px;
+        align-items: start;
+        margin-top: 12px;
+      }
+
+      .same-trial-file-pane,
+      .same-trial-plot-pane {
+        min-width: 0;
+        border: 1px solid #cbdce8;
+        border-radius: 10px;
+        padding: 11px;
+        background: #ffffff;
+      }
+
+      .same-trial-run-label {
+        margin: 0 0 8px;
+        color: #355b74;
+        font-size: 0.8rem;
+        overflow-wrap: anywhere;
+      }
+
+      .same-trial-file-list {
+        display: grid;
+        gap: 7px;
+        max-height: 330px;
+        overflow-y: auto;
+      }
+
+      .same-trial-file-button {
+        width: 100%;
+        margin: 0;
+        border: 1px solid #c8dae6;
+        border-radius: 8px;
+        padding: 9px;
+        background: #f8fbfd;
+        color: #214b67;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .same-trial-file-button:hover,
+      .same-trial-file-button:focus-visible {
+        border-color: #5e91b4;
+        background: #edf6fb;
+      }
+
+      .same-trial-file-button.is-selected {
+        border-color: #2f6f9c;
+        background: #e5f1f8;
+        box-shadow: 0 0 0 2px rgba(47, 111, 156, 0.13);
+      }
+
+      .same-trial-file-name {
+        display: block;
+        overflow-wrap: anywhere;
+        font-size: 0.82rem;
+        font-weight: 800;
+      }
+
+      .same-trial-file-meta {
+        display: block;
+        margin-top: 3px;
+        color: #627888;
+        font-size: 0.7rem;
+      }
+
+      .same-trial-empty-list {
+        margin: 0;
+        border: 1px dashed #b8cdda;
+        border-radius: 8px;
+        padding: 14px;
+        color: #5f7483;
+        font-size: 0.8rem;
+        text-align: center;
+      }
+
+      .same-trial-plot-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 14px;
+        margin: 7px 0 9px;
+        color: #4d6879;
+        font-size: 0.78rem;
+      }
+
+      #sameTrialCanvas {
+        display: block;
+        width: 100%;
+        height: 300px;
+      }
+
+      #sameTrialEmpty[hidden] {
+        display: none !important;
+      }
+
       @media (max-width: 760px) {
         .workspace-tabs {
           grid-template-columns: 1fr;
@@ -682,8 +808,14 @@
         }
 
         .preview-parallel-lanes,
-        .preview-state-grid {
+        .preview-state-grid,
+        .same-trial-layout {
           grid-template-columns: 1fr;
+        }
+
+        .same-trial-header {
+          align-items: flex-start;
+          flex-direction: column;
         }
       }
     </style>
@@ -889,7 +1021,10 @@
         </section>
 
         <section class="live-gamry-panel" aria-labelledby="liveGamryTitle">
-          <h3 id="liveGamryTitle">Live Gamry Plot</h3>
+          <div class="same-trial-header">
+            <h3 id="liveGamryTitle">Live Gamry Plot</h3>
+            <span id="liveViewModeLabel" class="figure-view-mode">Viewing live measurement</span>
+          </div>
           <p id="liveGamryMessage" class="hint">Live plot ready.</p>
           <div class="live-gamry-meta">
             <span id="liveGamryStatus">Status: idle</span>
@@ -909,6 +1044,39 @@
             <button id="livePauseBtn" class="home-btn" type="button">Pause Display</button>
             <button id="liveClearBtn" class="home-btn" type="button">Clear View</button>
             <button id="liveScaleBtn" class="home-btn" type="button">Auto Scale: On</button>
+          </div>
+        </section>
+
+        <section class="live-gamry-panel" aria-labelledby="sameTrialFiguresTitle">
+          <div class="same-trial-header">
+            <h3 id="sameTrialFiguresTitle">Same Trial EChem Figures</h3>
+            <span id="sameTrialViewMode" class="figure-view-mode">Viewing live measurement</span>
+          </div>
+          <p class="hint">Showing DTA files from the current automation trial only. Historical run folders are never scanned.</p>
+          <div class="cmd-buttons">
+            <button id="sameTrialRefreshBtn" class="home-btn" type="button">Refresh Figures</button>
+            <button id="sameTrialBackLiveBtn" class="home-btn" type="button">Back to Live Plot</button>
+          </div>
+          <p id="sameTrialStatus" class="hint">Checking the current automation trial...</p>
+
+          <div class="same-trial-layout">
+            <div class="same-trial-file-pane">
+              <p id="sameTrialRunLabel" class="same-trial-run-label">Trial: none</p>
+              <div id="sameTrialFileList" class="same-trial-file-list" role="list" aria-label="DTA files from this automation trial"></div>
+            </div>
+
+            <div class="same-trial-plot-pane">
+              <h4 id="sameTrialPlotTitle" class="same-trial-plot-title">No saved DTA file selected</h4>
+              <div class="same-trial-plot-meta">
+                <span id="sameTrialTechnique">Technique: —</span>
+                <span id="sameTrialPointCount">Points: 0</span>
+                <span id="sameTrialAxisLabels">Axes: —</span>
+              </div>
+              <div class="live-gamry-canvas-wrap">
+                <canvas id="sameTrialCanvas" aria-label="Selected saved DTA file plot"></canvas>
+                <div id="sameTrialEmpty">Select a DTA file from this trial to plot it.</div>
+              </div>
+            </div>
           </div>
         </section>
       </section>
@@ -1139,6 +1307,19 @@
       const livePauseBtn = document.getElementById("livePauseBtn");
       const liveClearBtn = document.getElementById("liveClearBtn");
       const liveScaleBtn = document.getElementById("liveScaleBtn");
+      const liveViewModeLabelEl = document.getElementById("liveViewModeLabel");
+      const sameTrialViewModeEl = document.getElementById("sameTrialViewMode");
+      const sameTrialRefreshBtn = document.getElementById("sameTrialRefreshBtn");
+      const sameTrialBackLiveBtn = document.getElementById("sameTrialBackLiveBtn");
+      const sameTrialStatusEl = document.getElementById("sameTrialStatus");
+      const sameTrialRunLabelEl = document.getElementById("sameTrialRunLabel");
+      const sameTrialFileListEl = document.getElementById("sameTrialFileList");
+      const sameTrialPlotTitleEl = document.getElementById("sameTrialPlotTitle");
+      const sameTrialTechniqueEl = document.getElementById("sameTrialTechnique");
+      const sameTrialPointCountEl = document.getElementById("sameTrialPointCount");
+      const sameTrialAxisLabelsEl = document.getElementById("sameTrialAxisLabels");
+      const sameTrialCanvas = document.getElementById("sameTrialCanvas");
+      const sameTrialEmptyEl = document.getElementById("sameTrialEmpty");
 
       const echemSavedProtocolSelect = document.getElementById("echemSavedProtocolSelect");
       const newBlankEchemProtocolBtn = document.getElementById("newBlankEchemProtocolBtn");
@@ -1212,6 +1393,11 @@
       let livePollTimer = null;
       let livePollBusy = false;
       let liveStatus = {};
+      let sameTrialRunId = "";
+      let sameTrialFiles = [];
+      let sameTrialSelectedPath = "";
+      let sameTrialSavedData = null;
+      let sameTrialRefreshBusy = false;
       const MIN_STEPS = 1;
       const MAX_STEPS = 300000;
 
@@ -1323,6 +1509,238 @@
           if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         });
         ctx.stroke();
+      }
+
+      function formatSameTrialNumber(value, axisLabel = "") {
+        if (!Number.isFinite(value)) return "—";
+        const magnitude = Math.abs(value);
+        const currentAxis = String(axisLabel).toLowerCase().includes("current");
+        if ((currentAxis && magnitude > 0) || (magnitude > 0 && magnitude < 0.001) || magnitude >= 10000) {
+          return value.toExponential(2);
+        }
+        return Number(value.toPrecision(4)).toString();
+      }
+
+      function drawSameTrialPlot(data = sameTrialSavedData) {
+        const ctx = sameTrialCanvas.getContext("2d");
+        if (!ctx) return;
+        const rect = sameTrialCanvas.getBoundingClientRect();
+        const width = Math.max(320, rect.width || 640);
+        const height = 300;
+        const dpr = window.devicePixelRatio || 1;
+        sameTrialCanvas.width = Math.round(width * dpr);
+        sameTrialCanvas.height = Math.round(height * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+
+        const rawPoints = Array.isArray(data?.points) ? data.points : [];
+        const points = rawPoints.filter((point) => Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y)));
+        sameTrialEmptyEl.hidden = points.length > 0;
+        if (!points.length) return;
+
+        const xLabel = String(data.x_label || "X");
+        const yLabel = String(data.y_label || "Y");
+        const margin = { left: 78, right: 20, top: 17, bottom: 50 };
+        const plotWidth = width - margin.left - margin.right;
+        const plotHeight = height - margin.top - margin.bottom;
+        const xs = points.map((point) => Number(point.x));
+        const ys = points.map((point) => Number(point.y));
+        let xmin = Math.min(...xs), xmax = Math.max(...xs);
+        let ymin = Math.min(...ys), ymax = Math.max(...ys);
+        const xpad = (xmax - xmin || Math.max(Math.abs(xmax), 1)) * 0.08;
+        const ypad = (ymax - ymin || Math.max(Math.abs(ymax), 1)) * 0.08;
+        xmin -= xpad; xmax += xpad; ymin -= ypad; ymax += ypad;
+        const sx = (value) => margin.left + ((value - xmin) / (xmax - xmin)) * plotWidth;
+        const sy = (value) => margin.top + plotHeight - ((value - ymin) / (ymax - ymin)) * plotHeight;
+
+        ctx.strokeStyle = "#d5e2eb";
+        ctx.fillStyle = "#294f68";
+        ctx.lineWidth = 1;
+        ctx.font = "12px sans-serif";
+        for (let tick = 0; tick <= 4; tick += 1) {
+          const xValue = xmin + (xmax - xmin) * tick / 4;
+          const yValue = ymin + (ymax - ymin) * tick / 4;
+          const x = sx(xValue);
+          const y = sy(yValue);
+          ctx.beginPath();
+          ctx.moveTo(x, margin.top);
+          ctx.lineTo(x, margin.top + plotHeight);
+          ctx.moveTo(margin.left, y);
+          ctx.lineTo(margin.left + plotWidth, y);
+          ctx.stroke();
+          ctx.textAlign = "center";
+          ctx.fillText(formatSameTrialNumber(xValue, xLabel), x, margin.top + plotHeight + 18);
+          ctx.textAlign = "right";
+          ctx.fillText(formatSameTrialNumber(yValue, yLabel), margin.left - 8, y + 4);
+        }
+
+        ctx.strokeStyle = "#5f3f91";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        points.forEach((point, index) => {
+          const x = sx(Number(point.x));
+          const y = sy(Number(point.y));
+          if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        ctx.fillStyle = "#294f68";
+        ctx.textAlign = "center";
+        ctx.fillText(xLabel, margin.left + plotWidth / 2, height - 10);
+        ctx.save();
+        ctx.translate(15, margin.top + plotHeight / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText(yLabel, 0, 0);
+        ctx.restore();
+      }
+
+      function formatDtaFileSize(sizeBytes) {
+        const size = Math.max(0, Number(sizeBytes) || 0);
+        if (size < 1024) return `${size} B`;
+        if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+        return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+      }
+
+      function setSameTrialStatus(message, isError = false) {
+        sameTrialStatusEl.textContent = message;
+        sameTrialStatusEl.classList.toggle("error", isError);
+        sameTrialStatusEl.classList.toggle("hint", !isError);
+      }
+
+      function setSameTrialViewMode(mode) {
+        const viewingSaved = mode === "saved";
+        sameTrialViewModeEl.textContent = viewingSaved ? "Viewing saved DTA file" : "Viewing live measurement";
+        sameTrialViewModeEl.classList.toggle("is-saved", viewingSaved);
+      }
+
+      function renderSameTrialFileList() {
+        sameTrialFileListEl.replaceChildren();
+        if (!sameTrialFiles.length) {
+          const empty = document.createElement("p");
+          empty.className = "same-trial-empty-list";
+          empty.textContent = sameTrialRunId
+            ? "No completed DTA files are available in this trial yet."
+            : "No current automation trial is available.";
+          sameTrialFileListEl.appendChild(empty);
+          return;
+        }
+
+        sameTrialFiles.forEach((file) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = `same-trial-file-button${file.relative_path === sameTrialSelectedPath ? " is-selected" : ""}`;
+          button.dataset.relativePath = file.relative_path;
+          button.setAttribute("role", "listitem");
+
+          const name = document.createElement("span");
+          name.className = "same-trial-file-name";
+          name.textContent = file.label;
+          const meta = document.createElement("span");
+          meta.className = "same-trial-file-meta";
+          const modified = file.modified_time ? new Date(file.modified_time).toLocaleString() : "time unavailable";
+          meta.textContent = `${formatDtaFileSize(file.size_bytes)} · ${modified}`;
+          button.appendChild(name);
+          button.appendChild(meta);
+          sameTrialFileListEl.appendChild(button);
+        });
+      }
+
+      function resetSameTrialViewer(message = "No current automation trial is available.") {
+        sameTrialRunId = "";
+        sameTrialFiles = [];
+        sameTrialSelectedPath = "";
+        sameTrialSavedData = null;
+        sameTrialRunLabelEl.textContent = "Trial: none";
+        sameTrialPlotTitleEl.textContent = "No saved DTA file selected";
+        sameTrialTechniqueEl.textContent = "Technique: —";
+        sameTrialPointCountEl.textContent = "Points: 0";
+        sameTrialAxisLabelsEl.textContent = "Axes: —";
+        sameTrialEmptyEl.textContent = "Select a DTA file from this trial to plot it.";
+        setSameTrialStatus(message);
+        setSameTrialViewMode("live");
+        renderSameTrialFileList();
+        drawSameTrialPlot(null);
+      }
+
+      async function refreshSameTrialFigures({ silent = false } = {}) {
+        if (sameTrialRefreshBusy) return false;
+        sameTrialRefreshBusy = true;
+        sameTrialRefreshBtn.disabled = true;
+        if (!silent) setSameTrialStatus("Refreshing DTA files from the current trial...");
+
+        try {
+          const response = await fetch("/api/current-run/dta-files");
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Unable to list DTA files.");
+
+          const nextRunId = String(data.run_id || "");
+          if (nextRunId !== sameTrialRunId) {
+            sameTrialSelectedPath = "";
+            sameTrialSavedData = null;
+            setSameTrialViewMode("live");
+            sameTrialPlotTitleEl.textContent = "No saved DTA file selected";
+            sameTrialTechniqueEl.textContent = "Technique: —";
+            sameTrialPointCountEl.textContent = "Points: 0";
+            sameTrialAxisLabelsEl.textContent = "Axes: —";
+            drawSameTrialPlot(null);
+          }
+
+          sameTrialRunId = nextRunId;
+          sameTrialFiles = Array.isArray(data.files) ? data.files : [];
+          sameTrialRunLabelEl.textContent = nextRunId
+            ? `Trial: ${nextRunId} · ${data.run_dir || "current run folder"}`
+            : "Trial: none";
+
+          if (sameTrialSelectedPath && !sameTrialFiles.some((file) => file.relative_path === sameTrialSelectedPath)) {
+            sameTrialSelectedPath = "";
+            sameTrialSavedData = null;
+            setSameTrialViewMode("live");
+            drawSameTrialPlot(null);
+          }
+
+          renderSameTrialFileList();
+          setSameTrialStatus(data.message || `${sameTrialFiles.length} DTA file(s) available.`);
+          return true;
+        } catch (error) {
+          setSameTrialStatus(`Saved DTA figures unavailable: ${error.message}`, true);
+          return false;
+        } finally {
+          sameTrialRefreshBusy = false;
+          sameTrialRefreshBtn.disabled = false;
+        }
+      }
+
+      async function loadSameTrialFigure(relativePath) {
+        const selected = sameTrialFiles.find((file) => file.relative_path === relativePath);
+        if (!selected) return false;
+        sameTrialSelectedPath = relativePath;
+        renderSameTrialFileList();
+        setSameTrialStatus(`Loading ${selected.label}...`);
+
+        try {
+          const response = await fetch(`/api/current-run/dta-data?path=${encodeURIComponent(relativePath)}`);
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Unable to load DTA data.");
+
+          sameTrialSavedData = data;
+          sameTrialPlotTitleEl.textContent = selected.label;
+          sameTrialTechniqueEl.textContent = `Technique: ${data.technique_guess || "auto"}`;
+          const originalCount = Number(data.original_point_count || data.points?.length || 0);
+          const displayedCount = Number(data.point_count || data.points?.length || 0);
+          sameTrialPointCountEl.textContent = data.decimated
+            ? `Points: ${displayedCount} displayed of ${originalCount}`
+            : `Points: ${displayedCount}`;
+          sameTrialAxisLabelsEl.textContent = `Axes: ${data.x_label || "X"} / ${data.y_label || "Y"}`;
+          sameTrialEmptyEl.textContent = "No plottable points were found.";
+          setSameTrialViewMode("saved");
+          setSameTrialStatus(`Viewing saved DTA file: ${selected.label}. Live collection continues independently.`);
+          drawSameTrialPlot(data);
+          renderSameTrialFileList();
+          return true;
+        } catch (error) {
+          setSameTrialStatus(`Unable to plot ${selected.label}: ${error.message}`, true);
+          return false;
+        }
       }
 
       function updateLiveMeta(status) {
@@ -1633,6 +2051,7 @@
           const data = await res.json();
           running = data.running;
           endsAt = data.ends_at ? new Date(data.ends_at) : null;
+          const wasAutomationRunning = automationRunning;
           automationRunning = Boolean(data.automation_running);
           if (data.gamry_mode && !gamryModeDirty) {
             renderGamryModeStatus(data.gamry_mode, data.gamry_real_runner_configured);
@@ -1671,6 +2090,9 @@
           setError(data.last_error || "");
           updateButton();
           updateStatusText();
+          if (wasAutomationRunning && !automationRunning) {
+            refreshSameTrialFigures({ silent: true });
+          }
         } catch (err) {
           setError(`Status error: ${err.message}`);
         }
@@ -1925,6 +2347,8 @@
       const runPlanIconPaths = {
         plan: '<path d="M7 5h13M7 12h13M7 19h13"/><circle cx="3.5" cy="5" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="19" r="1"/>',
         motionX: '<path d="M3 12h18M3 12l4-4M3 12l4 4M21 12l-4-4M21 12l-4 4"/>',
+        motionXLeft: '<path d="M21 12H5M10 7l-5 5 5 5M3 6v12"/>',
+        motionXRight: '<path d="M3 12h16M14 7l5 5-5 5M21 6v12"/>',
         motionZ: '<path d="M12 3v18M12 3L8 7M12 3l4 4M12 21l-4-4M12 21l4-4"/>',
         motionZDown: '<path d="M12 3v16M7 14l5 5 5-5M6 21h12"/>',
         motionZUp: '<path d="M12 21V5M7 10l5-5 5 5M6 3h12"/>',
@@ -1955,7 +2379,18 @@
         return "No movement";
       }
 
+      function xDirectionLabel(value) {
+        const steps = previewFiniteNumber(value) ?? 0;
+        if (steps > 0) return "Left";
+        if (steps < 0) return "Right";
+        return "No movement";
+      }
+
       function runPlanStepIconName(step, fallbackIcon) {
+        if (step.action === "move_x") {
+          if (step.steps > 0) return "motionXLeft";
+          if (step.steps < 0) return "motionXRight";
+        }
         if (step.action === "move_z") {
           if (step.steps > 0) return "motionZDown";
           if (step.steps < 0) return "motionZUp";
@@ -2236,10 +2671,10 @@
       }
 
       function runPlanStepParameterSummary(step) {
-        if (step.action === "move_x") return `Move X: ${formatSignedPreviewNumber(step.steps)} steps`;
+        if (step.action === "move_x") return `Move X: ${formatSignedPreviewNumber(step.steps)} steps · ${xDirectionLabel(step.steps)}`;
         if (step.action === "move_z") return `Move Z: ${formatSignedPreviewNumber(step.steps)} steps · ${zDirectionLabel(step.steps)}`;
         if (step.action === "move_xz_parallel") {
-          return `Move X ${formatSignedPreviewNumber(step.x_steps)} and Z ${formatSignedPreviewNumber(step.z_steps)} (${zDirectionLabel(step.z_steps)}) together`;
+          return `Move X ${formatSignedPreviewNumber(step.x_steps)} (${xDirectionLabel(step.x_steps)}) and Z ${formatSignedPreviewNumber(step.z_steps)} (${zDirectionLabel(step.z_steps)}) together`;
         }
         if (step.action === "rotation") return `Arm command: ${step.command}`;
         if (step.action === "set_rpm") return step.rpm > 20 ? `Set RDE: ${step.rpm} RPM` : "Stop RDE";
@@ -2345,7 +2780,7 @@
           addWarning("RDE may remain spinning at the end of the run. Confirm whether a Stop RDE step is needed.");
         }
         if (finalState.x !== 0 || finalState.z !== 0) {
-          addWarning(`Plan does not return to the tracked X/Z starting position. Final offset: X ${formatSignedPreviewNumber(finalState.x)} steps, Z ${formatSignedPreviewNumber(finalState.z)} steps (${zDirectionLabel(finalState.z)} from start).`);
+          addWarning(`Plan does not return to the tracked X/Z starting position. Final offset: X ${formatSignedPreviewNumber(finalState.x)} steps (${xDirectionLabel(finalState.x)} from start), Z ${formatSignedPreviewNumber(finalState.z)} steps (${zDirectionLabel(finalState.z)} from start).`);
         }
         return warnings;
       }
@@ -2408,9 +2843,10 @@
           </div>`;
         }
         if (step.action === "move_xz_parallel") {
+          const xIcon = step.x_steps > 0 ? "motionXLeft" : (step.x_steps < 0 ? "motionXRight" : "motionX");
           const zIcon = step.z_steps > 0 ? "motionZDown" : (step.z_steps < 0 ? "motionZUp" : "motionZ");
           return `<div class="preview-parallel-lanes">
-            <span class="preview-parallel-lane">${runPlanIcon("motionX", "motion", true)}<span>X ${escapeRunPlanHtml(formatSignedPreviewNumber(step.x_steps))}</span></span>
+            <span class="preview-parallel-lane">${runPlanIcon(xIcon, "motion", true)}<span>X ${escapeRunPlanHtml(formatSignedPreviewNumber(step.x_steps))} · ${escapeRunPlanHtml(xDirectionLabel(step.x_steps))}</span></span>
             <span class="preview-parallel-lane">${runPlanIcon(zIcon, "motion", true)}<span>Z ${escapeRunPlanHtml(formatSignedPreviewNumber(step.z_steps))} · ${escapeRunPlanHtml(zDirectionLabel(step.z_steps))}</span></span>
           </div>`;
         }
@@ -2443,7 +2879,7 @@
           ${skipNote}
           <p><strong>After this step:</strong></p>
           <div class="preview-state-grid">
-            <span class="preview-state-item">X relative: ${escapeRunPlanHtml(formatSignedPreviewNumber(state.x))} steps</span>
+            <span class="preview-state-item">X relative: ${escapeRunPlanHtml(formatSignedPreviewNumber(state.x))} steps · ${escapeRunPlanHtml(xDirectionLabel(state.x))} from start</span>
             <span class="preview-state-item">Z relative: ${escapeRunPlanHtml(formatSignedPreviewNumber(state.z))} steps · ${escapeRunPlanHtml(zDirectionLabel(state.z))} from start</span>
             <span class="preview-state-item">RPM: ${escapeRunPlanHtml(rpmText)}</span>
             <span class="preview-state-item">Gamry cell: ${escapeRunPlanHtml(state.cell)}</span>
@@ -2471,7 +2907,7 @@
         }
 
         runPlanReturnStatusEl.innerHTML = `<p>${runPlanIcon("warning", "warning", true)} <strong>Does not return to the tracked X/Z starting position.</strong></p>
-          <p>Final relative offset: X ${escapeRunPlanHtml(formatSignedPreviewNumber(xOffset))} steps · Z ${escapeRunPlanHtml(formatSignedPreviewNumber(zOffset))} steps (${escapeRunPlanHtml(zDirectionLabel(zOffset))} from start).</p>
+          <p>Final relative offset: X ${escapeRunPlanHtml(formatSignedPreviewNumber(xOffset))} steps (${escapeRunPlanHtml(xDirectionLabel(xOffset))} from start) · Z ${escapeRunPlanHtml(formatSignedPreviewNumber(zOffset))} steps (${escapeRunPlanHtml(zDirectionLabel(zOffset))} from start).</p>
           <p>Confirm this is intentional or add return moves before starting.</p>`;
       }
 
@@ -2681,7 +3117,7 @@
           input.value = String(values.steps ?? values.position ?? 1);
           addField(
             action === "move_x"
-              ? "X signed relative steps"
+              ? "X signed relative steps (+ = Left, - = Right)"
               : "Z signed relative steps (+ = Down, - = Up)",
             input
           );
@@ -2690,7 +3126,7 @@
           note.className = "hint";
           note.textContent = action === "move_z"
             ? "Z direction convention: positive steps move Down; negative steps move Up."
-            : "This sends the exact same signed X step command as Motor Control.";
+            : "X direction convention: positive steps move Left; negative steps move Right.";
           container.appendChild(note);
         } else if (action === "move_xz_parallel") {
           const xInput = document.createElement("input");
@@ -2698,7 +3134,7 @@
           xInput.step = "1";
           xInput.className = "atomic-x-steps";
           xInput.value = String(values.x_steps ?? 1000);
-          addField("X signed relative steps", xInput);
+          addField("X signed relative steps (+ = Left, - = Right)", xInput);
 
           const zInput = document.createElement("input");
           zInput.type = "number";
@@ -2711,7 +3147,8 @@
           note.className = "hint";
           note.textContent =
             "X and Z commands are issued together to their independent " +
-            "controllers. For Z, positive is Down and negative is Up. " +
+            "controllers. For X, positive is Left and negative is Right. " +
+            "For Z, positive is Down and negative is Up. " +
             "Emergency Abort sends STOP to both axes.";
           container.appendChild(note);
 
@@ -3146,7 +3583,9 @@
 
         const selected = data.selected_groups || data.selected_steps || [];
         automationStatusEl.textContent = `Started groups: ${selected.join(", ")} | Repetitions: ${data.repetitions}`;
+        resetSameTrialViewer("New automation trial is starting; waiting for completed DTA files...");
         await fetchStatus();
+        setTimeout(() => refreshSameTrialFigures({ silent: true }), 500);
         return true;
       }
 
@@ -4071,6 +4510,24 @@
         drawLivePlot(liveStatus);
       });
 
+      sameTrialRefreshBtn.addEventListener("click", () => {
+        refreshSameTrialFigures();
+      });
+
+      sameTrialBackLiveBtn.addEventListener("click", () => {
+        setSameTrialViewMode("live");
+        setSameTrialStatus("Viewing live measurement. Saved DTA selection remains available.");
+        liveViewModeLabelEl.textContent = "Viewing live measurement";
+        drawLivePlot(liveStatus);
+        liveGamryCanvas.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+
+      sameTrialFileListEl.addEventListener("click", (event) => {
+        const button = event.target.closest(".same-trial-file-button");
+        if (!button) return;
+        loadSameTrialFigure(button.dataset.relativePath || "");
+      });
+
 
       newBlankEchemProtocolBtn.addEventListener("click", () => {
         newBlankEchemProtocol();
@@ -4175,8 +4632,18 @@
       }, 500);
 
       setInterval(fetchStatus, 2000);
+      setInterval(() => {
+        if (automationRunning) {
+          refreshSameTrialFigures({ silent: true });
+        }
+      }, 3000);
       scheduleLivePoll(0);
-      window.addEventListener("resize", () => drawLivePlot({ technique: livePoints[0]?.technique }));
+      resetSameTrialViewer("Checking the current automation trial...");
+      refreshSameTrialFigures({ silent: true });
+      window.addEventListener("resize", () => {
+        drawLivePlot({ technique: livePoints[0]?.technique });
+        drawSameTrialPlot();
+      });
 
       updateFromSlider(linearStepsSlider, linearStepsInput, linearStepsValue);
       updateFromSlider(horizontalStepsSlider, horizontalStepsInput, horizontalStepsValue);

@@ -50,6 +50,12 @@ from workflow.protocol_loader import (
 )
 from workflow.recipe_runner import RecipeRunnerError, abort_automation, run_plan_payload_background
 from gamry_worker.live_writer import clear_live_stream, read_live_points, read_live_status
+from workflow.dta_viewer import (
+    DtaViewerError,
+    list_dta_files,
+    parse_dta_file,
+    resolve_listed_dta_path,
+)
 from workflow.run_plan_loader import (
     RunPlanError,
     default_run_plan_payload,
@@ -203,11 +209,23 @@ def status():
     return jsonify(payload)
 
 
-def current_live_dir() -> Path | None:
+def current_automation_run_dir() -> Path | None:
     run_dir = get_automation_state().get("run_dir")
     if not run_dir:
         return None
-    return Path(str(run_dir)) / "_system" / "live"
+    return Path(str(run_dir)).resolve()
+
+
+def current_live_dir() -> Path | None:
+    run_dir = current_automation_run_dir()
+    return run_dir / "_system" / "live" if run_dir is not None else None
+
+
+def current_run_display_path(run_dir: Path) -> str:
+    try:
+        return run_dir.relative_to(Path(__file__).resolve().parent).as_posix()
+    except ValueError:
+        return run_dir.name
 
 
 def idle_live_status() -> dict[str, Any]:
@@ -356,6 +374,61 @@ def live_clear():
         return json_error("live acquisition is active; pause the display instead of clearing its stream.", 409)
     clear_live_stream(live_dir)
     return jsonify({"ok": True, "message": "Temporary live buffer cleared. Final DTA files are unchanged."})
+
+
+@app.get("/api/current-run/dta-files")
+def current_run_dta_files():
+    run_dir = current_automation_run_dir()
+    if run_dir is None:
+        return jsonify(
+            {
+                "ok": True,
+                "run_id": None,
+                "run_dir": None,
+                "files": [],
+                "message": "No current automation trial is available.",
+            }
+        )
+
+    files = list_dta_files(run_dir)
+    return jsonify(
+        {
+            "ok": True,
+            "run_id": run_dir.name,
+            "run_dir": current_run_display_path(run_dir),
+            "files": files,
+            "message": (
+                f"{len(files)} DTA file(s) are available from this automation trial."
+                if files
+                else "No completed DTA files are available in this automation trial yet."
+            ),
+        }
+    )
+
+
+@app.get("/api/current-run/dta-data")
+def current_run_dta_data():
+    run_dir = current_automation_run_dir()
+    if run_dir is None:
+        return json_error("No current automation trial is available.", 404)
+
+    relative_path = request.args.get("path", "")
+    try:
+        dta_path = resolve_listed_dta_path(run_dir, relative_path)
+        parsed = parse_dta_file(dta_path)
+    except DtaViewerError as exc:
+        return json_error(str(exc), exc.status_code)
+    except OSError as exc:
+        return json_error(f"Unable to read DTA file: {exc}", 500)
+
+    return jsonify(
+        {
+            "ok": True,
+            "run_id": run_dir.name,
+            "relative_path": dta_path.relative_to(run_dir).as_posix(),
+            **parsed,
+        }
+    )
 
 
 @app.post("/api/start")

@@ -49,6 +49,13 @@ class RunPlanPreviewUiTest(unittest.TestCase):
         self.assertIn("state.z > 0", self.source)
         self.assertIn("Z signed relative steps (+ = Down, - = Up)", self.source)
 
+    def test_x_direction_is_explicit_and_matches_hardware_convention(self) -> None:
+        self.assertIn("motionXLeft:", self.source)
+        self.assertIn("motionXRight:", self.source)
+        self.assertIn('if (steps > 0) return "Left"', self.source)
+        self.assertIn('if (steps < 0) return "Right"', self.source)
+        self.assertIn("X signed relative steps (+ = Left, - = Right)", self.source)
+
     def test_return_to_start_replaces_repetitive_plan_summary(self) -> None:
         self.assertIn("Return-to-start check", self.page)
         self.assertIn("function renderRunPlanReturnStatus(model)", self.source)

@@ -6,10 +6,14 @@ const int STOP_PIN   = 7;   // ESCON DI4
 const long MIN_RPM = 0;
 const long MAX_RPM = 12000;
 const long STOP_RPM_MAX = 20;
-const int PWM_RESOLUTION_BITS = 12;
-const int PWM_MAX_VALUE = (1 << PWM_RESOLUTION_BITS) - 1;
-const int MIN_DUTY_VALUE = (PWM_MAX_VALUE * 10 + 50) / 100;
-const int MAX_DUTY_VALUE = (PWM_MAX_VALUE * 90 + 50) / 100;
+// Keep the ESCON signal identical to the original, proven controller sketch.
+// The July 17 change to a 12-bit command path added an unnecessary variable
+// while diagnosing the station. The robust parser and command ACKs below do
+// not require changing the physical PWM calibration.
+const int PWM_RESOLUTION_BITS = 8;
+const int PWM_MAX_VALUE = 255;
+const int MIN_DUTY_VALUE = 25;
+const int MAX_DUTY_VALUE = 229;
 
 long commandedRpm = 0;
 int commandedDuty = MIN_DUTY_VALUE;
@@ -36,9 +40,8 @@ bool parseIntegerLine(const String &line, long &value) {
 
 
 int dutyForRpm(long rpm) {
-  // Preserve the established ESCON calibration: 10% duty is zero speed and
-  // 90% duty is 12000 RPM. Twelve-bit command resolution reduces setpoint
-  // quantization from roughly 59 RPM to roughly 3.7 RPM per PWM level.
+  // Preserve the established ESCON calibration: 25/255 is zero speed and
+  // 229/255 is 12000 RPM.
   // The application deliberately uses 20 RPM as its stop command, so keep
   // 0-20 RPM at the calibrated zero-speed duty instead of allowing creep.
   if (rpm <= STOP_RPM_MAX) {

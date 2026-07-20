@@ -12,10 +12,13 @@ _DEFAULT_CONFIG = {
     "serial": {
         "baud_rate": 115200,
         "ports": {
-            "rde": "COM10",
-            "rotation": "COM7",
-            "linear": "COM9",
-            "horizontal": "COM4",
+            # Keep these fallbacks aligned with config.json. They are only
+            # used when a key is absent from that file; they must never
+            # silently redirect a controller to an older port assignment.
+            "rde": "COM6",
+            "rotation": "COM3",
+            "linear": "COM4",
+            "horizontal": "COM8",
             "vertical": "COM5"
         },
         "hardware": {

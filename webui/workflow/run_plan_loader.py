@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,8 @@ ATOMIC_ACTIONS = {
     "rpm_echem",
     "stop_rpm",
     "rinse",
+    "gamry_cell_on",
+    "gamry_cell_off",
 }
 
 
@@ -101,7 +104,10 @@ def validate_atomic_step(raw_step: dict[str, Any], group_label: str, index: int)
         raise RunPlanError(f"{group_label}: step {index} must be an object.")
 
     action = optional_string(raw_step.get("action") or raw_step.get("type")).lower()
-    name = optional_string(raw_step.get("name"), f"Step {index}")
+    name = optional_string(
+        raw_step.get("name") or raw_step.get("label"),
+        f"Step {index}",
+    )
 
     if action not in ATOMIC_ACTIONS:
         raise RunPlanError(f"{group_label}: step {index} has unsupported action '{action}'.")
@@ -199,6 +205,21 @@ def validate_atomic_step(raw_step: dict[str, Any], group_label: str, index: int)
             f"{group_label}/{name}: rpm_settle_s",
         )
         step["stop_rpm_after"] = bool(raw_step.get("stop_rpm_after", True))
+
+    elif action == "gamry_cell_on":
+        raw_duration = raw_step.get("duration_s")
+        if raw_duration is None or raw_duration == "":
+            step["duration_s"] = None
+        else:
+            duration_s = parse_float(
+                raw_duration,
+                f"{group_label}/{name}: duration_s",
+            )
+            if not math.isfinite(duration_s) or duration_s <= 0:
+                raise RunPlanError(
+                    f"{group_label}/{name}: duration_s must be greater than 0, blank, or null."
+                )
+            step["duration_s"] = duration_s
 
     return step
 

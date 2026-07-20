@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 from datetime import datetime, timezone
@@ -16,6 +17,12 @@ from hardware.motion_controller import (
     move_vertical_steps,
 )
 from hardware.gamry_client import GamryClientError, get_gamry_client
+from hardware.gamry_cell_client import (
+    GamryCellClientError,
+    gamry_cell_off,
+    gamry_cell_on,
+    gamry_cell_status,
+)
 from hardware.rde_controller import send_rpm, stop_rde
 from hardware.rotation_controller import emergency_stop_rotation, send_rotation_text
 from workflow.config_loader import (
@@ -219,6 +226,62 @@ def idle_live_status() -> dict[str, Any]:
         "error": None,
         "stream_error": None,
     }
+
+
+def echem_measurement_is_active() -> bool:
+    live_dir = current_live_dir()
+    current = read_live_status(live_dir) if live_dir is not None else None
+    return bool(current and current.get("active", False))
+
+
+@app.get("/api/gamry-cell/status")
+def api_gamry_cell_status():
+    try:
+        return jsonify(gamry_cell_status())
+    except GamryCellClientError as exc:
+        return json_error(str(exc), 503)
+    except Exception as exc:
+        return json_error(f"Unable to read Gamry cell status: {exc}", 500)
+
+
+@app.post("/api/gamry-cell/on")
+def api_gamry_cell_on():
+    if automation_is_running():
+        return json_error("automation is running; manual Gamry Cell ON is disabled.", 409)
+    if echem_measurement_is_active():
+        return json_error("an EChem measurement is active; manual Gamry Cell ON is disabled.", 409)
+
+    payload = request.get_json(silent=True) or {}
+    raw_duration = payload.get("duration_s")
+    duration_s: float | None
+
+    if raw_duration is None or raw_duration == "":
+        duration_s = None
+    else:
+        try:
+            duration_s = float(raw_duration)
+        except (TypeError, ValueError):
+            return json_error("duration_s must be a positive number or null.", 400)
+        if not math.isfinite(duration_s) or duration_s <= 0:
+            return json_error("duration_s must be greater than 0.", 400)
+
+    try:
+        return jsonify(gamry_cell_on(duration_s))
+    except GamryCellClientError as exc:
+        return json_error(str(exc), 503)
+    except Exception as exc:
+        return json_error(f"Unable to turn the Gamry cell ON: {exc}", 500)
+
+
+@app.post("/api/gamry-cell/off")
+def api_gamry_cell_off():
+    # OFF is intentionally always allowed, including during automation/abort.
+    try:
+        return jsonify(gamry_cell_off())
+    except GamryCellClientError as exc:
+        return json_error(str(exc), 503)
+    except Exception as exc:
+        return json_error(f"Unable to turn the Gamry cell OFF: {exc}", 500)
 
 
 @app.get("/api/live/status")
@@ -1025,11 +1088,20 @@ def perform_emergency_stop(reason: str) -> dict[str, Any]:
     except Exception as exc:
         rde_stop_error = str(exc)
 
+    # Attempt cell OFF only after the immediate motor STOP commands have been
+    # issued. A ToolkitPy failure must never hide the motor/RDE abort result.
+    gamry_cell_off_error = None
+    try:
+        gamry_cell_off()
+    except Exception as exc:
+        gamry_cell_off_error = str(exc)
+
     payload = {
         "ok": True,
         "message": (
             "Emergency stop sent: RDE stop and X/Z/rotation STOP commands "
-            "were issued immediately. Motion remains in place."
+            "were issued immediately, then Gamry Cell OFF was attempted. "
+            "Motion remains in place."
         ),
         "automation_was_running": automation_was_running,
         "motion_stop_sent": motion_stop_result,
@@ -1038,6 +1110,9 @@ def perform_emergency_stop(reason: str) -> dict[str, Any]:
 
     if rde_stop_error:
         payload["rde_stop_error"] = rde_stop_error
+
+    if gamry_cell_off_error:
+        payload["gamry_cell_off_error"] = gamry_cell_off_error
 
     return payload
 

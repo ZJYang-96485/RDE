@@ -325,6 +325,28 @@
         <p class="hint">Emergency Abort stops RDE and interruptible X/Z/arm motion immediately. An active ToolkitPy measurement may still need its current acquisition call to return.</p>
         <p id="automationError" class="error" hidden></p>
 
+        <section class="live-gamry-panel" aria-labelledby="gamryCellTitle">
+          <h3 id="gamryCellTitle">Gamry Cell Control</h3>
+          <p id="gamryCellMessage" class="hint">Cell status has not been checked yet.</p>
+          <div class="live-gamry-meta">
+            <span id="gamryCellInstrument">Instrument: —</span>
+            <span id="gamryCellKnownState">Software-known state: unknown</span>
+            <span id="gamryCellActualState">Actual state: unknown</span>
+            <span id="gamryCellLastCommand">Last command: —</span>
+            <span id="gamryCellLastResult">Last result: —</span>
+            <span id="gamryCellUpdated">Last updated: —</span>
+          </div>
+          <div class="cmd-buttons">
+            <button id="gamryCellRefreshBtn" class="home-btn" type="button">Refresh Status</button>
+            <button id="gamryCellOn5Btn" class="home-btn" type="button">Cell ON for 5 s</button>
+            <button id="gamryCellOn30Btn" class="home-btn" type="button">Cell ON for 30 s</button>
+            <button id="gamryCellOnUntilOffBtn" class="home-btn" type="button">Cell ON until OFF</button>
+            <button id="gamryCellOffBtn" class="abort-btn" type="button">Cell OFF</button>
+          </div>
+          <p class="hint">This controls the Gamry cell relay/output, not the physical power switch.</p>
+          <p class="error">Do not leave the cell ON unattended.</p>
+        </section>
+
         <section class="live-gamry-panel" aria-labelledby="liveGamryTitle">
           <h3 id="liveGamryTitle">Live Gamry Plot</h3>
           <p id="liveGamryMessage" class="hint">Live plot ready.</p>
@@ -436,6 +458,8 @@
             <option value="wait">Wait</option>
             <option value="echem">EChem Measurement</option>
             <option value="rpm_echem">Concurrent RPM + EChem</option>
+            <option value="gamry_cell_on">Gamry Cell ON</option>
+            <option value="gamry_cell_off">Gamry Cell OFF</option>
             <option value="stop_rpm">Stop RDE</option>
             <option value="rinse">Rinse Cycle</option>
           </select>
@@ -469,6 +493,8 @@
           <option value="wait">Wait</option>
           <option value="echem">EChem Measurement</option>
           <option value="rpm_echem">Concurrent RPM + EChem</option>
+          <option value="gamry_cell_on">Gamry Cell ON</option>
+          <option value="gamry_cell_off">Gamry Cell OFF</option>
           <option value="stop_rpm">Stop RDE</option>
           <option value="rinse">Rinse Cycle</option>
         </select>
@@ -531,6 +557,18 @@
       const automationStatusEl = document.getElementById("automationStatus");
       const automationErrorEl = document.getElementById("automationError");
       const automationRepetitionsInput = document.getElementById("automationRepetitions");
+      const gamryCellMessageEl = document.getElementById("gamryCellMessage");
+      const gamryCellInstrumentEl = document.getElementById("gamryCellInstrument");
+      const gamryCellKnownStateEl = document.getElementById("gamryCellKnownState");
+      const gamryCellActualStateEl = document.getElementById("gamryCellActualState");
+      const gamryCellLastCommandEl = document.getElementById("gamryCellLastCommand");
+      const gamryCellLastResultEl = document.getElementById("gamryCellLastResult");
+      const gamryCellUpdatedEl = document.getElementById("gamryCellUpdated");
+      const gamryCellRefreshBtn = document.getElementById("gamryCellRefreshBtn");
+      const gamryCellOn5Btn = document.getElementById("gamryCellOn5Btn");
+      const gamryCellOn30Btn = document.getElementById("gamryCellOn30Btn");
+      const gamryCellOnUntilOffBtn = document.getElementById("gamryCellOnUntilOffBtn");
+      const gamryCellOffBtn = document.getElementById("gamryCellOffBtn");
       const liveGamryMessageEl = document.getElementById("liveGamryMessage");
       const liveGamryStatusEl = document.getElementById("liveGamryStatus");
       const liveGamrySampleEl = document.getElementById("liveGamrySample");
@@ -806,6 +844,66 @@
         automationErrorEl.textContent = message || "";
       }
 
+      function updateGamryCellButtons(busy = false) {
+        gamryCellRefreshBtn.disabled = busy;
+        gamryCellOn5Btn.disabled = busy || automationRunning;
+        gamryCellOn30Btn.disabled = busy || automationRunning;
+        gamryCellOnUntilOffBtn.disabled = busy || automationRunning;
+        // OFF deliberately stays available during automation and other requests.
+        gamryCellOffBtn.disabled = false;
+      }
+
+      function renderGamryCellState(data) {
+        const known = data.known_state || "unknown";
+        const actual = data.actual_state || "unknown";
+        gamryCellInstrumentEl.textContent = `Instrument: ${data.instrument || "—"}`;
+        gamryCellKnownStateEl.textContent = `Software-known state: ${known}`;
+        gamryCellActualStateEl.textContent = `Actual state: ${actual}`;
+        gamryCellLastCommandEl.textContent = `Last command: ${data.last_command || "—"}`;
+        gamryCellLastResultEl.textContent = `Last result: ${data.last_result || "—"}`;
+        gamryCellUpdatedEl.textContent = `Last updated: ${data.updated_at ? new Date(data.updated_at).toLocaleString() : "—"}`;
+        gamryCellMessageEl.classList.remove("error");
+        gamryCellMessageEl.classList.add("hint");
+        gamryCellMessageEl.textContent = data.last_result || "Gamry cell status updated.";
+      }
+
+      async function sendGamryCellRequest(endpoint, duration_s = undefined) {
+        updateGamryCellButtons(true);
+        gamryCellMessageEl.classList.remove("error");
+        gamryCellMessageEl.classList.add("hint");
+        gamryCellMessageEl.textContent = endpoint.endsWith("/status")
+          ? "Checking Gamry cell status..."
+          : "Sending Gamry cell command...";
+
+        try {
+          const options = endpoint.endsWith("/status")
+            ? { method: "GET" }
+            : {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: duration_s === undefined ? "{}" : JSON.stringify({ duration_s }),
+              };
+          const res = await fetch(endpoint, options);
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || `Gamry cell request failed (HTTP ${res.status}).`);
+          }
+          renderGamryCellState(data);
+          return true;
+        } catch (err) {
+          gamryCellMessageEl.classList.remove("hint");
+          gamryCellMessageEl.classList.add("error");
+          gamryCellMessageEl.textContent = err.message;
+          return false;
+        } finally {
+          updateGamryCellButtons(false);
+        }
+      }
+
+      async function refreshGamryCellStatus() {
+        return sendGamryCellRequest("/api/gamry-cell/status");
+      }
+
       function updateButton() {
         btn.textContent = running ? "Stop" : "Start";
         btn.className = running ? "stop" : "start";
@@ -1015,6 +1113,7 @@
           updateGamryProbeButton();
           setRecipeDisabled(automationRunning);
           setProtocolBuilderDisabled(automationRunning);
+          updateGamryCellButtons(false);
           setError(data.last_error || "");
           updateButton();
           updateStatusText();
@@ -1261,6 +1360,8 @@
           rpm_echem: "Concurrent RPM + EChem",
           stop_rpm: "Stop RDE",
           rinse: "Rinse Cycle",
+          gamry_cell_on: "Gamry Cell ON",
+          gamry_cell_off: "Gamry Cell OFF",
         };
         return names[action] || action;
       }
@@ -1298,6 +1399,17 @@
           );
           values.stop_rpm_after =
             block.querySelector(".atomic-stop-rpm-after").checked;
+        } else if (action === "gamry_cell_on") {
+          const rawDuration = block.querySelector(".atomic-cell-duration").value.trim();
+          if (rawDuration === "") {
+            values.duration_s = null;
+          } else {
+            const duration = Number(rawDuration);
+            if (!Number.isFinite(duration) || duration <= 0) {
+              throw new Error("Gamry Cell ON duration must be greater than 0 or blank.");
+            }
+            values.duration_s = duration;
+          }
         }
 
         return values;
@@ -1436,6 +1548,29 @@
             "Place this after the Move Z step. The app waits for the Z ACK, " +
             "then starts RPM and runs EChem while the RDE keeps spinning.";
           container.appendChild(note);
+        } else if (action === "gamry_cell_on") {
+          const input = document.createElement("input");
+          input.type = "number";
+          input.min = "0.1";
+          input.step = "0.1";
+          input.className = "atomic-cell-duration";
+          input.placeholder = "Blank = stay ON until OFF";
+          input.value = Object.prototype.hasOwnProperty.call(values, "duration_s")
+            ? String(values.duration_s ?? "")
+            : "5";
+          addField("Duration (seconds, blank for indefinite)", input);
+
+          const note = document.createElement("p");
+          note.className = "hint";
+          note.textContent =
+            "Blank duration leaves cell ON until a later Gamry Cell OFF step or measurement cleanup. " +
+            "Timed ON (default 5 s) is recommended.";
+          container.appendChild(note);
+        } else if (action === "gamry_cell_off") {
+          const note = document.createElement("p");
+          note.className = "hint";
+          note.textContent = "Turns the Gamry cell relay/output OFF immediately, then continues.";
+          container.appendChild(note);
         } else {
           const note = document.createElement("p");
           note.className = "hint";
@@ -1479,7 +1614,7 @@
             "replace it with the correct signed relative movement before use.";
           block.insertBefore(warning, block.querySelector(".atomic-parameters"));
         }
-        block.querySelector(".atomic-name").value = values.name ?? actionDisplayName(action);
+        block.querySelector(".atomic-name").value = values.name ?? values.label ?? actionDisplayName(action);
         renderAtomicParameters(block, values);
 
         block.querySelector(".atomic-action").addEventListener("change", () => {
@@ -1754,6 +1889,13 @@
         }
 
         automationStatusEl.textContent = data.message || "Abort requested.";
+        if (data.gamry_cell_off_error) {
+          gamryCellMessageEl.classList.remove("hint");
+          gamryCellMessageEl.classList.add("error");
+          gamryCellMessageEl.textContent = `Emergency Cell OFF failed: ${data.gamry_cell_off_error}`;
+        } else {
+          await refreshGamryCellStatus();
+        }
         await fetchStatus();
         return true;
       }
@@ -1775,6 +1917,14 @@
 
         if (data.rde_stop_error) {
           setError(`RDE stop reported an error: ${data.rde_stop_error}`);
+        }
+
+        if (data.gamry_cell_off_error) {
+          gamryCellMessageEl.classList.remove("hint");
+          gamryCellMessageEl.classList.add("error");
+          gamryCellMessageEl.textContent = `Emergency Cell OFF failed: ${data.gamry_cell_off_error}`;
+        } else {
+          await refreshGamryCellStatus();
         }
 
         await fetchStatus();
@@ -2556,6 +2706,25 @@
         }
       });
 
+      gamryCellRefreshBtn.addEventListener("click", () => refreshGamryCellStatus());
+      gamryCellOn5Btn.addEventListener("click", () =>
+        sendGamryCellRequest("/api/gamry-cell/on", 5)
+      );
+      gamryCellOn30Btn.addEventListener("click", () =>
+        sendGamryCellRequest("/api/gamry-cell/on", 30)
+      );
+      gamryCellOnUntilOffBtn.addEventListener("click", () => {
+        const confirmed = window.confirm(
+          "Leave the Gamry cell relay/output ON until a later OFF command? Do not leave it unattended."
+        );
+        if (confirmed) {
+          sendGamryCellRequest("/api/gamry-cell/on", null);
+        }
+      });
+      gamryCellOffBtn.addEventListener("click", () =>
+        sendGamryCellRequest("/api/gamry-cell/off")
+      );
+
       recipeSelect.addEventListener("change", async () => {
         if (recipeSelect.value) {
           recipeNameInput.value = recipeSelect.value;
@@ -2688,6 +2857,7 @@
       });
 
       fetchConfig()
+        .then(() => refreshGamryCellStatus())
         .then(() => refreshProtocolList())
         .then(() => refreshRecipeList("default"))
         .then(() => loadRecipe())

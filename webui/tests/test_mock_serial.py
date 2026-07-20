@@ -33,6 +33,28 @@ class MockSerialTest(unittest.TestCase):
 
         self.assertEqual(response, "ACK MOCK Rotation 0")
 
+    @patch("hardware.serial_base.available_serial_ports", return_value=["COM3", "COM8", "COM11"])
+    @patch("hardware.serial_base.serial.Serial", side_effect=OSError("port missing"))
+    def test_missing_configured_port_reports_detected_ports(
+        self,
+        _serial,
+        _available_ports,
+    ) -> None:
+        device = SerialDevice(
+            name="RDE",
+            port="COM6",
+            baud_rate=115200,
+            startup_delay_s=0,
+        )
+
+        with self.assertRaisesRegex(
+            SerialConnectionError,
+            r"RDE: configured port COM6 is unavailable\. "
+            r"Detected serial ports: COM3, COM8, COM11\. "
+            r"The configured port was not remapped",
+        ):
+            device.connect()
+
     def test_wait_for_expected_response_discards_stale_input(self) -> None:
         device = SerialDevice(
             name="Rotation",

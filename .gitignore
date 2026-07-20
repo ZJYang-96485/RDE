@@ -9,6 +9,8 @@ __pycache__/
 
 webui/output/runs/*
 !webui/output/runs/.gitkeep
+webui/output/gamry_cell_state.json
+webui/output/gamry_cell_state.json.tmp
 
 .env
 .venv/

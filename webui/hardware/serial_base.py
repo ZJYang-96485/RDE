@@ -22,6 +22,19 @@ class SerialAbortError(SerialConnectionError):
         self.response = response
 
 
+def available_serial_ports() -> list[str]:
+    """Return the serial ports Windows currently exposes to pyserial."""
+    if serial is None:
+        return []
+
+    try:
+        from serial.tools import list_ports
+
+        return sorted(str(port.device) for port in list_ports.comports())
+    except Exception:
+        return []
+
+
 class MockSerialConnection:
     def __init__(self, name: str, port: str) -> None:
         self.name = name
@@ -121,12 +134,22 @@ class SerialDevice:
 
         self.ensure_available()
 
-        self.conn = serial.Serial(
-            self.port,
-            self.baud_rate,
-            timeout=self.timeout_s,
-            write_timeout=self.write_timeout_s,
-        )
+        try:
+            self.conn = serial.Serial(
+                self.port,
+                self.baud_rate,
+                timeout=self.timeout_s,
+                write_timeout=self.write_timeout_s,
+            )
+        except Exception as exc:
+            detected = available_serial_ports()
+            detected_text = ", ".join(detected) if detected else "none"
+            raise SerialConnectionError(
+                f"{self.name}: configured port {self.port} is unavailable. "
+                f"Detected serial ports: {detected_text}. "
+                "The configured port was not remapped; check the controller "
+                "power, USB cable, and Windows COM assignment."
+            ) from exc
 
         time.sleep(self.startup_delay_s)
 

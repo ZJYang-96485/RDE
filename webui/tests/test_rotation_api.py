@@ -52,6 +52,7 @@ class RotationApiTests(unittest.TestCase):
         )
         self.assertIn("Manual rotation command '0' failed on COM3", "\n".join(captured.output))
 
+    @patch("app.gamry_cell_off")
     @patch("app.stop_rde")
     @patch("app.emergency_stop_rotation", return_value=True)
     @patch(
@@ -67,6 +68,7 @@ class RotationApiTests(unittest.TestCase):
         _emergency_stop_motion,
         emergency_stop_rotation,
         _stop_rde,
+        gamry_cell_off,
     ) -> None:
         response = self.client.post("/api/automation/abort")
 
@@ -79,7 +81,9 @@ class RotationApiTests(unittest.TestCase):
         )
         abort_automation.assert_called_once_with()
         emergency_stop_rotation.assert_called_once_with()
+        gamry_cell_off.assert_called_once_with()
 
+    @patch("app.gamry_cell_off")
     @patch("app.stop_rde")
     @patch("app.emergency_stop_rotation", return_value=True)
     @patch(
@@ -95,6 +99,7 @@ class RotationApiTests(unittest.TestCase):
         emergency_stop_motion,
         emergency_stop_rotation,
         stop_rde,
+        gamry_cell_off,
     ) -> None:
         response = self.client.post("/api/motors/emergency-stop")
 
@@ -109,6 +114,29 @@ class RotationApiTests(unittest.TestCase):
         abort_automation.assert_not_called()
         emergency_stop_motion.assert_called_once_with()
         emergency_stop_rotation.assert_called_once_with()
+        stop_rde.assert_called_once_with("Manual motor emergency stop requested.")
+        gamry_cell_off.assert_called_once_with()
+
+    @patch("app.gamry_cell_off", side_effect=RuntimeError("cell relay unavailable"))
+    @patch("app.stop_rde")
+    @patch("app.emergency_stop_rotation", return_value=True)
+    @patch("app.emergency_stop_motion", return_value={"linear": True, "horizontal": True})
+    @patch("app.automation_is_running", return_value=False)
+    def test_emergency_stop_reports_cell_off_failure_without_masking_motors(
+        self,
+        _automation_is_running,
+        emergency_stop_motion,
+        _emergency_stop_rotation,
+        stop_rde,
+        _gamry_cell_off,
+    ) -> None:
+        response = self.client.post("/api/motors/emergency-stop")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["gamry_cell_off_error"], "cell relay unavailable")
+        emergency_stop_motion.assert_called_once_with()
         stop_rde.assert_called_once_with("Manual motor emergency stop requested.")
 
 

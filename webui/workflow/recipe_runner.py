@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from hardware.gamry_client import run_gamry_step
+from hardware.gamry_cell_client import gamry_cell_off, gamry_cell_on
 from hardware.motion_controller import move_horizontal_steps, move_linear_steps, move_to_xyz, move_xz_steps_parallel
 from hardware.rde_controller import send_rpm, stop_rde
 from hardware.rinse_controller import run_rinse_cycle
@@ -453,6 +454,23 @@ def run_group(
             elif action == "rinse":
                 run_rinse_after_sample(run_dir, label)
 
+            elif action == "gamry_cell_on":
+                duration_s = step.get("duration_s")
+                result = gamry_cell_on(
+                    None if duration_s is None else float(duration_s)
+                )
+                append_log(
+                    run_dir,
+                    f"{label}: Gamry cell ON result: {result.get('last_result', result)}",
+                )
+
+            elif action == "gamry_cell_off":
+                result = gamry_cell_off()
+                append_log(
+                    run_dir,
+                    f"{label}: Gamry cell OFF result: {result.get('last_result', result)}",
+                )
+
             else:
                 raise RecipeRunnerError(f"Unsupported grouped action: {action}")
 
@@ -523,6 +541,19 @@ def execute_plan_body(run_plan: dict[str, Any], run_dir: Path) -> None:
         )
 
 
+def force_gamry_cell_off_for_cleanup(run_dir: Path, context: str) -> dict[str, Any] | None:
+    try:
+        result = gamry_cell_off()
+        append_log(
+            run_dir,
+            f"Gamry cell OFF cleanup succeeded ({context}): {result.get('last_result', result)}",
+        )
+        return result
+    except Exception as exc:
+        append_log(run_dir, f"Gamry cell OFF cleanup failed ({context}): {exc}.")
+        return None
+
+
 def run_plan_payload(run_plan: dict[str, Any]) -> dict[str, Any]:
     run_plan = validate_run_plan_payload(run_plan)
     workspace = create_run_workspace(run_plan)
@@ -531,6 +562,11 @@ def run_plan_payload(run_plan: dict[str, Any]) -> dict[str, Any]:
 
     try:
         execute_plan_body(run_plan, run_dir)
+        cleanup_result = force_gamry_cell_off_for_cleanup(run_dir, "normal completion")
+        if cleanup_result is None:
+            raise RecipeRunnerError(
+                "Automation steps finished, but the final Gamry Cell OFF cleanup failed."
+            )
         mark_run_complete(run_dir)
         finish_automation("Automation complete")
         append_log(run_dir, "Automation complete.")
@@ -544,6 +580,8 @@ def run_plan_payload(run_plan: dict[str, Any]) -> dict[str, Any]:
             stop_rde("Automation aborted.")
         except Exception as exc:
             append_log(run_dir, f"RDE stop during abort failed: {exc}.")
+
+        force_gamry_cell_off_for_cleanup(run_dir, "automation abort")
 
         clear_abort()
         mark_run_aborted(run_dir)
@@ -566,6 +604,8 @@ def run_plan_payload(run_plan: dict[str, Any]) -> dict[str, Any]:
             stop_rde(str(exc))
         except Exception as stop_exc:
             append_log(run_dir, f"RDE stop after failure failed: {stop_exc}.")
+
+        force_gamry_cell_off_for_cleanup(run_dir, "automation failure")
 
         clear_abort()
         mark_run_failed(run_dir, str(exc))

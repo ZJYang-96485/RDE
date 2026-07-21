@@ -157,10 +157,70 @@
 
       .run-plan-layout {
         display: block;
+        border: 1px solid #aec8da;
+        border-radius: 14px;
+        padding: 12px;
+        background: #f5f9fc;
       }
 
       .run-plan-builder-column {
         min-width: 0;
+        margin-top: 12px;
+        border: 1px solid #c4d8e6;
+        border-radius: 12px;
+        padding: 14px;
+        background: #ffffff;
+      }
+
+      .run-plan-view-switch {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .run-plan-view-tab {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        width: 100%;
+        margin: 0;
+        border: 1px solid #9fbed3;
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: #ffffff;
+        color: #28536f;
+        font: inherit;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .run-plan-view-tab:hover,
+      .run-plan-view-tab:focus-visible {
+        border-color: #467fa6;
+        background: #edf5fa;
+      }
+
+      .run-plan-view-tab.is-active {
+        border-color: #2e678e;
+        background: #2f6b95;
+        color: #ffffff;
+        box-shadow: 0 3px 9px rgba(39, 87, 121, 0.18);
+      }
+
+      .run-plan-view-tab .preview-icon {
+        width: 25px;
+        height: 25px;
+        border: 1px solid rgba(255, 255, 255, 0.32);
+      }
+
+      .run-plan-view-tab .preview-icon svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      .run-plan-view-panel[hidden] {
+        display: none !important;
       }
 
       .run-plan-section-title {
@@ -175,7 +235,7 @@
         position: static;
         max-height: none;
         overflow: visible;
-        margin-top: 18px;
+        margin-top: 12px;
         border: 1px solid #afc8db;
         border-radius: 14px;
         padding: 16px;
@@ -943,7 +1003,18 @@
         <p class="hint">No home command will run before, after, or during abort. X/Z run-plan commands are signed relative steps and use the same direction convention as Motor Control.</p>
 
         <div class="run-plan-layout">
-          <div class="run-plan-builder-column">
+          <div class="run-plan-view-switch" role="tablist" aria-label="Run plan builder and preview views">
+            <button id="runPlanBuilderTab" class="run-plan-view-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="runPlanBuilderPanel">
+              <span id="runPlanBuilderTabIcon" aria-hidden="true"></span>
+              <span>Plan Builder</span>
+            </button>
+            <button id="runPlanPreviewTab" class="run-plan-view-tab" type="button" role="tab" aria-selected="false" aria-controls="runPlanPreviewPanel" tabindex="-1">
+              <span id="runPlanPreviewTabIcon" aria-hidden="true"></span>
+              <span>Plan Preview</span>
+            </button>
+          </div>
+
+          <div id="runPlanBuilderPanel" class="run-plan-builder-column run-plan-view-panel" role="tabpanel" aria-labelledby="runPlanBuilderTab">
             <h3 class="run-plan-section-title">Grouped Run Plan Builder</h3>
             <div id="recipeGroups"></div>
 
@@ -961,7 +1032,7 @@
             <p id="automationError" class="error" hidden></p>
           </div>
 
-          <section id="runPlanPreviewPanel" class="run-plan-preview-panel" aria-labelledby="runPlanPreviewTitle">
+          <section id="runPlanPreviewPanel" class="run-plan-preview-panel run-plan-view-panel" role="tabpanel" aria-labelledby="runPlanPreviewTab" hidden>
             <div class="run-plan-preview-header">
               <div class="run-plan-preview-heading">
                 <span id="runPlanPreviewHeadingIcon" aria-hidden="true"></span>
@@ -1268,7 +1339,12 @@
       const automationStatusEl = document.getElementById("automationStatus");
       const automationErrorEl = document.getElementById("automationError");
       const automationRepetitionsInput = document.getElementById("automationRepetitions");
+      const runPlanBuilderTab = document.getElementById("runPlanBuilderTab");
+      const runPlanPreviewTab = document.getElementById("runPlanPreviewTab");
+      const runPlanBuilderPanelEl = document.getElementById("runPlanBuilderPanel");
       const runPlanPreviewPanelEl = document.getElementById("runPlanPreviewPanel");
+      const runPlanBuilderTabIconEl = document.getElementById("runPlanBuilderTabIcon");
+      const runPlanPreviewTabIconEl = document.getElementById("runPlanPreviewTabIcon");
       const runPlanPreviewBodyEl = document.getElementById("runPlanPreviewBody");
       const runPlanPreviewCollapseBtn = document.getElementById("runPlanPreviewCollapseBtn");
       const runPlanTimelineEl = document.getElementById("runPlanTimeline");
@@ -2346,6 +2422,7 @@
 
       const runPlanIconPaths = {
         plan: '<path d="M7 5h13M7 12h13M7 19h13"/><circle cx="3.5" cy="5" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="19" r="1"/>',
+        builder: '<path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="13" cy="18" r="2"/>',
         motionX: '<path d="M3 12h18M3 12l4-4M3 12l4 4M21 12l-4-4M21 12l-4 4"/>',
         motionXLeft: '<path d="M21 12H5M10 7l-5 5 5 5M3 6v12"/>',
         motionXRight: '<path d="M3 12h16M14 7l5 5-5 5M21 6v12"/>',
@@ -2997,6 +3074,29 @@
         });
       }
 
+      function setRunPlanWorkspaceView(view, focusTab = false) {
+        const activeView = view === "preview" ? "preview" : "builder";
+        const showPreview = activeView === "preview";
+        runPlanBuilderPanelEl.hidden = showPreview;
+        runPlanPreviewPanelEl.hidden = !showPreview;
+        runPlanBuilderTab.classList.toggle("is-active", !showPreview);
+        runPlanPreviewTab.classList.toggle("is-active", showPreview);
+        runPlanBuilderTab.setAttribute("aria-selected", showPreview ? "false" : "true");
+        runPlanPreviewTab.setAttribute("aria-selected", showPreview ? "true" : "false");
+        runPlanBuilderTab.tabIndex = showPreview ? -1 : 0;
+        runPlanPreviewTab.tabIndex = showPreview ? 0 : -1;
+        localStorage.setItem("rdeRunPlanWorkspaceView", activeView);
+        if (showPreview) scheduleRunPlanPreview();
+        if (focusTab) (showPreview ? runPlanPreviewTab : runPlanBuilderTab).focus();
+      }
+
+      function handleRunPlanViewKeydown(event) {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        const showPreview = event.key === "ArrowRight" || event.key === "End";
+        setRunPlanWorkspaceView(showPreview ? "preview" : "builder", true);
+      }
+
       function setRunPlanPreviewCollapsed(collapsed) {
         const isCollapsed = Boolean(collapsed);
         runPlanPreviewPanelEl.classList.toggle("is-collapsed", isCollapsed);
@@ -3006,6 +3106,8 @@
       }
 
       function initializeRunPlanPreview() {
+        runPlanBuilderTabIconEl.innerHTML = runPlanIcon("builder", "plan", true);
+        runPlanPreviewTabIconEl.innerHTML = runPlanIcon("plan", "plan", true);
         runPlanPreviewHeadingIconEl.innerHTML = runPlanIcon("plan", "plan");
         runPlanPreviewSafetyIconEl.innerHTML = runPlanIcon("check", "cell", true);
         runPlanDetailIconEl.innerHTML = runPlanIcon("unknown", "plan", true);
@@ -3015,6 +3117,10 @@
         recipeGroupsEl.addEventListener("input", scheduleRunPlanPreview);
         recipeGroupsEl.addEventListener("change", scheduleRunPlanPreview);
         automationRepetitionsInput.addEventListener("input", scheduleRunPlanPreview);
+        runPlanBuilderTab.addEventListener("click", () => setRunPlanWorkspaceView("builder"));
+        runPlanPreviewTab.addEventListener("click", () => setRunPlanWorkspaceView("preview"));
+        runPlanBuilderTab.addEventListener("keydown", handleRunPlanViewKeydown);
+        runPlanPreviewTab.addEventListener("keydown", handleRunPlanViewKeydown);
         runPlanPreviewCollapseBtn.addEventListener("click", () => {
           setRunPlanPreviewCollapsed(!runPlanPreviewPanelEl.classList.contains("is-collapsed"));
         });
@@ -3042,6 +3148,7 @@
         const observer = new MutationObserver(scheduleRunPlanPreview);
         observer.observe(recipeGroupsEl, { childList: true, subtree: true });
         setRunPlanPreviewCollapsed(false);
+        setRunPlanWorkspaceView(localStorage.getItem("rdeRunPlanWorkspaceView") || "builder");
         updateRunPlanPreview();
       }
 

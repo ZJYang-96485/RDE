@@ -26,12 +26,26 @@ class RunPlanPreviewUiTest(unittest.TestCase):
         self.assertNotIn("cdnjs.cloudflare.com", self.page)
 
     def test_preview_is_after_the_builder_and_never_parallel(self) -> None:
-        builder_position = self.page.index('class="run-plan-builder-column"')
+        builder_position = self.page.index('id="runPlanBuilderPanel"')
         preview_position = self.page.index('id="runPlanPreviewPanel"')
         self.assertLess(builder_position, preview_position)
         self.assertIn(".run-plan-layout {\n        display: block;", self.source)
         self.assertIn("position: static;", self.source)
         self.assertNotIn("grid-template-columns: minmax(0, 1.2fr)", self.source)
+
+    def test_builder_and_preview_share_one_icon_tab_workspace(self) -> None:
+        self.assertIn('id="runPlanBuilderTab"', self.page)
+        self.assertIn('id="runPlanPreviewTab"', self.page)
+        self.assertIn('id="runPlanBuilderPanel"', self.page)
+        self.assertIn('id="runPlanPreviewPanel"', self.page)
+        self.assertIn('id="runPlanPreviewPanel" class="run-plan-preview-panel run-plan-view-panel" role="tabpanel" aria-labelledby="runPlanPreviewTab" hidden', self.page)
+        self.assertIn("builder: '<path", self.source)
+        self.assertIn('runPlanIcon("builder", "plan", true)', self.source)
+        self.assertIn('runPlanIcon("plan", "plan", true)', self.source)
+        self.assertIn("function setRunPlanWorkspaceView(view, focusTab = false)", self.source)
+        self.assertIn("runPlanBuilderPanelEl.hidden = showPreview", self.source)
+        self.assertIn("runPlanPreviewPanelEl.hidden = !showPreview", self.source)
+        self.assertIn('localStorage.setItem("rdeRunPlanWorkspaceView"', self.source)
 
     def test_preview_and_timeline_groups_are_collapsible(self) -> None:
         self.assertIn('id="runPlanPreviewCollapseBtn"', self.page)

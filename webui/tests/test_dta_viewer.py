@@ -6,7 +6,7 @@ from pathlib import Path
 
 from app import app
 from workflow import state
-from workflow.dta_viewer import parse_dta_file
+from workflow.dta_viewer import DtaViewerError, TECHNIQUE_PLOT_SPECS, parse_dta_file
 
 
 class DtaViewerTest(unittest.TestCase):
@@ -126,6 +126,52 @@ class DtaViewerTest(unittest.TestCase):
                     self.assertEqual(parsed["x_label"], x_label)
                     self.assertEqual(parsed["y_label"], y_label)
                     self.assertEqual(parsed["points"][-1], expected_point)
+
+    def test_technique_plot_specs_define_final_x_and_y_axes(self) -> None:
+        expected = {
+            "ocp": ("time", "potential"),
+            "ca": ("time", "current"),
+            "cp": ("time", "potential"),
+            "cc_charge": ("time", "potential"),
+            "cc_discharge": ("time", "potential"),
+            "cv": ("potential", "current"),
+            "lsv": ("potential", "current"),
+            "eis": ("zreal", "zimag"),
+            "geis": ("zreal", "zimag"),
+        }
+        for technique, axes in expected.items():
+            with self.subTest(technique=technique):
+                spec = TECHNIQUE_PLOT_SPECS[technique]
+                self.assertEqual((spec["x"], spec["y"]), axes)
+
+    def test_known_technique_never_falls_back_to_wrong_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "OCP.DTA"
+            path.write_text("TECHNIQUE\tocp\nPt\tT\tLabel\n0\t0.5\t1\n", encoding="utf-8")
+            with self.assertRaisesRegex(DtaViewerError, "OCP plotting requires time and potential"):
+                parse_dta_file(path)
+
+    def test_real_gamry_metadata_time_row_is_not_used_as_curve_header(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "005_01_OCP.DTA"
+            path.write_text(
+                "EXPLAIN\n"
+                "TAG\tCORPOT\n"
+                "DATE\tLABEL\t07/21/2026\tDate\n"
+                "TIME\tLABEL\t13:58:39\tTime\n"
+                "CURVE\tTABLE\t2\n"
+                "\tPt\tT\tVf\tVm\tAch\tOver\tTemp\t\n"
+                "\t#\ts\tV vs. Ref.\tV\tA\tbits\tdeg C\t\n"
+                "\t0\t0.5\t0.2036855\t0.2036855\t0\t...........\t2.7671\t\n"
+                "\t1\t1.0\t0.2036782\t0.2033014\t0\t...........\t2.7671\t\n",
+                encoding="utf-8",
+            )
+
+            parsed = parse_dta_file(path)
+            self.assertEqual(parsed["technique_guess"], "ocp")
+            self.assertEqual(parsed["x_label"], "Time (s)")
+            self.assertEqual(parsed["y_label"], "Potential (V)")
+            self.assertEqual(parsed["points"][0], {"x": 0.5, "y": 0.2036855})
 
     def test_data_endpoint_rejects_traversal_absolute_and_unlisted_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

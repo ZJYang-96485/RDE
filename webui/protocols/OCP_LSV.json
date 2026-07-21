@@ -1,0 +1,33 @@
+{
+  "protocol_name": "OCP_LSV",
+  "display_name": "OCP+LSV",
+  "description": "",
+  "source": {
+    "type": "ui_flexible_builder",
+    "created_by": "RDE EChem Automation"
+  },
+  "steps": [
+    {
+      "name": "ocp",
+      "enabled": true,
+      "technique": "ocp",
+      "output": "OCP.DTA",
+      "duration_s": 60,
+      "sample_period_s": 0.5,
+      "stability_mv_s": 0,
+      "area_cm2": 1
+    },
+    {
+      "name": "lsv",
+      "enabled": true,
+      "technique": "lsv",
+      "output": "LSV.DTA",
+      "start_voltage_v": 0,
+      "end_voltage_v": -1.6,
+      "scan_rate_v_s": 0.005,
+      "step_size_v": 1,
+      "area_cm2": 0.2826
+    }
+  ],
+  "saved_at": "2026-07-21T11:40:11.891625+00:00"
+}

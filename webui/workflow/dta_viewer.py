@@ -122,6 +122,76 @@ COLUMN_ALIASES = {
 }
 
 
+# Final plot axes are technique-defined. These canonical fields map both
+# ToolkitPy/Gamry names (T, Vf, Im, Zreal, Zimag) and mock column names through
+# COLUMN_ALIASES above.
+TECHNIQUE_PLOT_SPECS = {
+    "ocp": {
+        "x": "time",
+        "y": "potential",
+        "x_label": "Time (s)",
+        "y_label": "Potential (V)",
+        "invert_y": False,
+    },
+    "ca": {
+        "x": "time",
+        "y": "current",
+        "x_label": "Time (s)",
+        "y_label": "Current (A)",
+        "invert_y": False,
+    },
+    "cp": {
+        "x": "time",
+        "y": "potential",
+        "x_label": "Time (s)",
+        "y_label": "Potential (V)",
+        "invert_y": False,
+    },
+    "cc_charge": {
+        "x": "time",
+        "y": "potential",
+        "x_label": "Time (s)",
+        "y_label": "Potential (V)",
+        "invert_y": False,
+    },
+    "cc_discharge": {
+        "x": "time",
+        "y": "potential",
+        "x_label": "Time (s)",
+        "y_label": "Potential (V)",
+        "invert_y": False,
+    },
+    "cv": {
+        "x": "potential",
+        "y": "current",
+        "x_label": "Potential (V)",
+        "y_label": "Current (A)",
+        "invert_y": False,
+    },
+    "lsv": {
+        "x": "potential",
+        "y": "current",
+        "x_label": "Potential (V)",
+        "y_label": "Current (A)",
+        "invert_y": False,
+    },
+    "eis": {
+        "x": "zreal",
+        "y": "zimag",
+        "x_label": "Zreal (ohm)",
+        "y_label": "-Zimag (ohm)",
+        "invert_y": True,
+    },
+    "geis": {
+        "x": "zreal",
+        "y": "zimag",
+        "x_label": "Zreal (ohm)",
+        "y_label": "-Zimag (ohm)",
+        "invert_y": True,
+    },
+}
+
+
 def _canonical_column(value: str) -> str | None:
     normalized = _normalized_column(value)
     for canonical, aliases in COLUMN_ALIASES.items():
@@ -139,15 +209,30 @@ def _split_columns(line: str) -> list[str]:
     return [part for part in re.split(r"\s+", stripped) if part]
 
 
-def _find_table(lines: list[str]) -> tuple[int, list[str], list[str | None]]:
+def _find_table(
+    lines: list[str],
+    technique_hint: str = "auto",
+) -> tuple[int, list[str], list[str | None]]:
+    first_candidate: tuple[int, list[str], list[str | None]] | None = None
+    plot_spec = TECHNIQUE_PLOT_SPECS.get(technique_hint)
     for line_index, line in enumerate(lines):
         columns = _split_columns(line)
         if len(columns) < 2:
             continue
         canonical = [_canonical_column(column) for column in columns]
-        data_columns = [name for name in canonical if name and name != "point"]
+        # Metadata rows can repeat the same field name, for example Gamry's
+        # ``TIME  LABEL  13:58:39  Time``. Require distinct data concepts so
+        # that row cannot be mistaken for the CURVE table header.
+        data_columns = {name for name in canonical if name and name != "point"}
         if len(data_columns) >= 2:
-            return line_index, columns, canonical
+            candidate = (line_index, columns, canonical)
+            if first_candidate is None:
+                first_candidate = candidate
+            if plot_spec and {str(plot_spec["x"]), str(plot_spec["y"])}.issubset(data_columns):
+                return candidate
+
+    if first_candidate is not None:
+        return first_candidate
 
     # Best-effort fallback for an unfamiliar export whose column names are not
     # in the aliases above. Require a non-JSON header followed closely by a row
@@ -224,21 +309,24 @@ def _plot_columns(
         if canonical and canonical not in first_index:
             first_index[canonical] = index
 
-    mappings = {
-        "ocp": ("time", "potential", "Time (s)", "Potential (V)", False),
-        "ca": ("time", "current", "Time (s)", "Current (A)", False),
-        "cp": ("time", "potential", "Time (s)", "Potential (V)", False),
-        "cc_charge": ("time", "potential", "Time (s)", "Potential (V)", False),
-        "cc_discharge": ("time", "potential", "Time (s)", "Potential (V)", False),
-        "cv": ("potential", "current", "Potential (V)", "Current (A)", False),
-        "lsv": ("potential", "current", "Potential (V)", "Current (A)", False),
-        "eis": ("zreal", "zimag", "Zreal (ohm)", "-Zimag (ohm)", True),
-        "geis": ("zreal", "zimag", "Zreal (ohm)", "-Zimag (ohm)", True),
-    }
-    mapping = mappings.get(technique)
-    if mapping and mapping[0] in first_index and mapping[1] in first_index:
-        x_name, y_name, x_label, y_label, invert_y = mapping
-        return first_index[x_name], first_index[y_name], x_label, y_label, invert_y
+    plot_spec = TECHNIQUE_PLOT_SPECS.get(technique)
+    if plot_spec:
+        x_name = str(plot_spec["x"])
+        y_name = str(plot_spec["y"])
+        if x_name not in first_index or y_name not in first_index:
+            missing = [name for name in (x_name, y_name) if name not in first_index]
+            raise DtaViewerError(
+                f"{technique.upper()} plotting requires {x_name} and {y_name} columns; "
+                f"missing: {', '.join(missing)}.",
+                422,
+            )
+        return (
+            first_index[x_name],
+            first_index[y_name],
+            str(plot_spec["x_label"]),
+            str(plot_spec["y_label"]),
+            bool(plot_spec["invert_y"]),
+        )
 
     numeric_candidates = list(range(len(raw_columns)))
     if len(numeric_candidates) < 2:
@@ -270,7 +358,8 @@ def parse_dta_file(path: str | Path, max_points: int = MAX_PLOT_POINTS) -> dict[
 
     text = dta_path.read_text(encoding="utf-8", errors="replace")
     lines = text.splitlines()
-    header_index, raw_columns, canonical_columns = _find_table(lines)
+    technique_hint = _guess_technique(dta_path, lines, [])
+    header_index, raw_columns, canonical_columns = _find_table(lines, technique_hint)
     technique = _guess_technique(dta_path, lines, canonical_columns)
     x_index, y_index, x_label, y_label, invert_y = _plot_columns(
         technique, canonical_columns, raw_columns

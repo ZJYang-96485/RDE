@@ -22,7 +22,7 @@
       "enabled": true,
       "technique": "cp",
       "output": "CP.DTA",
-      "current_a": -0.00057,
+      "current_a": -0.0002826,
       "duration_s": 3600,
       "sample_period_s": 1,
       "voltage_limit_low_v": -10,
@@ -31,5 +31,5 @@
       "area_cm2": 1
     }
   ],
-  "saved_at": "2026-07-16T10:58:14.293152+00:00"
+  "saved_at": "2026-07-21T11:38:15.563292+00:00"
 }

@@ -1,0 +1,103 @@
+{
+  "schema_version": 2,
+  "run_name": "Sample Test IR",
+  "display_name": "Sample Test IR",
+  "description": "Grouped atomic-step run plan created in the web app.",
+  "repetitions": 1,
+  "groups": [
+    {
+      "group_id": "group_001",
+      "label": "Sample 1",
+      "enabled": true,
+      "steps": [
+        {
+          "name": "Gamry Cell OFF",
+          "action": "gamry_cell_off",
+          "enabled": true
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "0"
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": 70000
+        },
+        {
+          "name": "Gamry Cell ON",
+          "action": "gamry_cell_on",
+          "enabled": true,
+          "duration_s": null
+        },
+        {
+          "name": "Concurrent RPM + EChem",
+          "action": "rpm_echem",
+          "enabled": true,
+          "rpm": 1600,
+          "protocol": "ocp_only",
+          "rpm_settle_s": 60.0,
+          "stop_rpm_after": true
+        },
+        {
+          "name": "Gamry Cell OFF",
+          "action": "gamry_cell_off",
+          "enabled": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "Move X + Z Together",
+          "action": "move_xz_parallel",
+          "enabled": true,
+          "x_steps": 50000,
+          "z_steps": -35000
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": 70000
+        },
+        {
+          "name": "Set RDE RPM",
+          "action": "set_rpm",
+          "enabled": true,
+          "rpm": 5000
+        },
+        {
+          "name": "Wait",
+          "action": "wait",
+          "enabled": true,
+          "duration_s": 60.0
+        },
+        {
+          "name": "Stop RDE",
+          "action": "stop_rpm",
+          "enabled": true
+        },
+        {
+          "name": "Move X + Z Together",
+          "action": "move_xz_parallel",
+          "enabled": true,
+          "x_steps": -50000,
+          "z_steps": -70000
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "1"
+        }
+      ]
+    }
+  ],
+  "saved_at": "2026-07-22T14:14:27.890736+00:00"
+}

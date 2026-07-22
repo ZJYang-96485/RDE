@@ -29,6 +29,8 @@ def default_trial_metadata(config: dict[str, Any] | None = None) -> dict[str, An
         "ru_selected_ohm": None,
         "ru_repeatability": None,
         "ru_validation_passed": False,
+        "ru_failure_reason": None,
+        "measurement_without_ir_compensation": False,
         "compensation_fraction": float(settings.get("compensation_fraction", 0.80)),
         "ru_applied_ohm": None,
         "ir_compensation_enabled": False,
@@ -173,14 +175,18 @@ def determine_ru(
             _emit(emit_event, "ru_validation_retry", ru_repeatability=repeatability, limit=tolerance)
 
     reason = "Unable to obtain a valid Ru after configured attempts"
+    continue_without_ir = bool(settings.get("continue_without_ir_on_ru_failure", False))
     result.update(
         {
             "ru_validation_passed": False,
-            "trial_status": "skipped",
-            "skip_reason": reason,
+            "ru_failure_reason": reason,
+            "measurement_without_ir_compensation": continue_without_ir,
+            "trial_status": "ready_without_ir_compensation" if continue_without_ir else "skipped",
+            "skip_reason": None if continue_without_ir else reason,
             "completed_at": utc_now(),
         }
     )
     _emit(emit_event, "ru_validation_failed", reason=reason)
-    _emit(emit_event, "trial_skipped", reason=reason)
+    if not continue_without_ir:
+        _emit(emit_event, "trial_skipped", reason=reason)
     return result

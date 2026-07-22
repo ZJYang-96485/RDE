@@ -19,6 +19,53 @@ class FakeToolkit:
 
 
 class RealGamryWorkerTest(unittest.TestCase):
+    def test_real_measurement_continues_without_ir_when_ru_is_unavailable(self) -> None:
+        captured = {}
+
+        def fake_runner(step, outputs, sample_id=None):
+            captured["step"] = step
+            for output in outputs:
+                Path(output).write_text("uncompensated output\n", encoding="utf-8")
+            return {"ok": True, "ir_compensation_enabled": False}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "uncompensated.DTA"
+            job = {
+                "job_id": "test_ru_fallback",
+                "mode": "real",
+                "sample_id": "sample_001",
+                "step": {"name": "ca", "technique": "ca", "duration_s": 1},
+                "outputs": [str(output_path)],
+                "gamry": {
+                    "instrument_label": "IFC1010-36030",
+                    "ru_preparation": {"continue_without_ir_on_ru_failure": True},
+                },
+            }
+            metadata = default_trial_metadata(job["gamry"]["ru_preparation"])
+            metadata.update(
+                {
+                    "ocp_stabilization_status": "stable",
+                    "ru_validation_passed": False,
+                    "ru_failure_reason": "Unable to obtain a valid Ru after configured attempts",
+                    "measurement_without_ir_compensation": True,
+                    "trial_status": "ready_without_ir_compensation",
+                }
+            )
+            with patch(
+                "gamry_worker.worker.real_runner_for_technique",
+                return_value=fake_runner,
+            ), patch(
+                "gamry_worker.worker.prepare_real_trial_for_job",
+                return_value=(metadata, dict(job["step"])),
+            ):
+                result = run_job(job)
+
+            self.assertTrue(output_path.exists())
+            self.assertEqual(result["trial_metadata"]["trial_status"], "completed")
+            self.assertTrue(result["trial_metadata"]["measurement_without_ir_compensation"])
+            self.assertFalse(result["trial_metadata"]["ir_compensation_enabled"])
+            self.assertNotIn("_trial_ru_applied_ohm", captured["step"])
+
     def test_real_mode_dispatches_direct_runner_with_configured_instrument(self) -> None:
         captured = {}
 

@@ -39,6 +39,24 @@ class FakePstat:
 
 
 class TrialPreparationTests(unittest.TestCase):
+    def test_ru_failure_can_continue_without_ir_compensation(self) -> None:
+        events = []
+        result = determine_ru(
+            lambda _attempt: None,
+            {
+                "ru_retry_count": 3,
+                "continue_without_ir_on_ru_failure": True,
+            },
+            emit_event=lambda event_type, **fields: events.append((event_type, fields)),
+        )
+
+        self.assertFalse(result["ru_validation_passed"])
+        self.assertTrue(result["measurement_without_ir_compensation"])
+        self.assertEqual(result["trial_status"], "ready_without_ir_compensation")
+        self.assertIsNone(result["skip_reason"])
+        self.assertIn("Unable to obtain", result["ru_failure_reason"])
+        self.assertNotIn("trial_skipped", [event[0] for event in events])
+
     def test_valid_ru_on_first_two_measurements(self) -> None:
         values = iter([18.4, 18.8])
         result = determine_ru(lambda _attempt: next(values), SETTINGS)

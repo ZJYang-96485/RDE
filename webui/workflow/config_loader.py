@@ -107,7 +107,7 @@ _DEFAULT_CONFIG = {
             "max_browser_points": 5000,
         },
         "ru_preparation": {
-            "ru_retry_count": 3,
+            "ru_retry_count": 5,
             "compensation_fraction": 0.80,
             "ru_repeatability_limit": 0.05,
             "ru_min_ohm": 0.01,
@@ -121,8 +121,10 @@ _DEFAULT_CONFIG = {
             "ru_frequency_hz": 100000.0,
             "ru_ac_voltage_v": 0.005,
             "ru_estimated_z_ohm": 100.0,
-            "ru_settle_s": 0.10,
+            "ru_settle_s": 0.50,
             "ru_speed": 1,
+            "ru_readz_passes": 30,
+            "continue_without_ir_on_ru_failure": True,
             "fixed_current_range_a": 0.003,
             "electrode_channel": "primary",
             "require_single_instrument": True
@@ -395,6 +397,8 @@ def validate_gamry_config(config: dict[str, Any]) -> None:
             raise ConfigError(f"gamry.ru_preparation.{key} must be > 0.")
     if int(ru.get("ocp_stability_window", 0)) < 2:
         raise ConfigError("gamry.ru_preparation.ocp_stability_window must be at least 2.")
+    if int(ru.get("ru_readz_passes", 0)) < 10:
+        raise ConfigError("gamry.ru_preparation.ru_readz_passes must be at least 10.")
 
 
 def validate_config(config: dict[str, Any]) -> None:

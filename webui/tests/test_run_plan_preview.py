@@ -117,6 +117,15 @@ class RunPlanPreviewUiTest(unittest.TestCase):
             with self.subTest(warning=warning):
                 self.assertIn(warning, self.source)
 
+    def test_new_plan_is_next_to_saved_plans_and_cell_on_defaults_immediate(self) -> None:
+        saved_label = self.page.index('<label for="recipeSelect">Saved Run Plans</label>')
+        selector = self.page.index('id="recipeSelect"', saved_label)
+        new_button = self.page.index('id="newBlankRecipeBtn"', selector)
+        builder = self.page.index('id="runPlanBuilderPanel"')
+        self.assertLess(new_button, builder)
+        self.assertIn('? String(values.duration_s ?? 0)', self.source)
+        self.assertIn('Default 0 turns the cell ON and immediately continues', self.source)
+
     def test_preview_reacts_to_builder_edits_and_protocol_refreshes(self) -> None:
         self.assertIn('recipeGroupsEl.addEventListener("input", scheduleRunPlanPreview)', self.source)
         self.assertIn('recipeGroupsEl.addEventListener("change", scheduleRunPlanPreview)', self.source)

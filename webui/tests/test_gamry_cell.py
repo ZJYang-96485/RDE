@@ -181,8 +181,14 @@ class GamryCellRunPlanValidationTests(unittest.TestCase):
         self.assertEqual(steps[2]["action"], "gamry_cell_off")
         self.assertNotIn("duration_s", steps[2])
 
-    def test_cell_on_rejects_nonpositive_duration(self) -> None:
-        for duration in (0, -1, "nan", "inf"):
+    def test_cell_on_zero_duration_normalizes_to_immediate_persistent_on(self) -> None:
+        validated = validate_run_plan_payload(
+            self.payload([{"type": "gamry_cell_on", "duration_s": 0}])
+        )
+        self.assertIsNone(validated["groups"][0]["steps"][0]["duration_s"])
+
+    def test_cell_on_rejects_negative_or_nonfinite_duration(self) -> None:
+        for duration in (-1, "nan", "inf"):
             with self.subTest(duration=duration):
                 with self.assertRaises(RunPlanError):
                     validate_run_plan_payload(

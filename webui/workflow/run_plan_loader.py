@@ -208,7 +208,7 @@ def validate_atomic_step(raw_step: dict[str, Any], group_label: str, index: int)
 
     elif action == "gamry_cell_on":
         raw_duration = raw_step.get("duration_s")
-        if raw_duration is None or raw_duration == "":
+        if raw_duration is None or raw_duration == "" or raw_duration == 0 or raw_duration == "0":
             step["duration_s"] = None
         else:
             duration_s = parse_float(

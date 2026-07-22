@@ -56,9 +56,18 @@ def _initialize_for_ru(pstat: Any) -> None:
     pstat.set_i_convention(tkp.ICONVENTION.ANODIC)
     pstat.set_ich_range(3.0)
     pstat.set_ich_range_mode(False)
+    pstat.set_ich_filter(3.0)
+    pstat.set_ich_offset_enable(True)
     pstat.set_vch_range(3.0)
     pstat.set_vch_range_mode(False)
+    pstat.set_vch_filter(2.5)
+    pstat.set_vch_offset_enable(True)
+    pstat.set_ach_range(3.0)
+    pstat.set_ie_range(0.03)
+    pstat.set_ie_range_mode(False)
     pstat.set_ie_range_lower_limit(0)
+    pstat.set_analog_out(0.0)
+    pstat.set_irupt_mode(tkp.IRUPTOFF)
     pstat.set_ctrl_mode(tkp.PSTATMODE)
 
 
@@ -126,6 +135,10 @@ def _measure_ru_once(pstat: Any, settings: dict[str, Any], ocp_v: float) -> floa
     estimated_z = abs(float(settings.get("ru_estimated_z_ohm", 100.0)))
     if frequency_hz <= 0 or ac_voltage_v <= 0 or estimated_z <= 0:
         raise ValueError("Ru frequency, AC voltage, and estimated impedance must be positive")
+    frequency_hz = min(
+        max(frequency_hz, float(pstat.freq_limit_lower())),
+        float(pstat.freq_limit_upper()),
+    )
 
     pstat.set_pos_feed_enable(False)
     pstat.set_voltage(float(ocp_v))
@@ -139,6 +152,7 @@ def _measure_ru_once(pstat: Any, settings: dict[str, Any], ocp_v: float) -> floa
     readz = tkp.ReadZ(pstat)
     curve = tkp.ZCurve(1)
     try:
+        readz.passes = max(10, int(settings.get("ru_readz_passes", 30)))
         readz.set_gain(1.0)
         readz.set_inoise(0.0)
         readz.set_vnoise(0.0)
@@ -151,7 +165,12 @@ def _measure_ru_once(pstat: Any, settings: dict[str, Any], ocp_v: float) -> floa
         status = readz.measure(frequency_hz, ac_voltage_v, float(ocp_v))
         _ensure_valid(pstat, "measuring Ru")
         if status is False:
-            raise RuntimeError("Gamry did not accept the Ru impedance point")
+            raise RuntimeError(
+                "Gamry ReadZ auto-ranging did not converge "
+                f"at {frequency_hz:g} Hz after {readz.passes} internal passes "
+                f"(last Z estimate={getattr(readz, 'zmod', None)!r} ohm, "
+                f"gain={getattr(readz, 'gain', None)!r})"
+            )
         curve.add_point(readz, pstat.measure_temp())
         rows = curve.acq_data()
         if len(rows) < 1:

@@ -287,7 +287,13 @@ def run_job(job: dict[str, Any]) -> dict[str, Any]:
         else:
             raise GamryWorkerError(f"unsupported Gamry mode: {mode}")
 
-        if not metadata.get("ru_validation_passed", False):
+        ru_valid = bool(metadata.get("ru_validation_passed", False))
+        continue_without_ir = bool(
+            trial_settings(job).get("continue_without_ir_on_ru_failure", False)
+            and metadata.get("measurement_without_ir_compensation", False)
+            and metadata.get("ocp_stabilization_status") == "stable"
+        )
+        if not ru_valid and not continue_without_ir:
             metadata["trial_status"] = "skipped"
             metadata["completed_at"] = metadata.get("completed_at") or trial_utc_now()
             result = {"ok": True, "skipped": True, "reason": metadata.get("skip_reason")}
@@ -297,13 +303,24 @@ def run_job(job: dict[str, Any]) -> dict[str, Any]:
                 except Exception:
                     pass
         else:
-            supports_ir = technique_supports_positive_feedback(effective_step.get("technique"))
+            supports_ir = bool(
+                ru_valid
+                and technique_supports_positive_feedback(effective_step.get("technique"))
+            )
             emit(
                 "ir_compensation_configured" if supports_ir else "ir_compensation_skipped",
                 compensation_fraction=metadata["compensation_fraction"],
                 ru_selected_ohm=metadata["ru_selected_ohm"],
                 ru_applied_ohm=metadata["ru_applied_ohm"],
-                reason=None if supports_ir else "Technique does not use positive-feedback compensation",
+                reason=(
+                    None
+                    if supports_ir
+                    else (
+                        "Ru was unavailable; measurement will run without iR compensation"
+                        if continue_without_ir
+                        else "Technique does not use positive-feedback compensation"
+                    )
+                ),
             )
             emit("measurement_started", step_name=str(step.get("name", "") or ""))
             if mode == "mock":

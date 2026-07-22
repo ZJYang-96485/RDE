@@ -1286,7 +1286,7 @@
             <button id="addEchemWaitBtn" class="home-btn" type="button">Add Wait</button>
           </div>
           <p class="hint">Use CA Range for voltage sequences. Wait pauses between measurements without creating a DTA file. CC charge/discharge current is a positive magnitude; technique and Working Positive wiring select direction. CP current is signed using the anodic current convention.</p>
-          <p class="hint">Automatic OCP stabilization, fresh Ru validation, and conservative iR preparation run before every EChem trial. Ru is intentionally not an editable protocol step.</p>
+          <p class="hint">Automatic OCP stabilization, fresh Ru validation, and hardware-verified iR preparation run before every EChem trial. Ru is intentionally not an editable protocol step.</p>
         </div>
 
         <div id="echemStepList"></div>
@@ -2044,10 +2044,12 @@
         if (event.attempt) text += ` (attempt ${event.attempt}${event.attempt_limit ? ` of ${event.attempt_limit}` : ""})`;
         const ruOhm = eventNumber(event.ru_ohm);
         const selectedRuOhm = eventNumber(event.ru_selected_ohm);
+        const requestedRuOhm = eventNumber(event.ru_requested_ohm);
         const appliedRuOhm = eventNumber(event.ru_applied_ohm);
         const compensationFraction = eventNumber(event.compensation_fraction);
         if (ruOhm !== null) text += `: ${ruOhm.toPrecision(4)} Ω`;
         if (selectedRuOhm !== null) text += `; selected ${selectedRuOhm.toPrecision(4)} Ω`;
+        if (requestedRuOhm !== null) text += `; requested ${requestedRuOhm.toPrecision(4)} Ω`;
         if (appliedRuOhm !== null) text += `; applied ${appliedRuOhm.toPrecision(4)} Ω`;
         if (compensationFraction !== null) text += ` (${Math.round(compensationFraction * 100)}%)`;
         if (event.reason) text += ` — ${event.reason}`;

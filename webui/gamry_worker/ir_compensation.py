@@ -32,7 +32,7 @@ def disable_ir_compensation(pstat: Any) -> None:
 
 
 def apply_trial_settings(pstat: Any, step: dict[str, Any]) -> dict[str, Any]:
-    """Apply this trial's fixed current range and conservative positive feed."""
+    """Apply this trial's fixed current range and configured positive feed."""
 
     disable_ir_compensation(pstat)
     fixed_current = abs(float(step.get("_trial_fixed_current_range_a", 0.003)))

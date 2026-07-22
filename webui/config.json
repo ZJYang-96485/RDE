@@ -94,7 +94,7 @@
     "default_file_extension": ".DTA",
     "ru_preparation": {
       "ru_retry_count": 5,
-      "compensation_fraction": 0.8,
+      "compensation_fraction": 1.0,
       "ru_repeatability_limit": 0.05,
       "ru_min_ohm": 0.01,
       "ru_max_ohm": 100000.0,

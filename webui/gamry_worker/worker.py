@@ -311,7 +311,7 @@ def run_job(job: dict[str, Any]) -> dict[str, Any]:
                 "ir_compensation_requested" if supports_ir else "ir_compensation_skipped",
                 compensation_fraction=metadata["compensation_fraction"],
                 ru_selected_ohm=metadata["ru_selected_ohm"],
-                ru_applied_ohm=metadata["ru_applied_ohm"],
+                ru_requested_ohm=metadata["ru_applied_ohm"] if supports_ir else None,
                 reason=(
                     None
                     if supports_ir
@@ -343,7 +343,16 @@ def run_job(job: dict[str, Any]) -> dict[str, Any]:
                         if metadata["ir_compensation_enabled"]
                         else "ir_compensation_skipped"
                     ),
-                    ru_applied_ohm=metadata["ru_applied_ohm"],
+                    ru_applied_ohm=(
+                        metadata["ru_applied_ohm"]
+                        if metadata["ir_compensation_enabled"]
+                        else None
+                    ),
+                    ru_requested_ohm=(
+                        None
+                        if metadata["ir_compensation_enabled"]
+                        else metadata["ru_applied_ohm"]
+                    ),
                     resistance_readback_ohm=metadata[
                         "ir_compensation_resistance_readback_ohm"
                     ],

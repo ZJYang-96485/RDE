@@ -31,7 +31,7 @@ def default_trial_metadata(config: dict[str, Any] | None = None) -> dict[str, An
         "ru_validation_passed": False,
         "ru_failure_reason": None,
         "measurement_without_ir_compensation": False,
-        "compensation_fraction": float(settings.get("compensation_fraction", 0.80)),
+        "compensation_fraction": float(settings.get("compensation_fraction", 1.0)),
         "ru_applied_ohm": None,
         "ir_compensation_enabled": False,
         "ir_compensation_reason": None,

@@ -84,11 +84,17 @@
           "enabled": true
         },
         {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
           "name": "Move X + Z Together",
           "action": "move_xz_parallel",
           "enabled": true,
           "x_steps": -50000,
-          "z_steps": -70000
+          "z_steps": -35000
         },
         {
           "name": "RDE Arm Rotation",
@@ -99,5 +105,5 @@
       ]
     }
   ],
-  "saved_at": "2026-07-22T14:14:27.890736+00:00"
+  "saved_at": "2026-07-22T15:33:28.526733+00:00"
 }

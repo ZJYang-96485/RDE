@@ -108,7 +108,7 @@ _DEFAULT_CONFIG = {
         },
         "ru_preparation": {
             "ru_retry_count": 5,
-            "compensation_fraction": 0.80,
+            "compensation_fraction": 1.0,
             "ru_repeatability_limit": 0.05,
             "ru_min_ohm": 0.01,
             "ru_max_ohm": 100000.0,
@@ -375,8 +375,10 @@ def validate_gamry_config(config: dict[str, Any]) -> None:
     if int(ru.get("ru_retry_count", 0)) < 3:
         raise ConfigError("gamry.ru_preparation.ru_retry_count must be at least 3.")
     fraction = float(ru.get("compensation_fraction", 0))
-    if fraction <= 0 or fraction >= 1:
-        raise ConfigError("gamry.ru_preparation.compensation_fraction must be between 0 and 1.")
+    if fraction <= 0 or fraction > 1:
+        raise ConfigError(
+            "gamry.ru_preparation.compensation_fraction must be greater than 0 and at most 1."
+        )
     if float(ru.get("ru_repeatability_limit", 0)) <= 0:
         raise ConfigError("gamry.ru_preparation.ru_repeatability_limit must be > 0.")
     minimum = float(ru.get("ru_min_ohm", 0))

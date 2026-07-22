@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from gamry_worker.ir_compensation import apply_trial_settings, disable_ir_compensation
-from gamry_worker.trial_preparation import CriticalHardwareError, determine_ru
+from gamry_worker.trial_preparation import CriticalHardwareError, default_trial_metadata, determine_ru
 
 try:
     import toolkitpy as tkp
@@ -135,6 +135,10 @@ class FakeZCurve:
 
 
 class TrialPreparationTests(unittest.TestCase):
+    def test_default_compensation_uses_full_validated_ru(self) -> None:
+        metadata = default_trial_metadata()
+        self.assertEqual(metadata["compensation_fraction"], 1.0)
+
     @unittest.skipUnless(tkp is not None, "requires the 32-bit Gamry ToolkitPy runtime")
     def test_ru_initialization_matches_vendor_control_settings(self) -> None:
         pstat = RecordingPstat()

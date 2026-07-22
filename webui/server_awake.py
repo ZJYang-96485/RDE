@@ -5,7 +5,8 @@ import threading
 import time
 
 from waitress import serve
-from app import app
+
+from workflow.single_instance import SingleInstanceError, acquire_webui_instance_lock
 
 
 # Windows SetThreadExecutionState flags
@@ -27,6 +28,13 @@ def keep_awake_loop() -> None:
 
 
 if __name__ == "__main__":
+    try:
+        acquire_webui_instance_lock()
+    except SingleInstanceError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    from app import app
+
     threading.Thread(target=keep_awake_loop, daemon=True).start()
 
     serve(

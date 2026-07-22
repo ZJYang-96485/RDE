@@ -35,6 +35,37 @@ def available_serial_ports() -> list[str]:
         return []
 
 
+def serial_open_error_message(
+    name: str,
+    port: str,
+    error: BaseException,
+    detected_ports: list[str],
+) -> str:
+    detected_text = ", ".join(detected_ports) if detected_ports else "none"
+    configured_is_detected = str(port).strip().casefold() in {
+        str(value).strip().casefold() for value in detected_ports
+    }
+    error_detail = f"{type(error).__name__}: {error}"
+
+    if configured_is_detected:
+        return (
+            f"{name}: configured port {port} is detected, but Windows refused to open it. "
+            f"Detected serial ports: {detected_text}. "
+            "The port is probably already in use by another RDE web server, "
+            "Arduino Serial Monitor, or terminal program. Close the duplicate process "
+            "and retry. The configured port was not remapped. "
+            f"Open error: {error_detail}"
+        )
+
+    return (
+        f"{name}: configured port {port} is unavailable. "
+        f"Detected serial ports: {detected_text}. "
+        "The configured port was not remapped; check the controller "
+        "power, USB cable, and Windows COM assignment. "
+        f"Open error: {error_detail}"
+    )
+
+
 class MockSerialConnection:
     def __init__(self, name: str, port: str) -> None:
         self.name = name
@@ -143,12 +174,8 @@ class SerialDevice:
             )
         except Exception as exc:
             detected = available_serial_ports()
-            detected_text = ", ".join(detected) if detected else "none"
             raise SerialConnectionError(
-                f"{self.name}: configured port {self.port} is unavailable. "
-                f"Detected serial ports: {detected_text}. "
-                "The configured port was not remapped; check the controller "
-                "power, USB cable, and Windows COM assignment."
+                serial_open_error_message(self.name, self.port, exc, detected)
             ) from exc
 
         time.sleep(self.startup_delay_s)

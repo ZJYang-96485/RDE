@@ -143,6 +143,10 @@ Start the server:
 & "$env:LOCALAPPDATA\miniforge3\python.exe" .\app.py
 ```
 
+Start exactly one server. Do not run `app.py` while
+`start_rde_automation.bat`/`server_awake.py` is already open. Duplicate servers
+can compete for COM3/COM6; a process lock now rejects the second launch.
+
 Open browser:
 
 ```text

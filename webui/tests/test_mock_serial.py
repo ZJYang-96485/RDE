@@ -4,7 +4,11 @@ import unittest
 from unittest.mock import patch
 
 from hardware.rotation_controller import RotationController, RotationControllerError
-from hardware.serial_base import MockSerialConnection, SerialConnectionError, SerialDevice
+from hardware.serial_base import (
+    MockSerialConnection,
+    SerialConnectionError,
+    SerialDevice,
+)
 from workflow.state import AutomationAbortRequested
 
 
@@ -52,6 +56,31 @@ class MockSerialTest(unittest.TestCase):
             r"RDE: configured port COM6 is unavailable\. "
             r"Detected serial ports: COM3, COM8, COM11\. "
             r"The configured port was not remapped",
+        ):
+            device.connect()
+
+    @patch("hardware.serial_base.available_serial_ports", return_value=["COM3", "COM6", "COM8"])
+    @patch(
+        "hardware.serial_base.serial.Serial",
+        side_effect=PermissionError(13, "Access is denied", "COM6"),
+    )
+    def test_detected_busy_port_is_not_reported_as_missing(
+        self,
+        _serial,
+        _available_ports,
+    ) -> None:
+        device = SerialDevice(
+            name="RDE",
+            port="COM6",
+            baud_rate=115200,
+            startup_delay_s=0,
+        )
+
+        with self.assertRaisesRegex(
+            SerialConnectionError,
+            r"configured port COM6 is detected, but Windows refused to open it.*"
+            r"probably already in use by another RDE web server.*"
+            r"Open error: PermissionError",
         ):
             device.connect()
 

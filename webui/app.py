@@ -1254,5 +1254,12 @@ def automation_abort_route():
 
 
 if __name__ == "__main__":
+    from workflow.single_instance import SingleInstanceError, acquire_webui_instance_lock
+
+    try:
+        acquire_webui_instance_lock()
+    except SingleInstanceError as exc:
+        raise SystemExit(str(exc)) from exc
+
     port = int(os.environ.get("PORT", "5055"))
     app.run(host="127.0.0.1", port=port, debug=False)

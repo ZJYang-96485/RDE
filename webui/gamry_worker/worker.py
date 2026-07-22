@@ -13,19 +13,27 @@ from typing import Any, Callable
 try:
     from gamry_worker.device import configured_step
     from gamry_worker.live_writer import (
+        append_live_event,
         fail_live_stream,
         finish_live_stream,
         initialize_live_stream,
         read_live_status,
+        update_live_status,
     )
+    from gamry_worker.ir_compensation import technique_supports_positive_feedback
+    from gamry_worker.trial_preparation import CriticalHardwareError, default_trial_metadata, determine_ru, utc_now as trial_utc_now
 except ModuleNotFoundError:
     from device import configured_step
     from live_writer import (
+        append_live_event,
         fail_live_stream,
         finish_live_stream,
         initialize_live_stream,
         read_live_status,
+        update_live_status,
     )
+    from ir_compensation import technique_supports_positive_feedback
+    from trial_preparation import CriticalHardwareError, default_trial_metadata, determine_ru, utc_now as trial_utc_now
 
 
 class GamryWorkerError(RuntimeError):
@@ -90,16 +98,20 @@ def start_live_for_job(
 ) -> bool:
     if not live_enabled_for_job(job):
         return False
-    initialize_live_stream(
-        job["live_dir"],
-        run_id=str(job.get("run_id", "") or "") or None,
-        sample_id=sample_id,
-        sample_label=str(job.get("sample_label", "") or "") or None,
-        protocol_name=str(job.get("protocol_name", "") or "") or None,
-        step_name=str(step.get("name", "") or "") or None,
-        technique=str(step.get("technique", "") or "").strip().lower() or None,
-    )
-    return True
+    try:
+        initialize_live_stream(
+            job["live_dir"],
+            run_id=str(job.get("run_id", "") or "") or None,
+            sample_id=sample_id,
+            sample_label=str(job.get("sample_label", "") or "") or None,
+            protocol_name=str(job.get("protocol_name", "") or "") or None,
+            step_name=str(step.get("name", "") or "") or None,
+            technique=str(step.get("technique", "") or "").strip().lower() or None,
+        )
+        return True
+    except Exception:
+        # A plot/status-file problem must never prevent the actual Gamry trial.
+        return False
 
 
 def real_runner_for_technique(technique: str) -> Callable[..., dict[str, Any]]:
@@ -127,6 +139,99 @@ def dispatch_mock_step(
     except ModuleNotFoundError:
         from mock_gamry import run_job as run_mock_job
     return run_mock_job(job)
+
+
+def trial_settings(job: dict[str, Any]) -> dict[str, Any]:
+    gamry = job.get("gamry", {})
+    if not isinstance(gamry, dict):
+        return {}
+    value = gamry.get("ru_preparation", {})
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def event_emitter(job: dict[str, Any], step: dict[str, Any], sample_id: str | None) -> Callable[..., Any]:
+    context = {
+        "trial_id": str(step.get("_trial_id") or job.get("job_id") or ""),
+        "trial_number": step.get("_trial_index"),
+        "sample_id": sample_id,
+        "sample_name": str(job.get("sample_label", "") or "") or None,
+        "technique": str(step.get("technique", "") or "").strip().lower(),
+        "electrode_channel": str(step.get("electrode_channel") or trial_settings(job).get("electrode_channel", "primary")),
+    }
+
+    def emit(event_type: str, **fields: Any) -> Any:
+        if not live_enabled_for_job(job):
+            return None
+        payload = dict(context)
+        payload.update(fields)
+        try:
+            return append_live_event(job["live_dir"], event_type, **payload)
+        except Exception as exc:
+            try:
+                update_live_status(job["live_dir"], stream_error=f"Live event update failed: {exc}")
+            except Exception:
+                pass
+            return None
+
+    return emit
+
+
+def prepare_mock_trial(
+    job: dict[str, Any],
+    step: dict[str, Any],
+    emit: Callable[..., Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    settings = trial_settings(job)
+    metadata = default_trial_metadata(settings)
+    metadata["ocp_stabilization_status"] = "stable"
+    emit("electrode_channel_selected")
+    emit("electrode_channel_verified")
+    emit("ocp_stabilization_started", minimum_s=float(settings.get("ocp_stabilization_s", 5.0)))
+    emit("ocp_stabilized", mock=True)
+    if step.get("mock_ru_critical_error"):
+        raise CriticalHardwareError(str(step["mock_ru_critical_error"]))
+    values = step.get("mock_ru_attempts_ohm", settings.get("mock_ru_attempts_ohm", [10.0, 10.1]))
+    if not isinstance(values, list):
+        values = [values]
+    errors = step.get("mock_ru_errors", [])
+    if not isinstance(errors, list):
+        errors = [errors]
+
+    def measure(attempt: int) -> Any:
+        if attempt <= len(errors) and errors[attempt - 1]:
+            raise RuntimeError(str(errors[attempt - 1]))
+        return values[attempt - 1] if attempt <= len(values) else None
+
+    metadata = determine_ru(measure, settings, metadata=metadata, emit_event=emit)
+    effective = dict(step)
+    if metadata["ru_validation_passed"]:
+        effective.update(
+            {
+                "_trial_ru_validation_passed": True,
+                "_trial_ru_selected_ohm": metadata["ru_selected_ohm"],
+                "_trial_ru_applied_ohm": metadata["ru_applied_ohm"],
+                "_trial_fixed_current_range_a": float(settings.get("fixed_current_range_a", 0.003)),
+            }
+        )
+    return metadata, effective
+
+
+def prepare_real_trial_for_job(
+    job: dict[str, Any],
+    step: dict[str, Any],
+    emit: Callable[..., Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    try:
+        from gamry_worker.real_trial_preparation import prepare_real_trial
+    except ModuleNotFoundError as exc:
+        if exc.name not in {"gamry_worker.real_trial_preparation", "gamry_worker"}:
+            raise
+        from real_trial_preparation import prepare_real_trial
+    return prepare_real_trial(
+        configured_step(step, job.get("gamry", {})),
+        trial_settings(job),
+        emit_event=emit,
+    )
 
 
 def dispatch_real_step(
@@ -168,22 +273,77 @@ def run_job(job: dict[str, Any]) -> dict[str, Any]:
         sample_id = str(sample_id)
 
     live_started = start_live_for_job(job, step, sample_id)
+    emit = event_emitter(job, step, sample_id)
+    metadata = default_trial_metadata(trial_settings(job))
+    emit("trial_started", step_name=str(step.get("name", "") or ""))
     try:
         if mode == "mock":
-            result = dispatch_mock_step(job, step, outputs, sample_id)
+            metadata, effective_step = prepare_mock_trial(job, step, emit)
         elif mode in {"real", "toolkitpy", "gamry"}:
-            result = dispatch_real_step(step, outputs, sample_id=sample_id, job=job)
+            technique = str(step.get("technique", "")).strip().lower()
+            if technique not in REAL_RUNNER_MODULES:
+                raise GamryWorkerError(f"unsupported real Gamry technique: {technique}")
+            metadata, effective_step = prepare_real_trial_for_job(job, step, emit)
         else:
             raise GamryWorkerError(f"unsupported Gamry mode: {mode}")
+
+        if not metadata.get("ru_validation_passed", False):
+            metadata["trial_status"] = "skipped"
+            metadata["completed_at"] = metadata.get("completed_at") or trial_utc_now()
+            result = {"ok": True, "skipped": True, "reason": metadata.get("skip_reason")}
+            if live_started:
+                try:
+                    update_live_status(job["live_dir"], active=False, status="skipped", finished_at=trial_utc_now())
+                except Exception:
+                    pass
+        else:
+            supports_ir = technique_supports_positive_feedback(effective_step.get("technique"))
+            emit(
+                "ir_compensation_configured" if supports_ir else "ir_compensation_skipped",
+                compensation_fraction=metadata["compensation_fraction"],
+                ru_selected_ohm=metadata["ru_selected_ohm"],
+                ru_applied_ohm=metadata["ru_applied_ohm"],
+                reason=None if supports_ir else "Technique does not use positive-feedback compensation",
+            )
+            emit("measurement_started", step_name=str(step.get("name", "") or ""))
+            if mode == "mock":
+                effective_job = dict(job)
+                effective_job["step"] = effective_step
+                result = dispatch_mock_step(effective_job, effective_step, outputs, sample_id)
+            else:
+                result = dispatch_real_step(effective_step, outputs, sample_id=sample_id, job=job)
+            metadata["ir_compensation_enabled"] = bool(
+                supports_ir and result.get("ir_compensation_enabled", True)
+            )
+            metadata["trial_status"] = "completed"
+            metadata["completed_at"] = trial_utc_now()
+            emit("measurement_completed", outputs=outputs)
+            emit("ir_compensation_disabled")
+            emit("gamry_settings_reset", ir_compensation="disabled", cell="off")
+            emit("trial_completed")
     except Exception as exc:
+        metadata["trial_status"] = "failed"
+        metadata["completed_at"] = trial_utc_now()
+        metadata["skip_reason"] = str(exc)
+        emit("trial_failed", reason=str(exc), critical=isinstance(exc, CriticalHardwareError))
+        try:
+            exc.trial_metadata = metadata
+        except Exception:
+            pass
         if live_started:
-            fail_live_stream(job["live_dir"], str(exc))
+            try:
+                fail_live_stream(job["live_dir"], str(exc))
+            except Exception:
+                pass
         if isinstance(exc, GamryWorkerError):
             raise
         raise
 
-    if live_started:
-        finish_live_stream(job["live_dir"])
+    if live_started and metadata.get("trial_status") != "skipped":
+        try:
+            finish_live_stream(job["live_dir"])
+        except Exception:
+            pass
     live_status = read_live_status(job["live_dir"]) if live_started else None
 
     return {
@@ -193,8 +353,9 @@ def run_job(job: dict[str, Any]) -> dict[str, Any]:
         "sample_id": sample_id,
         "technique": str(step.get("technique", "")).strip().lower(),
         "step_name": str(step.get("name", "")).strip(),
-        "outputs": outputs,
+        "outputs": outputs if metadata.get("trial_status") != "skipped" else [],
         "result": result,
+        "trial_metadata": metadata,
         "live_stream": live_status,
         "finished_at": utc_now(),
     }
@@ -202,12 +363,16 @@ def run_job(job: dict[str, Any]) -> dict[str, Any]:
 
 def error_payload(job: dict[str, Any] | None, exc: BaseException) -> dict[str, Any]:
     if isinstance(job, dict) and live_enabled_for_job(job):
-        fail_live_stream(job["live_dir"], str(exc))
+        try:
+            fail_live_stream(job["live_dir"], str(exc))
+        except Exception:
+            pass
     return {
         "ok": False,
         "job_id": job.get("job_id") if isinstance(job, dict) else None,
         "error": str(exc),
         "error_type": type(exc).__name__,
+        "trial_metadata": getattr(exc, "trial_metadata", None),
         "traceback": traceback.format_exc(),
         "finished_at": utc_now(),
     }

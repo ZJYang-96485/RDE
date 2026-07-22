@@ -14,7 +14,19 @@ from gamry_worker.live_writer import fail_live_stream
 
 
 class GamryClientError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, result: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.result = result
+
+
+def best_effort_live_failure(job: dict[str, Any], message: str) -> None:
+    if not job.get("live_enabled", False):
+        return
+    try:
+        fail_live_stream(job["live_dir"], message)
+    except Exception:
+        # Live plotting is observational and must never mask acquisition errors.
+        pass
 
 
 def webui_root() -> Path:
@@ -199,13 +211,11 @@ class GamryClient:
             )
         except subprocess.TimeoutExpired as exc:
             message = f"Gamry worker timed out after {exc.timeout} seconds."
-            if job.get("live_enabled", False):
-                fail_live_stream(job["live_dir"], message)
+            best_effort_live_failure(job, message)
             raise GamryClientError(message) from exc
         except Exception as exc:
             message = f"unable to start Gamry worker: {exc}"
-            if job.get("live_enabled", False):
-                fail_live_stream(job["live_dir"], message)
+            best_effort_live_failure(job, message)
             raise GamryClientError(message) from exc
 
         if result_path.exists():
@@ -237,16 +247,21 @@ class GamryClient:
             if completed.stderr.strip() and completed.stderr.strip() != str(error).strip():
                 details.append("Worker stderr:\n" + completed.stderr.strip())
             message = "\n".join(details)
-            if job.get("live_enabled", False):
-                fail_live_stream(job["live_dir"], message)
-            raise GamryClientError(message)
+            best_effort_live_failure(job, message)
+            raise GamryClientError(message, result=result)
 
-        missing_outputs = [output for output in job["outputs"] if not Path(output).is_file()]
+        trial_metadata = result.get("trial_metadata", {})
+        skipped = (
+            isinstance(trial_metadata, dict)
+            and str(trial_metadata.get("trial_status", "")).strip().lower() == "skipped"
+        )
+        missing_outputs = [] if skipped else [
+            output for output in job["outputs"] if not Path(output).is_file()
+        ]
 
         if missing_outputs:
             message = "Gamry worker reported success but did not create: " + ", ".join(missing_outputs)
-            if job.get("live_enabled", False):
-                fail_live_stream(job["live_dir"], message)
+            best_effort_live_failure(job, message)
             raise GamryClientError(message)
 
         return result

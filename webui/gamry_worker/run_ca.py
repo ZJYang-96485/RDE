@@ -10,10 +10,12 @@ try:
     from gamry_worker.device import select_pstat_name
     from gamry_worker.live_adapters import LiveCurveEmitter, normalize_ca_acq_rows
     from gamry_worker.live_writer import update_live_status, utc_now
+    from gamry_worker.ir_compensation import apply_trial_settings, disable_ir_compensation
 except ModuleNotFoundError:
     from device import select_pstat_name
     from live_adapters import LiveCurveEmitter, normalize_ca_acq_rows
     from live_writer import update_live_status, utc_now
+    from ir_compensation import apply_trial_settings, disable_ir_compensation
 
 
 def initialize_pstat(pstat: Any) -> None:
@@ -90,6 +92,7 @@ def run_single_ca(
         pstat.set_ctrl_mode(tkp.PSTATMODE)
 
     initialize_pstat(pstat)
+    trial_settings = apply_trial_settings(pstat, step)
 
     curve = tkp.ChronoCurve(pstat, max_size)
     emitter = LiveCurveEmitter(live_dir, normalize_ca_acq_rows)
@@ -152,11 +155,19 @@ def run_single_ca(
             "duration_s": duration_s,
             "sample_period_s": sample_period_s,
             "points": int(curve.count()),
+            "ir_compensation_enabled": bool(trial_settings["ir_compensation_enabled"]),
+            "ru_selected_ohm": step.get("_trial_ru_selected_ohm"),
+            "ru_applied_ohm": step.get("_trial_ru_applied_ohm"),
         }
         result.update(emitter.result_fields())
         return result
 
     finally:
+        try:
+            disable_ir_compensation(pstat)
+        except Exception:
+            pass
+
         try:
             if curve.running():
                 curve.stop()
@@ -261,6 +272,10 @@ def run(
 
     finally:
         if pstat is not None:
+            try:
+                disable_ir_compensation(pstat)
+            except Exception:
+                pass
             try:
                 if tkp.pstat_is_valid(pstat):
                     pstat.set_cell(False)

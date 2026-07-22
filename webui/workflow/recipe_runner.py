@@ -21,6 +21,7 @@ from workflow.data_manager import (
     mark_run_complete,
     mark_run_failed,
     prepare_protocol_outputs,
+    register_trial_result,
     save_protocol_snapshot,
 )
 from workflow.protocol_loader import load_protocol
@@ -145,28 +146,73 @@ def run_protocol_for_sample(
             or protocol.get("display_name")
             or "protocol"
         )
-        if technique == "levich_rpm_sweep_ca":
-            if len(output_record["outputs"]) != 1:
-                raise RecipeRunnerError("Levich RPM sweep requires exactly one continuous CA DTA output.")
-            result = run_levich_rpm_sweep_ca(
-                step=step,
-                raw_dta=output_record["outputs"][0],
-                run_dir=run_dir,
-                sample_id=sample.get("sample_id"),
-                sample_label=label,
-                protocol_name=protocol_name,
-                sleep_fn=sleep_interruptible,
-                check_abort_fn=check_abort,
+        trial_id = (
+            f"{safe_name(Path(sample_dir).name, f'sample-{sample_index}')}-step-{step_index}"
+            + (f"-{filename_prefix}" if filename_prefix else "")
+        )
+        output_record["trial_id"] = trial_id
+        trial_step = dict(step)
+        trial_step["_trial_id"] = trial_id
+        trial_step["_trial_index"] = step_index
+        try:
+            if technique == "levich_rpm_sweep_ca":
+                if len(output_record["outputs"]) != 1:
+                    raise RecipeRunnerError("Levich RPM sweep requires exactly one continuous CA DTA output.")
+                result = run_levich_rpm_sweep_ca(
+                    step=trial_step,
+                    raw_dta=output_record["outputs"][0],
+                    run_dir=run_dir,
+                    sample_id=sample.get("sample_id"),
+                    sample_label=label,
+                    protocol_name=protocol_name,
+                    sleep_fn=sleep_interruptible,
+                    check_abort_fn=check_abort,
+                )
+                worker_result = result.get("gamry", {}) if isinstance(result, dict) else {}
+            else:
+                result = run_gamry_step(
+                    step=trial_step,
+                    outputs=output_record["outputs"],
+                    run_dir=run_dir,
+                    sample_id=sample.get("sample_id"),
+                    sample_label=label,
+                    protocol_name=protocol_name,
+                )
+                worker_result = result
+        except Exception as exc:
+            from gamry_worker.trial_preparation import default_trial_metadata, utc_now
+            from workflow.config_loader import get_gamry_config
+
+            error_result = getattr(exc, "result", None)
+            saved_metadata = error_result.get("trial_metadata") if isinstance(error_result, dict) else None
+            metadata = (
+                dict(saved_metadata)
+                if isinstance(saved_metadata, dict)
+                else default_trial_metadata(get_gamry_config().get("ru_preparation", {}))
             )
-        else:
-            result = run_gamry_step(
-                step=step,
-                outputs=output_record["outputs"],
-                run_dir=run_dir,
-                sample_id=sample.get("sample_id"),
-                sample_label=label,
-                protocol_name=protocol_name,
+            metadata.update(
+                {
+                    "trial_status": "failed",
+                    "skip_reason": str(exc),
+                    "completed_at": utc_now(),
+                }
             )
+            register_trial_result(run_dir, output_record, metadata)
+            raise
+
+        trial_metadata = worker_result.get("trial_metadata", {}) if isinstance(worker_result, dict) else {}
+        if get_abort_event().is_set() and trial_metadata:
+            trial_metadata = dict(trial_metadata)
+            trial_metadata["trial_status"] = "aborted"
+            trial_metadata["skip_reason"] = "Automation abort requested."
+        if trial_metadata:
+            register_trial_result(run_dir, output_record, trial_metadata, worker_result)
+        if str(trial_metadata.get("trial_status", "")).lower() == "skipped":
+            append_log(
+                run_dir,
+                f"{label}: bypassed EChem step {step_index}; {trial_metadata.get('skip_reason')}. Continuing.",
+            )
+            continue
 
         # The worker subprocess may finish its current acquisition call after
         # the UI sends an abort. Reflect that user-visible outcome in the

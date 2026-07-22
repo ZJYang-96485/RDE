@@ -49,7 +49,7 @@ from workflow.protocol_loader import (
     validate_protocol_payload,
 )
 from workflow.recipe_runner import RecipeRunnerError, abort_automation, run_plan_payload_background
-from gamry_worker.live_writer import clear_live_stream, read_live_points, read_live_status
+from gamry_worker.live_writer import clear_live_stream, read_live_events, read_live_points, read_live_status
 from workflow.dta_viewer import (
     DtaViewerError,
     list_dta_files,
@@ -436,6 +436,21 @@ def current_run_dta_files():
     )
 
 
+@app.get("/api/live/events")
+def live_events():
+    try:
+        after = int(request.args.get("after", 0) or 0)
+        limit = min(1000, int(request.args.get("limit", 200) or 200))
+    except (TypeError, ValueError):
+        return json_error("after and limit must be integers.", 400)
+    if after < 0 or limit <= 0:
+        return json_error("after must be >= 0 and limit must be > 0.", 400)
+    live_dir = current_live_dir()
+    events = read_live_events(live_dir, after=after, limit=limit) if live_dir is not None else []
+    latest_seq = max([after] + [int(event.get("seq", 0) or 0) for event in events])
+    return jsonify({"ok": True, "events": events, "latest_seq": latest_seq})
+
+
 @app.get("/api/current-run/history-artifact")
 def current_run_history_artifact():
     run_dir = current_automation_run_dir()
@@ -749,9 +764,10 @@ def protocol_load():
 @app.post("/api/protocol")
 def protocol_save():
     payload = request.get_json(silent=True) or {}
+    create_mode = str(payload.get("editor_mode", "edit") or "edit").strip().lower() == "create"
 
     try:
-        result = save_protocol(payload)
+        result = save_protocol(payload, overwrite=not create_mode)
     except ProtocolError as exc:
         return json_error(str(exc), 400)
     except Exception as exc:
@@ -773,6 +789,7 @@ def echem_recipe_save_alias():
 @app.post("/api/protocol/compact")
 def protocol_save_compact():
     payload = request.get_json(silent=True) or {}
+    create_mode = str(payload.get("editor_mode", "edit") or "edit").strip().lower() == "create"
 
     try:
         validated = validate_protocol_payload(payload)
@@ -783,6 +800,10 @@ def protocol_save_compact():
         raw_payload["saved_at"] = datetime.now(timezone.utc).isoformat()
 
         path = protocol_path_for_name(validated["protocol_name"])
+        if path.exists() and create_mode:
+            raise ProtocolError(
+                f"protocol '{validated['protocol_name']}' already exists; choose a unique name for a new protocol."
+            )
         with path.open("w", encoding="utf-8") as f:
             json.dump(raw_payload, f, indent=2)
             f.write("\n")
@@ -874,9 +895,10 @@ def run_plan_load():
 @app.post("/api/run-plan")
 def run_plan_save():
     payload = request.get_json(silent=True) or {}
+    create_mode = str(payload.get("editor_mode", "edit") or "edit").strip().lower() == "create"
 
     try:
-        result = save_run_plan(payload)
+        result = save_run_plan(payload, overwrite=not create_mode)
     except RunPlanError as exc:
         return json_error(str(exc), 400)
     except Exception as exc:
@@ -1087,10 +1109,11 @@ def load_recipe():
 @app.post("/api/recipe")
 def save_recipe():
     payload = request.get_json(silent=True) or {}
+    create_mode = str(payload.get("editor_mode", "edit") or "edit").strip().lower() == "create"
 
     try:
         run_plan = grouped_payload_to_run_plan(payload)
-        result = save_run_plan(run_plan)
+        result = save_run_plan(run_plan, overwrite=not create_mode)
     except Exception as exc:
         return json_error(str(exc), 400)
 

@@ -91,6 +91,27 @@
     "real_timeout_s": 7200,
     "instrument_index": 0,
     "instrument_label": "IFC1010-36030",
-    "default_file_extension": ".DTA"
+    "default_file_extension": ".DTA",
+    "ru_preparation": {
+      "ru_retry_count": 3,
+      "compensation_fraction": 0.8,
+      "ru_repeatability_limit": 0.05,
+      "ru_min_ohm": 0.01,
+      "ru_max_ohm": 100000.0,
+      "ocp_stabilization_s": 5.0,
+      "ocp_stabilization_timeout_s": 30.0,
+      "ocp_sample_interval_s": 0.25,
+      "ocp_stability_window": 5,
+      "ocp_stability_limit_v": 0.005,
+      "ocp_abs_limit_v": 2.5,
+      "ru_frequency_hz": 100000.0,
+      "ru_ac_voltage_v": 0.005,
+      "ru_estimated_z_ohm": 100.0,
+      "ru_settle_s": 0.1,
+      "ru_speed": 1,
+      "fixed_current_range_a": 0.003,
+      "electrode_channel": "primary",
+      "require_single_instrument": true
+    }
   }
 }

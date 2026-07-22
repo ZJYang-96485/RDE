@@ -230,6 +230,23 @@ def run_levich_rpm_sweep_ca(
                 error = result_box.get("error")
                 if error:
                     raise LevichRunnerError(f"Continuous Levich CA failed to start: {error}")
+                worker_result = result_box.get("result", {})
+                trial_metadata = (
+                    worker_result.get("trial_metadata", {})
+                    if isinstance(worker_result, dict)
+                    else {}
+                )
+                if str(trial_metadata.get("trial_status", "")).lower() == "skipped":
+                    stop_rde_fn(None)
+                    rde_stopped = True
+                    report_progress(active=False, status="skipped", phase="finished")
+                    append_log(run_path, f"Levich sweep bypassed: {trial_metadata.get('skip_reason')}.")
+                    return {
+                        "ok": True,
+                        "skipped": True,
+                        "technique": "levich_rpm_sweep_ca",
+                        "gamry": worker_result,
+                    }
                 raise LevichRunnerError("Continuous Levich CA finished before its acquisition start was recorded.")
             time.sleep(0.05)
         if not acquisition_started_at:

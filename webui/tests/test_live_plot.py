@@ -11,9 +11,11 @@ from pathlib import Path
 
 from app import app
 from gamry_worker.live_writer import (
+    append_live_event,
     append_live_point,
     fail_live_stream,
     initialize_live_stream,
+    read_live_events,
     read_live_points,
     read_live_status,
 )
@@ -42,6 +44,17 @@ class LivePlotTest(unittest.TestCase):
         with state.automation_lock:
             state.automation_state.clear()
             state.automation_state.update(self.original_automation_state)
+
+    def test_structured_trial_events_are_sequenced(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            live_dir = Path(tmpdir) / "live"
+            initialize_live_stream(live_dir, run_id="run-1", technique="cv")
+            append_live_event(live_dir, "ru_measurement_completed", trial_id="t1", attempt=1, ru_ohm=18.4)
+            append_live_event(live_dir, "ir_compensation_disabled", trial_id="t1")
+            events = read_live_events(live_dir)
+            self.assertEqual([event["seq"] for event in events], [1, 2])
+            self.assertEqual(events[0]["event_type"], "ru_measurement_completed")
+            self.assertEqual(read_live_status(live_dir)["event_count"], 2)
 
     def set_current_run(self, run_dir: Path) -> None:
         with state.automation_lock:
@@ -208,8 +221,11 @@ class LivePlotTest(unittest.TestCase):
             }
             worker = threading.Thread(target=run_job, args=(job,))
             worker.start()
-            time.sleep(0.12)
+            deadline = time.monotonic() + 2.0
             status = read_live_status(live_dir)
+            while (not status or int(status.get("point_count", 0) or 0) < 1) and time.monotonic() < deadline:
+                time.sleep(0.02)
+                status = read_live_status(live_dir)
             self.assertEqual(status["status"], "running")
             self.assertGreaterEqual(status["point_count"], 1)
             self.assertFalse(output.exists())
@@ -298,3 +314,4 @@ class LivePlotTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+    read_live_events,

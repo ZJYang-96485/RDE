@@ -355,10 +355,14 @@ def load_run_plan(name: str) -> dict[str, Any]:
     return validate_run_plan_payload(payload)
 
 
-def save_run_plan(payload: dict[str, Any]) -> dict[str, Any]:
+def save_run_plan(payload: dict[str, Any], *, overwrite: bool = True) -> dict[str, Any]:
     plan = validate_run_plan_payload(payload)
     plan["saved_at"] = datetime.now(timezone.utc).isoformat()
     path = run_plan_path_for_name(plan["run_name"])
+    if path.exists() and not overwrite:
+        raise RunPlanError(
+            f"run plan '{plan['run_name']}' already exists; choose a unique name for a new plan."
+        )
 
     with path.open("w", encoding="utf-8") as f:
         json.dump(plan, f, indent=2)
@@ -377,6 +381,21 @@ def save_run_plan(payload: dict[str, Any]) -> dict[str, Any]:
         "step_count": step_count,
         "path": str(path),
         "saved_at": plan["saved_at"],
+    }
+
+
+def create_blank_sample_run_plan() -> dict[str, Any]:
+    return {
+        "id": None,
+        "name": "",
+        "run_name": "",
+        "display_name": "",
+        "description": "",
+        "repetitions": 1,
+        "groups": [],
+        "steps": [],
+        "editor_mode": "create",
+        "is_dirty": False,
     }
 
 

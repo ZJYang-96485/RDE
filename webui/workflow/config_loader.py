@@ -105,6 +105,27 @@ _DEFAULT_CONFIG = {
             "poll_interval_ms": 500,
             "mock_time_scale": 0.05,
             "max_browser_points": 5000,
+        },
+        "ru_preparation": {
+            "ru_retry_count": 3,
+            "compensation_fraction": 0.80,
+            "ru_repeatability_limit": 0.05,
+            "ru_min_ohm": 0.01,
+            "ru_max_ohm": 100000.0,
+            "ocp_stabilization_s": 5.0,
+            "ocp_stabilization_timeout_s": 30.0,
+            "ocp_sample_interval_s": 0.25,
+            "ocp_stability_window": 5,
+            "ocp_stability_limit_v": 0.005,
+            "ocp_abs_limit_v": 2.5,
+            "ru_frequency_hz": 100000.0,
+            "ru_ac_voltage_v": 0.005,
+            "ru_estimated_z_ohm": 100.0,
+            "ru_settle_s": 0.10,
+            "ru_speed": 1,
+            "fixed_current_range_a": 0.003,
+            "electrode_channel": "primary",
+            "require_single_instrument": True
         }
     }
 }
@@ -344,6 +365,36 @@ def validate_gamry_config(config: dict[str, Any]) -> None:
 
     if real_timeout_s <= 0:
         raise ConfigError("gamry.real_timeout_s must be > 0.")
+
+    ru = gamry.get("ru_preparation")
+    if not isinstance(ru, dict):
+        raise ConfigError("gamry.ru_preparation must be an object.")
+    if int(ru.get("ru_retry_count", 0)) < 3:
+        raise ConfigError("gamry.ru_preparation.ru_retry_count must be at least 3.")
+    fraction = float(ru.get("compensation_fraction", 0))
+    if fraction <= 0 or fraction >= 1:
+        raise ConfigError("gamry.ru_preparation.compensation_fraction must be between 0 and 1.")
+    if float(ru.get("ru_repeatability_limit", 0)) <= 0:
+        raise ConfigError("gamry.ru_preparation.ru_repeatability_limit must be > 0.")
+    minimum = float(ru.get("ru_min_ohm", 0))
+    maximum = float(ru.get("ru_max_ohm", 0))
+    if minimum <= 0 or maximum <= minimum:
+        raise ConfigError("gamry.ru_preparation Ru limits must be positive and ordered.")
+    for key in (
+        "ocp_stabilization_s",
+        "ocp_stabilization_timeout_s",
+        "ocp_sample_interval_s",
+        "ocp_stability_limit_v",
+        "ocp_abs_limit_v",
+        "ru_frequency_hz",
+        "ru_ac_voltage_v",
+        "ru_estimated_z_ohm",
+        "fixed_current_range_a",
+    ):
+        if float(ru.get(key, 0)) <= 0:
+            raise ConfigError(f"gamry.ru_preparation.{key} must be > 0.")
+    if int(ru.get("ocp_stability_window", 0)) < 2:
+        raise ConfigError("gamry.ru_preparation.ocp_stability_window must be at least 2.")
 
 
 def validate_config(config: dict[str, Any]) -> None:

@@ -139,6 +139,7 @@ def load_manifest(run_dir: str | Path) -> dict[str, Any]:
             "samples": [],
             "protocols": [],
             "outputs": [],
+            "trials": [],
             "analysis_results": [],
             "errors": [],
         }
@@ -184,6 +185,7 @@ def create_run_workspace(run_plan: dict[str, Any]) -> dict[str, Any]:
         "samples": [],
         "protocols": [],
         "outputs": [],
+        "trials": [],
         "analysis_results": [],
         "errors": [],
     }
@@ -394,6 +396,63 @@ def register_step_outputs(
     return record
 
 
+def register_trial_result(
+    run_dir: str | Path,
+    output_record: dict[str, Any],
+    trial_metadata: dict[str, Any],
+    worker_result: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Persist the automatic Ru/compensation outcome for one EChem trial."""
+
+    run_dir = Path(run_dir)
+    metadata = dict(trial_metadata) if isinstance(trial_metadata, dict) else {}
+    status = str(metadata.get("trial_status") or "failed").strip().lower()
+    display_status = {
+        "completed": "Completed",
+        "skipped": "Skipped",
+        "failed": "Failed",
+        "aborted": "Aborted",
+    }.get(status, status.title() or "Failed")
+    trial_id = str(
+        output_record.get("trial_id")
+        or f"sample-{output_record.get('sample_index')}-step-{output_record.get('step_index')}"
+    )
+    record = {
+        "trial_id": trial_id,
+        "sample_index": output_record.get("sample_index"),
+        "sample_dir": output_record.get("sample_dir"),
+        "step_index": output_record.get("step_index"),
+        "step_name": output_record.get("step_name"),
+        "technique": output_record.get("technique"),
+        "outputs": list(output_record.get("outputs", [])),
+        "status": display_status,
+        "metadata": metadata,
+        "worker_job_id": (worker_result or {}).get("job_id"),
+        "registered_at": utc_timestamp(),
+    }
+
+    manifest = load_manifest(run_dir)
+    trials = [item for item in manifest.get("trials", []) if str(item.get("trial_id")) != trial_id]
+    trials.append(record)
+    manifest["trials"] = trials
+
+    for planned in manifest.get("outputs", []):
+        if (
+            int(planned.get("sample_index", -1)) == int(output_record.get("sample_index", -2))
+            and int(planned.get("step_index", -1)) == int(output_record.get("step_index", -2))
+            and str(planned.get("sample_dir", "")) == str(output_record.get("sample_dir", ""))
+            and str(planned.get("filename_prefix", "")) == str(output_record.get("filename_prefix", ""))
+        ):
+            planned["trial_id"] = trial_id
+            planned["trial_status"] = display_status
+            planned["trial_metadata"] = metadata
+            break
+
+    save_manifest(run_dir, manifest)
+    append_log(run_dir, f"Registered EChem trial {trial_id}: {display_status}.")
+    return record
+
+
 def relative_run_file(run_dir: str | Path, path: str | Path) -> str:
     root = Path(run_dir).resolve()
     resolved = Path(path).resolve()
@@ -568,6 +627,7 @@ def write_run_summary(run_dir: str | Path) -> None:
         ],
         "dta_files": relative_dta_files(run_dir),
         "analysis_results": manifest.get("analysis_results", []),
+        "trials": manifest.get("trials", []),
         "errors": manifest.get("errors", []),
     }
 

@@ -768,11 +768,15 @@ def load_protocol(name: str) -> dict[str, Any]:
     return validate_protocol_payload(payload)
 
 
-def save_protocol(payload: dict[str, Any]) -> dict[str, Any]:
+def save_protocol(payload: dict[str, Any], *, overwrite: bool = True) -> dict[str, Any]:
     protocol = validate_protocol_payload(payload)
     protocol["saved_at"] = datetime.now(timezone.utc).isoformat()
 
     path = protocol_path_for_name(protocol["protocol_name"])
+    if path.exists() and not overwrite:
+        raise ProtocolError(
+            f"protocol '{protocol['protocol_name']}' already exists; choose a unique name for a new protocol."
+        )
 
     with path.open("w", encoding="utf-8") as f:
         json.dump(protocol, f, indent=2)
@@ -785,6 +789,21 @@ def save_protocol(payload: dict[str, Any]) -> dict[str, Any]:
         "step_count": len(protocol["steps"]),
         "path": str(path),
         "saved_at": protocol["saved_at"],
+    }
+
+
+def create_blank_echem_protocol() -> dict[str, Any]:
+    return {
+        "id": None,
+        "name": "",
+        "protocol_name": "",
+        "display_name": "",
+        "description": "",
+        "technique": None,
+        "parameters": {},
+        "steps": [],
+        "editor_mode": "create",
+        "is_dirty": False,
     }
 
 

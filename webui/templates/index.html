@@ -718,6 +718,19 @@
         pointer-events: none;
       }
 
+      .live-trial-events {
+        max-height: 11rem;
+        overflow: auto;
+        margin: 0.75rem 0;
+        padding: 0.65rem 0.85rem 0.65rem 2rem;
+        border: 1px solid #c7dbea;
+        border-radius: 0.7rem;
+        background: #f8fbfd;
+        color: #284f6f;
+      }
+
+      .live-trial-events li + li { margin-top: 0.25rem; }
+
       #liveGamryEmpty[hidden] {
         display: none !important;
       }
@@ -1093,6 +1106,7 @@
             <div id="recipeGroups"></div>
 
         <div class="cmd-buttons">
+          <button id="newBlankRecipeBtn" class="home-btn" type="button">+ New Plan</button>
           <button id="addStepBtn" class="home-btn" type="button">Add Group</button>
           <button id="saveRecipeBtn" class="home-btn" type="button">Save Run Plan</button>
           <button id="loadRecipeBtn" class="home-btn" type="button">Load Run Plan</button>
@@ -1183,6 +1197,7 @@
             <span id="liveGamryElapsed">Elapsed: —</span>
             <span id="liveGamryUpdated">Last update: —</span>
           </div>
+          <ol id="liveTrialEvents" class="live-trial-events" aria-label="Live Ru and compensation events"></ol>
           <div class="live-gamry-canvas-wrap">
             <canvas id="liveGamryCanvas" aria-label="Live Gamry data plot"></canvas>
             <div id="liveGamryEmpty" hidden></div>
@@ -1196,10 +1211,10 @@
 
         <section class="live-gamry-panel" aria-labelledby="sameTrialFiguresTitle">
           <div class="same-trial-header">
-            <h3 id="sameTrialFiguresTitle">Current Trial History &amp; Analysis</h3>
+            <h3 id="sameTrialFiguresTitle">Same Trial EChem Figures &amp; Analysis</h3>
             <span id="sameTrialViewMode" class="figure-view-mode">Viewing live measurement</span>
           </div>
-          <p class="hint">Showing completed DTA files and registered analysis artifacts from the current automation trial only. Historical run folders are never scanned.</p>
+          <p class="hint">Showing DTA files from the current automation trial only, together with its registered analysis artifacts. Historical run folders are never scanned.</p>
           <div class="cmd-buttons">
             <button id="sameTrialRefreshBtn" class="home-btn" type="button">Refresh History</button>
             <button id="sameTrialBackLiveBtn" class="home-btn" type="button">Back to Live Plot</button>
@@ -1237,7 +1252,7 @@
         <select id="echemSavedProtocolSelect"></select>
 
         <div class="cmd-buttons">
-          <button id="newBlankEchemProtocolBtn" class="home-btn" type="button">New Blank Protocol</button>
+          <button id="newBlankEchemProtocolBtn" class="home-btn" type="button">+ New Plan</button>
           <button id="loadEchemProtocolBtn" class="home-btn" type="button">Load Protocol</button>
           <button id="refreshEchemProtocolBtn" class="home-btn" type="button">Refresh Protocols</button>
           <button id="deleteEchemProtocolBtn" class="abort-btn" type="button">Delete Protocol</button>
@@ -1269,6 +1284,7 @@
             <button id="addEchemWaitBtn" class="home-btn" type="button">Add Wait</button>
           </div>
           <p class="hint">Use CA Range for voltage sequences. Wait pauses between measurements without creating a DTA file. CC charge/discharge current is a positive magnitude; technique and Working Positive wiring select direction. CP current is signed using the anodic current convention.</p>
+          <p class="hint">Automatic OCP stabilization, fresh Ru validation, and conservative iR preparation run before every EChem trial. Ru is intentionally not an editable protocol step.</p>
         </div>
 
         <div id="echemStepList"></div>
@@ -1400,6 +1416,7 @@
       const startExperimentBtn = document.getElementById("startExperimentBtn");
       const abortHomeBtn = document.getElementById("abortHomeBtn");
       const addStepBtn = document.getElementById("addStepBtn");
+      const newBlankRecipeBtn = document.getElementById("newBlankRecipeBtn");
       const saveRecipeBtn = document.getElementById("saveRecipeBtn");
       const loadRecipeBtn = document.getElementById("loadRecipeBtn");
       const refreshRecipesBtn = document.getElementById("refreshRecipesBtn");
@@ -1459,6 +1476,7 @@
       const liveGamryCountEl = document.getElementById("liveGamryCount");
       const liveGamryElapsedEl = document.getElementById("liveGamryElapsed");
       const liveGamryUpdatedEl = document.getElementById("liveGamryUpdated");
+      const liveTrialEventsEl = document.getElementById("liveTrialEvents");
       const liveGamryCanvas = document.getElementById("liveGamryCanvas");
       const liveGamryEmptyEl = document.getElementById("liveGamryEmpty");
       const livePauseBtn = document.getElementById("livePauseBtn");
@@ -1537,6 +1555,8 @@
       let gamryRealRunnerConfigured = false;
       let gamryModeDirty = false;
       let availableProtocols = [];
+      let runPlanEditorMode = "edit";
+      let echemProtocolEditorMode = "create";
       let protocolPreviewCache = new Map();
       let previewRinseDurationS = null;
       let selectedRunPlanPreviewKey = "";
@@ -1545,6 +1565,8 @@
       let liveStreamKey = "";
       let livePoints = [];
       let liveLatestSeq = 0;
+      let liveEventLatestSeq = 0;
+      let liveEvents = [];
       let livePaused = false;
       let liveAutoScale = true;
       let liveMaxVisiblePoints = 5000;
@@ -1985,6 +2007,53 @@
         }
       }
 
+      function formatLiveTrialEvent(event) {
+        const labels = {
+          trial_started: "Trial started",
+          electrode_channel_selected: "Electrode channel selected",
+          electrode_channel_verified: "Electrode channel verified",
+          ocp_stabilization_started: "Waiting for OCP stabilization",
+          ocp_stabilized: "OCP stable",
+          ocp_stabilization_failed: "OCP stabilization failed",
+          ru_measurement_started: "Measuring Ru",
+          ru_measurement_completed: "Ru measured",
+          ru_measurement_rejected: "Ru measurement rejected",
+          ru_validation_retry: "Ru repeatability check requires another attempt",
+          ru_validation_passed: "Ru validation passed",
+          ru_validation_failed: "Ru validation failed",
+          ir_compensation_configured: "iR compensation prepared",
+          ir_compensation_skipped: "iR compensation skipped",
+          measurement_started: "EChem measurement started",
+          measurement_completed: "EChem measurement completed",
+          ir_compensation_disabled: "iR compensation disabled",
+          gamry_settings_reset: "Gamry settings reset; cell safe/off",
+          trial_skipped: "Trial bypassed; continuing to the next trial",
+          trial_completed: "Trial completed",
+          trial_failed: "Trial failed",
+          critical_hardware_error: "Critical hardware error",
+        };
+        let text = labels[event.event_type] || String(event.event_type || "Trial update");
+        if (event.attempt) text += ` (attempt ${event.attempt}${event.attempt_limit ? ` of ${event.attempt_limit}` : ""})`;
+        if (Number.isFinite(Number(event.ru_ohm))) text += `: ${Number(event.ru_ohm).toPrecision(4)} Ω`;
+        if (Number.isFinite(Number(event.ru_selected_ohm))) text += `; selected ${Number(event.ru_selected_ohm).toPrecision(4)} Ω`;
+        if (Number.isFinite(Number(event.ru_applied_ohm))) text += `; applied ${Number(event.ru_applied_ohm).toPrecision(4)} Ω`;
+        if (Number.isFinite(Number(event.compensation_fraction))) text += ` (${Math.round(Number(event.compensation_fraction) * 100)}%)`;
+        if (event.reason) text += ` — ${event.reason}`;
+        return text;
+      }
+
+      function renderLiveTrialEvents() {
+        liveTrialEventsEl.innerHTML = "";
+        for (const event of liveEvents.slice(-50)) {
+          const item = document.createElement("li");
+          item.textContent = formatLiveTrialEvent(event);
+          liveTrialEventsEl.appendChild(item);
+        }
+        if (liveTrialEventsEl.lastElementChild) {
+          liveTrialEventsEl.scrollTop = liveTrialEventsEl.scrollHeight;
+        }
+      }
+
       function updateLiveMeta(status) {
         liveStatus = status || {};
         const state = String(status.status || "idle");
@@ -2043,6 +2112,9 @@
             liveStreamKey = key;
             livePoints = [];
             liveLatestSeq = 0;
+            liveEvents = [];
+            liveEventLatestSeq = 0;
+            renderLiveTrialEvents();
           }
 
           updateLiveMeta(status);
@@ -2057,6 +2129,13 @@
                 liveLatestSeq = Math.max(liveLatestSeq, ...newPoints.map((point) => Number(point.seq || 0)));
               }
               updateLiveMeta(pointsData.status || status);
+            }
+            const eventsResponse = await fetch(`/api/live/events?after=${encodeURIComponent(liveEventLatestSeq)}&limit=200`);
+            const eventsData = await eventsResponse.json();
+            if (eventsResponse.ok && Array.isArray(eventsData.events)) {
+              liveEvents = [...liveEvents, ...eventsData.events].slice(-200);
+              liveEventLatestSeq = Number(eventsData.latest_seq || liveEventLatestSeq);
+              renderLiveTrialEvents();
             }
           }
           nextDelay = status.active ? livePollIntervalMs : 2000;
@@ -2167,6 +2246,7 @@
           el.disabled = disabled && !el.classList.contains("group-collapse");
         }
         addStepBtn.disabled = disabled;
+        newBlankRecipeBtn.disabled = disabled;
         saveRecipeBtn.disabled = disabled;
         loadRecipeBtn.disabled = disabled;
         refreshRecipesBtn.disabled = disabled;
@@ -3733,6 +3813,28 @@
         return typedName || selectedName || "default";
       }
 
+      function createBlankSampleRunPlan() {
+        return {
+          id: null,
+          name: "",
+          steps: [],
+          groups: [],
+          repetitions: 1,
+          editor_mode: "create",
+          is_dirty: false,
+        };
+      }
+
+      function newBlankRunPlan() {
+        const blank = createBlankSampleRunPlan();
+        runPlanEditorMode = blank.editor_mode;
+        recipeNameInput.value = blank.name;
+        automationRepetitionsInput.value = String(blank.repetitions);
+        clearRecipeGroups();
+        setAutomationError("");
+        automationStatusEl.textContent = "Blank run plan ready. Enter a unique name, then add groups and steps.";
+      }
+
       async function refreshRecipeList(selectedName = "") {
         const res = await fetch("/api/recipes");
         const data = await res.json();
@@ -3780,6 +3882,11 @@
         automationStatusEl.textContent = "Saving grouped run plan...";
 
         const recipeName = selectedRecipeName();
+        if (!recipeNameInput.value.trim()) {
+          setAutomationError("Enter a unique run plan name before saving.");
+          automationStatusEl.textContent = "Run plan save failed.";
+          return false;
+        }
         const res = await fetch("/api/recipe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -3787,6 +3894,7 @@
             name: recipeName,
             repetitions: Number(automationRepetitionsInput.value),
             groups: getRecipeGroupsPayload(),
+            editor_mode: runPlanEditorMode,
           }),
         });
         const data = await res.json();
@@ -3798,6 +3906,7 @@
         }
 
         recipeNameInput.value = data.name || recipeName;
+        runPlanEditorMode = "edit";
         await refreshRecipeList(recipeNameInput.value);
         automationStatusEl.textContent = `Run plan '${recipeNameInput.value}' saved: ${data.group_count} group(s), ${data.step_count} atomic step(s).`;
         return true;
@@ -3818,6 +3927,7 @@
         }
 
         recipeNameInput.value = data.name || recipeName;
+        runPlanEditorMode = "edit";
         automationRepetitionsInput.value = String(data.repetitions || 1);
         clearRecipeGroups();
 
@@ -4453,6 +4563,7 @@
         let payload;
         try {
           payload = previewEchemProtocol();
+          payload.editor_mode = echemProtocolEditorMode;
         } catch (err) {
           return false;
         }
@@ -4472,6 +4583,7 @@
 
         await refreshProtocolList();
         refreshEchemProtocolSelect(data.protocol_name);
+        echemProtocolEditorMode = "edit";
         echemProtocolStatusEl.textContent = `Saved EChem protocol '${data.protocol_name}' with ${data.step_count} expanded step(s).`;
         return true;
       }
@@ -4491,8 +4603,22 @@
         }
       }
 
+      function createBlankEchemProtocol() {
+        return {
+          id: null,
+          name: "",
+          technique: null,
+          parameters: {},
+          steps: [],
+          editor_mode: "create",
+          is_dirty: false,
+        };
+      }
+
       function newBlankEchemProtocol() {
-        echemProtocolNameInput.value = "";
+        const blank = createBlankEchemProtocol();
+        echemProtocolEditorMode = blank.editor_mode;
+        echemProtocolNameInput.value = blank.name;
         echemProtocolDisplayInput.value = "";
         echemProtocolDescriptionInput.value = "";
         echemProtocolPreviewEl.value = "";
@@ -4517,6 +4643,7 @@
         }
 
         echemProtocolNameInput.value = data.protocol_name || name;
+        echemProtocolEditorMode = "edit";
         echemProtocolDisplayInput.value = data.display_name || data.protocol_name || name;
         echemProtocolDescriptionInput.value = data.description || "";
         clearEchemSteps();
@@ -4701,6 +4828,10 @@
 
       addStepBtn.addEventListener("click", () => {
         addRecipeGroup({ label: `Sample ${recipeGroupsEl.children.length + 1}`, steps: [] });
+      });
+
+      newBlankRecipeBtn.addEventListener("click", () => {
+        newBlankRunPlan();
       });
 
       saveRecipeBtn.addEventListener("click", async () => {

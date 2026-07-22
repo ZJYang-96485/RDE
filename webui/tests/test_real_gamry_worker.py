@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from gamry_worker.device import GamryDeviceError, configured_step, select_pstat_name
 from gamry_worker.worker import GamryWorkerError, run_job
+from gamry_worker.trial_preparation import default_trial_metadata
 
 
 class FakeToolkit:
@@ -49,9 +50,31 @@ class RealGamryWorkerTest(unittest.TestCase):
                 },
             }
 
+            metadata = default_trial_metadata({"compensation_fraction": 0.8})
+            metadata.update(
+                {
+                    "ocp_stabilization_status": "stable",
+                    "ru_attempts_ohm": [10.0, 10.1],
+                    "ru_selected_ohm": 10.05,
+                    "ru_validation_passed": True,
+                    "ru_applied_ohm": 8.04,
+                }
+            )
+            prepared_step = configured_step(job["step"], job["gamry"])
+            prepared_step.update(
+                {
+                    "_trial_ru_validation_passed": True,
+                    "_trial_ru_selected_ohm": 10.05,
+                    "_trial_ru_applied_ohm": 8.04,
+                    "_trial_fixed_current_range_a": 0.003,
+                }
+            )
             with patch(
                 "gamry_worker.worker.real_runner_for_technique",
                 return_value=fake_runner,
+            ), patch(
+                "gamry_worker.worker.prepare_real_trial_for_job",
+                return_value=(metadata, prepared_step),
             ):
                 result = run_job(job)
 

@@ -89,6 +89,8 @@ def _default_status() -> dict[str, Any]:
         "finished_at": None,
         "last_update_at": None,
         "point_count": 0,
+        "event_count": 0,
+        "last_event": None,
         "status": "idle",
         "error": None,
         "stream_error": None,
@@ -125,6 +127,7 @@ def initialize_live_stream(
 
     directory = Path(live_dir)
     points_path = live_path(directory, "points.jsonl")
+    events_path = live_path(directory, "events.jsonl")
     status_path = live_path(directory, "status.json")
     now = utc_now()
     status = _default_status()
@@ -147,6 +150,8 @@ def initialize_live_stream(
         directory.mkdir(parents=True, exist_ok=True)
         # Reset only the temporary stream. Final DTA files are elsewhere.
         with points_path.open("w", encoding="utf-8"):
+            pass
+        with events_path.open("w", encoding="utf-8"):
             pass
         _write_status_atomic(status_path, status)
 
@@ -224,6 +229,41 @@ def append_live_point(live_dir: str | Path, point: dict[str, Any]) -> dict[str, 
     return written[0]
 
 
+def append_live_event(
+    live_dir: str | Path,
+    event_type: str,
+    **fields: Any,
+) -> dict[str, Any]:
+    """Append a structured trial event and expose the latest event in status."""
+
+    directory = Path(live_dir)
+    normalized_type = str(event_type or "").strip()
+    if not normalized_type:
+        raise ValueError("event_type cannot be empty")
+
+    with _lock_for(directory):
+        status = read_live_status(directory) or _default_status()
+        sequence = int(status.get("event_count", 0) or 0) + 1
+        event = dict(fields)
+        event.update(
+            {
+                "seq": sequence,
+                "event_type": normalized_type,
+                "timestamp_utc": str(fields.get("timestamp_utc") or utc_now()),
+            }
+        )
+        directory.mkdir(parents=True, exist_ok=True)
+        with live_path(directory, "events.jsonl").open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(event, separators=(",", ":"), allow_nan=False) + "\n")
+            stream.flush()
+
+        status["event_count"] = sequence
+        status["last_event"] = event
+        status["last_update_at"] = utc_now()
+        _write_status_atomic(live_path(directory, "status.json"), status)
+        return event
+
+
 def finish_live_stream(live_dir: str | Path) -> dict[str, Any]:
     return update_live_status(
         live_dir,
@@ -254,7 +294,7 @@ def clear_live_stream(live_dir: str | Path) -> None:
 
     directory = Path(live_dir)
     with _lock_for(directory):
-        for filename in ("status.json", "points.jsonl"):
+        for filename in ("status.json", "points.jsonl", "events.jsonl"):
             try:
                 live_path(directory, filename).unlink()
             except FileNotFoundError:
@@ -298,3 +338,39 @@ def read_live_points(
         return []
 
     return points
+
+
+def read_live_events(
+    live_dir: str | Path,
+    *,
+    after: int = 0,
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    """Read a bounded page of structured events, ignoring torn JSONL lines."""
+
+    if after < 0:
+        raise ValueError("after must be >= 0")
+    if limit <= 0:
+        raise ValueError("limit must be > 0")
+
+    events: list[dict[str, Any]] = []
+    try:
+        with live_path(live_dir, "events.jsonl").open("r", encoding="utf-8") as stream:
+            for line in stream:
+                if len(events) >= limit:
+                    break
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(event, dict):
+                    continue
+                try:
+                    sequence = int(event.get("seq"))
+                except (TypeError, ValueError):
+                    continue
+                if sequence > after:
+                    events.append(event)
+    except (FileNotFoundError, OSError):
+        return []
+    return events

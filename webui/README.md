@@ -9,6 +9,12 @@
 
 This app controls an automated RDE electrochemistry workflow from a Flask web interface.
 
+## Automatic Ru and iR preparation
+
+Every enabled EChem measurement now performs a fresh per-trial preparation: verify the configured Gamry instrument/channel, stabilize OCP, acquire and validate at least two uncompensated-resistance points, configure a fixed current range, and apply the configured conservative positive-feedback fraction to supported potentiostatic DC techniques. EIS/GEIS and current-controlled techniques never enable positive feedback. The setting is disabled and the cell is returned to a safe/off state after every success, skip, or error.
+
+Normal Ru repeatability failures skip only that measurement and preserve diagnostics in the run manifest. Communication loss, unverifiable channel/relay state, near-rail OCP (possible reference-electrode failure), compliance/overload, and failed cleanup abort the run. Defaults are under `gamry.ru_preparation` in `config.json`.
+
 The web UI is organized around three main functions:
 
 1. **Motor Control**

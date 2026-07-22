@@ -6,7 +6,11 @@ import time
 
 from waitress import serve
 
-from workflow.single_instance import SingleInstanceError, acquire_webui_instance_lock
+from workflow.single_instance import (
+    SingleInstanceError,
+    acquire_webui_instance_lock,
+    reject_existing_webui_listener,
+)
 
 
 # Windows SetThreadExecutionState flags
@@ -29,6 +33,7 @@ def keep_awake_loop() -> None:
 
 if __name__ == "__main__":
     try:
+        reject_existing_webui_listener(5055)
         acquire_webui_instance_lock()
     except SingleInstanceError as exc:
         raise SystemExit(str(exc)) from exc

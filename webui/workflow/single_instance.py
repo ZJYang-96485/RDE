@@ -3,6 +3,7 @@ from __future__ import annotations
 import atexit
 import json
 import os
+import socket
 import tempfile
 import threading
 from datetime import datetime, timezone
@@ -21,6 +22,19 @@ _lock_handle: Any = None
 def lock_path() -> Path:
     base = Path(os.environ.get("LOCALAPPDATA") or tempfile.gettempdir())
     return base / "RDEAutomation" / "rde_webui_server.lock"
+
+
+def reject_existing_webui_listener(port: int, host: str = "127.0.0.1") -> None:
+    """Reject an older server that predates the process-lock implementation."""
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(0.25)
+        if probe.connect_ex((host, int(port))) == 0:
+            raise SingleInstanceError(
+                f"TCP port {int(port)} already has a listening server. Close the older "
+                "RDE Web UI process before starting another one; it may retain the "
+                "configured COM ports."
+            )
 
 
 def _lock_first_byte(handle: Any) -> None:

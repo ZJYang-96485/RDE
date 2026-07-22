@@ -24,6 +24,7 @@ from workflow.data_manager import (
     save_protocol_snapshot,
 )
 from workflow.protocol_loader import load_protocol
+from workflow.levich_runner import run_levich_rpm_sweep_ca
 from workflow.run_plan_loader import load_run_plan, validate_run_plan_payload
 from workflow.state import (
     AutomationAbortRequested,
@@ -139,18 +140,33 @@ def run_protocol_for_sample(
         if output_record is None:
             raise RecipeRunnerError(f"No output path prepared for step {step_index}: {step_name}")
 
-        result = run_gamry_step(
-            step=step,
-            outputs=output_record["outputs"],
-            run_dir=run_dir,
-            sample_id=sample.get("sample_id"),
-            sample_label=label,
-            protocol_name=str(
-                protocol.get("protocol_name")
-                or protocol.get("display_name")
-                or "protocol"
-            ),
+        protocol_name = str(
+            protocol.get("protocol_name")
+            or protocol.get("display_name")
+            or "protocol"
         )
+        if technique == "levich_rpm_sweep_ca":
+            if len(output_record["outputs"]) != 1:
+                raise RecipeRunnerError("Levich RPM sweep requires exactly one continuous CA DTA output.")
+            result = run_levich_rpm_sweep_ca(
+                step=step,
+                raw_dta=output_record["outputs"][0],
+                run_dir=run_dir,
+                sample_id=sample.get("sample_id"),
+                sample_label=label,
+                protocol_name=protocol_name,
+                sleep_fn=sleep_interruptible,
+                check_abort_fn=check_abort,
+            )
+        else:
+            result = run_gamry_step(
+                step=step,
+                outputs=output_record["outputs"],
+                run_dir=run_dir,
+                sample_id=sample.get("sample_id"),
+                sample_label=label,
+                protocol_name=protocol_name,
+            )
 
         # The worker subprocess may finish its current acquisition call after
         # the UI sends an abort. Reflect that user-visible outcome in the

@@ -9,9 +9,11 @@ import toolkitpy as tkp
 try:
     from gamry_worker.device import select_pstat_name
     from gamry_worker.live_adapters import LiveCurveEmitter, normalize_ca_acq_rows
+    from gamry_worker.live_writer import update_live_status, utc_now
 except ModuleNotFoundError:
     from device import select_pstat_name
     from live_adapters import LiveCurveEmitter, normalize_ca_acq_rows
+    from live_writer import update_live_status, utc_now
 
 
 def initialize_pstat(pstat: Any) -> None:
@@ -111,6 +113,22 @@ def run_single_ca(
 
         time.sleep(0.010)
 
+        if live_dir:
+            try:
+                update_live_status(
+                    live_dir,
+                    acquisition_started_at=utc_now(),
+                    display_label=(
+                        "Live CA trace for Levich RPM sweep"
+                        if str(step.get("technique", "")).strip().lower()
+                        == "levich_rpm_sweep_ca"
+                        else None
+                    ),
+                )
+            except Exception:
+                # Live metadata is best-effort. The first streamed point gives
+                # the orchestrator a second way to establish the CA time base.
+                pass
         curve.run(True)
 
         while tkp.pstat_is_valid(pstat) and curve.running():

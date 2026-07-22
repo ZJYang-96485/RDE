@@ -176,6 +176,7 @@ def run(
         "ocp",
         "ca",
         "ca_staircase",
+        "levich_rpm_sweep_ca",
         "cv",
         "lsv",
         "eis",

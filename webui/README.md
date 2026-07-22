@@ -1,5 +1,10 @@
 # RDE EChem Automation Web UI
 
+## Future work: validate real RPM
+
+- Implement an independent RPM validation device so the software can record and compare the RDE's real measured RPM against the commanded RPM.
+- Until that device is implemented, RPM values and Levich outputs must continue to be identified as **commanded**, not measured.
+
 ## What it does
 
 This app controls an automated RDE electrochemistry workflow from a Flask web interface.
@@ -455,6 +460,7 @@ The real Gamry backend has been tested with ToolkitPy for:
 | OCP | Working |
 | CA | Working |
 | CA staircase / CA range | Working through expanded CA steps |
+| Levich CA RPM sweep | One continuous CA with commanded-RPM staircase and post-run analysis; connected-device validation pending |
 | LSV | Working |
 | CV | Working |
 | EIS | Working |
@@ -466,6 +472,14 @@ The web screen streams temporary live points for every listed technique. Real
 curves are mapped from the exact acquisition fields in the installed ToolkitPy
 `OcvCurve`, `ChronoCurve`, `RcvCurve`, `PwrCurve`, and `ZCurve` classes. Final
 Gamry `.DTA` files remain the authoritative stored data.
+
+`levich_rpm_sweep_ca` deliberately reuses the CA current-versus-time live
+display and does not perform a live Levich fit. It commands each configured RPM,
+keeps one CA/cell acquisition active across the full staircase, and runs the
+Levich/Koutecky-Levich analysis only after the DTA and commanded-RPM schedule
+are complete. The schedule, CSV/JSON results, and three PNG plots are registered
+as one result in Current Trial History & Analysis. These outputs always identify
+the RPM source as `commanded` and stabilization as `fixed delay`.
 
 For CP, `current_a` is signed under the anodic current convention. For
 `cc_charge` and `cc_discharge`, `current_a` is always a positive magnitude;
@@ -498,11 +512,11 @@ _system/
   samples/
 ```
 
-Mock or real Gamry `.DTA` files are saved directly inside the corresponding
-sample/group folder at the run root. Worker jobs, protocol snapshots, detailed
-metadata, and per-sample JSON are kept under `_system/` so user-facing folders
-contain only measurement data. Repeated runs use prefixes such as `R01_` and
-`R02_` to prevent overwriting.
+Mock or real Gamry `.DTA` files and registered post-run analysis artifacts are
+saved directly inside the corresponding sample/group folder at the run root.
+Worker jobs, protocol snapshots, detailed metadata, and per-sample JSON are kept
+under `_system/`. Repeated runs use prefixes such as `R01_` and `R02_` to prevent
+overwriting.
 
 Example sample output folder:
 

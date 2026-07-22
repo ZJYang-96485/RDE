@@ -19,7 +19,7 @@ try:
         normalize_lsv_acq_rows,
         normalize_ocp_acq_rows,
     )
-    from gamry_worker.live_writer import append_live_point
+    from gamry_worker.live_writer import append_live_point, update_live_status
 except ModuleNotFoundError:
     from live_adapters import (
         normalize_ca_acq_rows,
@@ -32,7 +32,7 @@ except ModuleNotFoundError:
         normalize_lsv_acq_rows,
         normalize_ocp_acq_rows,
     )
-    from live_writer import append_live_point
+    from live_writer import append_live_point, update_live_status
 
 
 class MockGamryError(ValueError):
@@ -161,14 +161,45 @@ def run_ca(
     sample_period_s = as_float(step.get("sample_period_s"), 1)
     times = sample_times(duration_s, sample_period_s)
 
+    if emitter and emitter.live_dir:
+        try:
+            update_live_status(
+                emitter.live_dir,
+                acquisition_started_at=now_iso(),
+                display_label=(
+                    "Live CA trace for Levich RPM sweep"
+                    if str(step.get("technique", "")).strip().lower()
+                    == "levich_rpm_sweep_ca"
+                    else None
+                ),
+            )
+        except Exception:
+            pass
+
     lines = header({**step, "applied_voltage_v": voltage}, "ca")
     lines.append("time_s\tapplied_voltage_v\tcurrent_a")
 
     base_current = -1e-5 * abs(voltage) - 2e-6
+    is_levich = str(step.get("technique", "")).strip().lower() == "levich_rpm_sweep_ca"
+    levich_rpms = [int(value) for value in step.get("rpm_values", [])] if is_levich else []
+    levich_collection_s = as_float(step.get("collection_s"), duration_s)
+    levich_stabilization_s = as_float(step.get("stabilization_s"), 0)
 
     for t in times:
         decay = math.exp(-t / max(duration_s / 4, 1))
-        current = base_current * (1 + 0.35 * decay) + 1e-7 * math.sin(t / 12)
+        if levich_rpms:
+            if t <= levich_collection_s:
+                rpm_index = 0
+            else:
+                window_s = max(levich_stabilization_s + levich_collection_s, sample_period_s)
+                rpm_index = min(
+                    len(levich_rpms) - 1,
+                    1 + int(max(0.0, t - levich_collection_s) / window_s),
+                )
+            current = base_current - 2.5e-7 * math.sqrt(levich_rpms[rpm_index])
+            current += 5e-8 * math.sin(t / 5)
+        else:
+            current = base_current * (1 + 0.35 * decay) + 1e-7 * math.sin(t / 12)
         lines.append(f"{t:.6f}\t{voltage:.9f}\t{current:.12e}")
         if emitter:
             emitter.emit(
@@ -211,6 +242,7 @@ def run_cp(
     if expected_max_current_a <= 0 or expected_max_current_a < abs(current_a):
         raise MockGamryError("CP expected_max_current_a must cover the applied current.")
     times = sample_times(duration_s, sample_period_s)
+
     lines = header(step, "cp")
     lines.append("Pt\tT\tVf\tIm\tQ_Ah")
     emitted = 0
@@ -608,6 +640,8 @@ def run_step(
         return run_cc(step, records[0]["path"], technique=technique, emitter=emitter)
     if technique == "ca_staircase":
         return run_ca_staircase(step, records, emitter=emitter)
+    if technique == "levich_rpm_sweep_ca":
+        return run_ca(step, records[0]["path"], emitter=emitter)
     if technique == "cv":
         return run_cv(step, records[0]["path"], emitter=emitter)
     if technique == "lsv":

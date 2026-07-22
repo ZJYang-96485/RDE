@@ -829,6 +829,80 @@
         text-align: center;
       }
 
+      .analysis-history-groups {
+        display: grid;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+
+      .analysis-history-card {
+        border: 1px solid #b9d2e2;
+        border-radius: 10px;
+        padding: 10px;
+        background: #f4f9fc;
+      }
+
+      .analysis-history-card h5 {
+        margin: 0 0 5px;
+        color: #163f5b;
+        font-size: 0.9rem;
+      }
+
+      .analysis-history-meta {
+        margin: 0 0 8px;
+        color: #536f80;
+        font-size: 0.7rem;
+      }
+
+      .analysis-artifact-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 8px;
+      }
+
+      .analysis-artifact {
+        min-width: 0;
+        border: 1px solid #d1e0e9;
+        border-radius: 8px;
+        padding: 7px;
+        background: #fff;
+      }
+
+      .analysis-artifact img {
+        display: block;
+        width: 100%;
+        aspect-ratio: 16 / 10;
+        object-fit: contain;
+        border: 1px solid #d8e4eb;
+        border-radius: 5px;
+        background: #fff;
+      }
+
+      .analysis-artifact-name {
+        display: block;
+        margin: 5px 0;
+        overflow-wrap: anywhere;
+        color: #214b67;
+        font-size: 0.72rem;
+        font-weight: 800;
+      }
+
+      .analysis-artifact-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+
+      .analysis-artifact-links a {
+        border-radius: 5px;
+        padding: 4px 7px;
+        background: #2f6f9c;
+        color: #fff;
+        font-size: 0.68rem;
+        font-weight: 800;
+        text-decoration: none;
+      }
+
       .same-trial-plot-meta {
         display: flex;
         flex-wrap: wrap;
@@ -1103,6 +1177,8 @@
             <span id="liveGamryProtocol">Protocol: —</span>
             <span id="liveGamryStep">EChem step: —</span>
             <span id="liveGamryTechnique">Technique: —</span>
+            <span id="liveLevichRpm" hidden>Commanded RPM: —</span>
+            <span id="liveLevichPhase" hidden>Phase: —</span>
             <span id="liveGamryCount">Points: 0</span>
             <span id="liveGamryElapsed">Elapsed: —</span>
             <span id="liveGamryUpdated">Last update: —</span>
@@ -1120,12 +1196,12 @@
 
         <section class="live-gamry-panel" aria-labelledby="sameTrialFiguresTitle">
           <div class="same-trial-header">
-            <h3 id="sameTrialFiguresTitle">Same Trial EChem Figures</h3>
+            <h3 id="sameTrialFiguresTitle">Current Trial History &amp; Analysis</h3>
             <span id="sameTrialViewMode" class="figure-view-mode">Viewing live measurement</span>
           </div>
-          <p class="hint">Showing DTA files from the current automation trial only. Historical run folders are never scanned.</p>
+          <p class="hint">Showing completed DTA files and registered analysis artifacts from the current automation trial only. Historical run folders are never scanned.</p>
           <div class="cmd-buttons">
-            <button id="sameTrialRefreshBtn" class="home-btn" type="button">Refresh Figures</button>
+            <button id="sameTrialRefreshBtn" class="home-btn" type="button">Refresh History</button>
             <button id="sameTrialBackLiveBtn" class="home-btn" type="button">Back to Live Plot</button>
           </div>
           <p id="sameTrialStatus" class="hint">Checking the current automation trial...</p>
@@ -1133,6 +1209,7 @@
           <div class="same-trial-layout">
             <div class="same-trial-file-pane">
               <p id="sameTrialRunLabel" class="same-trial-run-label">Trial: none</p>
+              <div id="sameTrialAnalysisGroups" class="analysis-history-groups" aria-label="Grouped analysis results"></div>
               <div id="sameTrialFileList" class="same-trial-file-list" role="list" aria-label="DTA files from this automation trial"></div>
             </div>
 
@@ -1181,6 +1258,7 @@
             <button id="addEchemOcpBtn" class="home-btn" type="button">Add OCP</button>
             <button id="addEchemEisBtn" class="home-btn" type="button">Add EIS</button>
             <button id="addEchemCaBtn" class="home-btn" type="button">Add CA</button>
+            <button id="addEchemLevichBtn" class="home-btn" type="button">Add Levich CA RPM Sweep</button>
             <button id="addEchemCaRangeBtn" class="home-btn" type="button">Add CA Range</button>
             <button id="addEchemLsvBtn" class="home-btn" type="button">Add LSV</button>
             <button id="addEchemCvBtn" class="home-btn" type="button">Add CV</button>
@@ -1370,11 +1448,14 @@
       const gamryCellOnUntilOffBtn = document.getElementById("gamryCellOnUntilOffBtn");
       const gamryCellOffBtn = document.getElementById("gamryCellOffBtn");
       const liveGamryMessageEl = document.getElementById("liveGamryMessage");
+      const liveGamryTitleEl = document.getElementById("liveGamryTitle");
       const liveGamryStatusEl = document.getElementById("liveGamryStatus");
       const liveGamrySampleEl = document.getElementById("liveGamrySample");
       const liveGamryProtocolEl = document.getElementById("liveGamryProtocol");
       const liveGamryStepEl = document.getElementById("liveGamryStep");
       const liveGamryTechniqueEl = document.getElementById("liveGamryTechnique");
+      const liveLevichRpmEl = document.getElementById("liveLevichRpm");
+      const liveLevichPhaseEl = document.getElementById("liveLevichPhase");
       const liveGamryCountEl = document.getElementById("liveGamryCount");
       const liveGamryElapsedEl = document.getElementById("liveGamryElapsed");
       const liveGamryUpdatedEl = document.getElementById("liveGamryUpdated");
@@ -1390,6 +1471,7 @@
       const sameTrialStatusEl = document.getElementById("sameTrialStatus");
       const sameTrialRunLabelEl = document.getElementById("sameTrialRunLabel");
       const sameTrialFileListEl = document.getElementById("sameTrialFileList");
+      const sameTrialAnalysisGroupsEl = document.getElementById("sameTrialAnalysisGroups");
       const sameTrialPlotTitleEl = document.getElementById("sameTrialPlotTitle");
       const sameTrialTechniqueEl = document.getElementById("sameTrialTechnique");
       const sameTrialPointCountEl = document.getElementById("sameTrialPointCount");
@@ -1408,6 +1490,7 @@
       const addEchemOcpBtn = document.getElementById("addEchemOcpBtn");
       const addEchemEisBtn = document.getElementById("addEchemEisBtn");
       const addEchemCaBtn = document.getElementById("addEchemCaBtn");
+      const addEchemLevichBtn = document.getElementById("addEchemLevichBtn");
       const addEchemCaRangeBtn = document.getElementById("addEchemCaRangeBtn");
       const addEchemLsvBtn = document.getElementById("addEchemLsvBtn");
       const addEchemCvBtn = document.getElementById("addEchemCvBtn");
@@ -1471,6 +1554,7 @@
       let liveStatus = {};
       let sameTrialRunId = "";
       let sameTrialFiles = [];
+      let sameTrialAnalysisGroups = [];
       let sameTrialSelectedPath = "";
       let sameTrialSavedData = null;
       let sameTrialRefreshBusy = false;
@@ -1490,7 +1574,7 @@
       function livePlotLabels(technique) {
         if (technique === "eis" || technique === "geis") return ["Zreal (ohm)", "-Zimag (ohm)"];
         if (technique === "ocp") return ["Time (s)", "Potential (V)"];
-        if (technique === "ca") return ["Time (s)", "Current (A)"];
+        if (technique === "ca" || technique === "levich_rpm_sweep_ca") return ["Time (s)", "Current (A)"];
         if (technique === "cp") return ["Time (s)", "Potential (V)"];
         if (technique === "cc_charge" || technique === "cc_discharge") return ["Time (s)", "Potential (V)"];
         return ["Potential (V)", "Current (A)"];
@@ -1498,7 +1582,7 @@
 
       function formatLiveNumber(value, technique, axis) {
         if (!Number.isFinite(value)) return "—";
-        const currentAxis = axis === "y" && ["ca", "cv", "lsv"].includes(technique);
+        const currentAxis = axis === "y" && ["ca", "cv", "lsv", "levich_rpm_sweep_ca"].includes(technique);
         const magnitude = Math.abs(value);
         if ((currentAxis && magnitude > 0) || (magnitude > 0 && magnitude < 0.001) || magnitude >= 10000) {
           return value.toExponential(2);
@@ -1689,19 +1773,99 @@
         sameTrialViewModeEl.classList.toggle("is-saved", viewingSaved);
       }
 
+      function historyArtifactUrl(relativePath, download = false) {
+        const query = new URLSearchParams({ path: relativePath });
+        if (download) query.set("download", "1");
+        return `/api/current-run/history-artifact?${query.toString()}`;
+      }
+
+      function appendArtifactLinks(container, artifact) {
+        const links = document.createElement("div");
+        links.className = "analysis-artifact-links";
+        const open = document.createElement("a");
+        open.href = historyArtifactUrl(artifact.relative_path);
+        open.target = "_blank";
+        open.rel = "noopener";
+        open.textContent = "Open";
+        const download = document.createElement("a");
+        download.href = historyArtifactUrl(artifact.relative_path, true);
+        download.textContent = "Download";
+        links.appendChild(open);
+        links.appendChild(download);
+        container.appendChild(links);
+      }
+
+      function renderSameTrialAnalysisGroups() {
+        sameTrialAnalysisGroupsEl.replaceChildren();
+        for (const group of sameTrialAnalysisGroups) {
+          const card = document.createElement("section");
+          card.className = "analysis-history-card";
+          const title = document.createElement("h5");
+          title.textContent = group.label || "Levich CA RPM Sweep";
+          const meta = document.createElement("p");
+          meta.className = "analysis-history-meta";
+          meta.textContent = `RPM source: ${group.rpm_source || "commanded"} · Stabilization mode: ${group.stabilization_mode || "fixed delay"}`;
+          card.appendChild(title);
+          card.appendChild(meta);
+
+          const grid = document.createElement("div");
+          grid.className = "analysis-artifact-grid";
+          const artifacts = [group.raw_dta, ...(Array.isArray(group.artifacts) ? group.artifacts : [])].filter(Boolean);
+          for (const artifact of artifacts) {
+            const item = document.createElement("div");
+            item.className = "analysis-artifact";
+            if (artifact.preview) {
+              const previewLink = document.createElement("a");
+              previewLink.href = historyArtifactUrl(artifact.relative_path);
+              previewLink.target = "_blank";
+              previewLink.rel = "noopener";
+              const image = document.createElement("img");
+              image.src = historyArtifactUrl(artifact.relative_path);
+              image.alt = `${artifact.label} preview`;
+              image.loading = "lazy";
+              previewLink.appendChild(image);
+              item.appendChild(previewLink);
+            }
+            const name = document.createElement("span");
+            name.className = "analysis-artifact-name";
+            name.textContent = `${artifact.label}: ${artifact.filename}`;
+            item.appendChild(name);
+            if (artifact.kind === "raw_dta") {
+              const plotButton = document.createElement("button");
+              plotButton.type = "button";
+              plotButton.className = "same-trial-file-button";
+              plotButton.dataset.relativePath = artifact.relative_path;
+              plotButton.textContent = "Plot raw CA trace";
+              item.appendChild(plotButton);
+            }
+            appendArtifactLinks(item, artifact);
+            grid.appendChild(item);
+          }
+          card.appendChild(grid);
+          sameTrialAnalysisGroupsEl.appendChild(card);
+        }
+      }
+
       function renderSameTrialFileList() {
         sameTrialFileListEl.replaceChildren();
-        if (!sameTrialFiles.length) {
+        renderSameTrialAnalysisGroups();
+        const groupedRawPaths = new Set(
+          sameTrialAnalysisGroups.map((group) => group.raw_dta?.relative_path).filter(Boolean)
+        );
+        const ungroupedFiles = sameTrialFiles.filter((file) => !groupedRawPaths.has(file.relative_path));
+        if (!ungroupedFiles.length) {
           const empty = document.createElement("p");
           empty.className = "same-trial-empty-list";
-          empty.textContent = sameTrialRunId
-            ? "No completed DTA files are available in this trial yet."
+          empty.textContent = sameTrialAnalysisGroups.length
+            ? "No additional DTA files outside the grouped analysis results."
+            : sameTrialRunId
+            ? "No completed DTA files or analysis results are available in this trial yet."
             : "No current automation trial is available.";
           sameTrialFileListEl.appendChild(empty);
           return;
         }
 
-        sameTrialFiles.forEach((file) => {
+        ungroupedFiles.forEach((file) => {
           const button = document.createElement("button");
           button.type = "button";
           button.className = `same-trial-file-button${file.relative_path === sameTrialSelectedPath ? " is-selected" : ""}`;
@@ -1724,6 +1888,7 @@
       function resetSameTrialViewer(message = "No current automation trial is available.") {
         sameTrialRunId = "";
         sameTrialFiles = [];
+        sameTrialAnalysisGroups = [];
         sameTrialSelectedPath = "";
         sameTrialSavedData = null;
         sameTrialRunLabelEl.textContent = "Trial: none";
@@ -1763,6 +1928,7 @@
 
           sameTrialRunId = nextRunId;
           sameTrialFiles = Array.isArray(data.files) ? data.files : [];
+          sameTrialAnalysisGroups = Array.isArray(data.analysis_groups) ? data.analysis_groups : [];
           sameTrialRunLabelEl.textContent = nextRunId
             ? `Trial: ${nextRunId} · ${data.run_dir || "current run folder"}`
             : "Trial: none";
@@ -1822,11 +1988,20 @@
       function updateLiveMeta(status) {
         liveStatus = status || {};
         const state = String(status.status || "idle");
+        const technique = String(status.technique || "").toLowerCase();
+        const isLevich = technique === "levich_rpm_sweep_ca";
+        liveGamryTitleEl.textContent = isLevich
+          ? "Live CA trace for Levich RPM sweep"
+          : "Live Gamry Plot";
+        liveLevichRpmEl.hidden = !isLevich;
+        liveLevichPhaseEl.hidden = !isLevich;
+        liveLevichRpmEl.textContent = `Commanded RPM: ${isLevich && status.commanded_rpm !== null && status.commanded_rpm !== undefined ? status.commanded_rpm : "—"}`;
+        liveLevichPhaseEl.textContent = `Phase: ${isLevich ? (status.phase || "starting") : "—"}`;
         liveGamryStatusEl.textContent = `Status: ${state}`;
         liveGamrySampleEl.textContent = `Sample: ${status.sample_label || status.sample_id || "—"}`;
         liveGamryProtocolEl.textContent = `Protocol: ${status.protocol_name || "—"}`;
         liveGamryStepEl.textContent = `EChem step: ${status.step_name || "—"}`;
-        liveGamryTechniqueEl.textContent = `Technique: ${status.technique || "—"}`;
+        liveGamryTechniqueEl.textContent = `Technique: ${isLevich ? "continuous CA / Levich RPM sweep" : (status.technique || "—")}`;
         liveGamryCountEl.textContent = `Points: ${status.point_count || livePoints.length || 0}`;
         const startedMs = status.started_at ? Date.parse(status.started_at) : NaN;
         const finishedMs = status.finished_at ? Date.parse(status.finished_at) : Date.now();
@@ -1841,6 +2016,8 @@
           liveGamryMessageEl.textContent = "Live plot ready.";
         } else if (!livePoints.length) {
           liveGamryMessageEl.textContent = state === "running" ? "Waiting for live points..." : "No live points were recorded.";
+        } else if (isLevich) {
+          liveGamryMessageEl.textContent = `Raw CA current-time trace only — commanded RPM ${status.commanded_rpm ?? "—"}; ${status.phase || "running"}. Final Levich/KL analysis runs after acquisition.`;
         } else {
           liveGamryMessageEl.textContent = livePaused ? "Display paused; acquisition continues." : "Live data stream connected.";
         }
@@ -2011,6 +2188,7 @@
           addEchemOcpBtn,
           addEchemEisBtn,
           addEchemCaBtn,
+          addEchemLevichBtn,
           addEchemCaRangeBtn,
           addEchemLsvBtn,
           addEchemCvBtn,
@@ -2560,7 +2738,20 @@
         let seconds = before + after;
         let unknown = false;
 
-        if (technique === "ca_range" || technique === "ca_sequence") {
+        if (technique === "levich_rpm_sweep_ca") {
+          const rpmValues = Array.isArray(step.rpm_values)
+            ? step.rpm_values
+            : String(step.rpm_values || "").split(/[,;\s]+/).filter(Boolean);
+          const pre = Math.max(0, previewFiniteNumber(step.pre_stabilization_s) ?? 0);
+          const stabilize = Math.max(0, previewFiniteNumber(step.stabilization_s) ?? 0);
+          const collect = previewFiniteNumber(step.collection_s);
+          if (rpmValues.length < 2 || collect === null) {
+            unknown = true;
+          } else {
+            seconds += pre + rpmValues.length * Math.max(0, collect)
+              + Math.max(0, rpmValues.length - 1) * stabilize;
+          }
+        } else if (technique === "ca_range" || technique === "ca_sequence") {
           const count = countCaRangePoints(step);
           const duration = previewFiniteNumber(step.duration_s ?? step.step_time_s);
           const between = Math.max(0, previewFiniteNumber(step.wait_s_between_steps) ?? 0);
@@ -3871,6 +4062,21 @@
             { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
           ]
         },
+        levich_rpm_sweep_ca: {
+          label: "Levich CA RPM Sweep",
+          defaultName: "levich_rpm_sweep_ca",
+          defaultOutput: "Levich_CA_sweep.DTA",
+          fields: [
+            { key: "voltage_v", label: "CA voltage (V)", type: "number", value: 0, step: "0.001" },
+            { key: "rpm_values", label: "Commanded RPM staircase (comma-separated)", type: "text", value: "400, 900, 1600, 2500" },
+            { key: "pre_stabilization_s", label: "First-RPM pre-stabilization (s)", type: "number", value: 10, min: 0, step: "0.1" },
+            { key: "stabilization_s", label: "Fixed delay after each RPM change (s)", type: "number", value: 10, min: 0, step: "0.1" },
+            { key: "collection_s", label: "Collection window per RPM (s)", type: "number", value: 20, positive: true, step: "0.1" },
+            { key: "sample_period_s", label: "CA sample period (s)", type: "number", value: 1, positive: true, step: "0.01" },
+            { key: "expected_max_v", label: "Expected max |V|", type: "number", value: 1, positive: true, step: "0.1" },
+            { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
+          ]
+        },
         cp: {
           label: "CP (Chronopotentiometry)",
           defaultName: "cp",
@@ -4041,6 +4247,7 @@
             <option value="ocp">OCP</option>
             <option value="eis">EIS</option>
             <option value="ca">CA</option>
+            <option value="levich_rpm_sweep_ca">Levich CA RPM Sweep</option>
             <option value="ca_range">CA Range</option>
             <option value="lsv">LSV</option>
             <option value="cv">CV</option>
@@ -4163,6 +4370,25 @@
         }
         if ((kind === "cc_charge" || kind === "cc_discharge") && payload.expected_max_current_a < payload.current_a) {
           throw new Error(`${name}: expected maximum current must cover the applied current.`);
+        }
+        if (kind === "levich_rpm_sweep_ca") {
+          const rpmValues = String(payload.rpm_values || "")
+            .split(/[,;\s]+/)
+            .filter(Boolean)
+            .map(Number);
+          if (rpmValues.length < 2) {
+            throw new Error(`${name}: enter at least two commanded RPM values.`);
+          }
+          if (rpmValues.some((rpm) => !Number.isInteger(rpm) || rpm < {{ rpm_min }} || rpm > {{ rpm_max }})) {
+            throw new Error(`${name}: every RPM must be a whole number between {{ rpm_min }} and {{ rpm_max }}.`);
+          }
+          if (new Set(rpmValues).size !== rpmValues.length) {
+            throw new Error(`${name}: commanded RPM values must not repeat.`);
+          }
+          if (payload.expected_max_v < Math.abs(payload.voltage_v)) {
+            throw new Error(`${name}: expected max |V| must cover the CA voltage.`);
+          }
+          payload.rpm_values = rpmValues;
         }
         const initialFreq = payload.initial_frequency_hz ?? payload.initial_freq_hz;
         const finalFreq = payload.final_frequency_hz ?? payload.final_freq_hz;
@@ -4635,6 +4861,12 @@
         loadSameTrialFigure(button.dataset.relativePath || "");
       });
 
+      sameTrialAnalysisGroupsEl.addEventListener("click", (event) => {
+        const button = event.target.closest(".same-trial-file-button");
+        if (!button) return;
+        loadSameTrialFigure(button.dataset.relativePath || "");
+      });
+
 
       newBlankEchemProtocolBtn.addEventListener("click", () => {
         newBlankEchemProtocol();
@@ -4678,6 +4910,7 @@
       addEchemOcpBtn.addEventListener("click", () => addEchemStep("ocp", { name: "ocp" }));
       addEchemEisBtn.addEventListener("click", () => addEchemStep("eis", { name: "eis" }));
       addEchemCaBtn.addEventListener("click", () => addEchemStep("ca", { name: "ca" }));
+      addEchemLevichBtn.addEventListener("click", () => addEchemStep("levich_rpm_sweep_ca", { name: "levich_rpm_sweep_ca" }));
       addEchemCaRangeBtn.addEventListener("click", () => addEchemStep("ca_range", { name: "ca_range" }));
       addEchemLsvBtn.addEventListener("click", () => addEchemStep("lsv", { name: "lsv" }));
       addEchemCvBtn.addEventListener("click", () => addEchemStep("cv", { name: "cv" }));

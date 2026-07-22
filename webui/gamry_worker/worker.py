@@ -36,6 +36,7 @@ REAL_RUNNER_MODULES = {
     "ocp": "run_ocp",
     "ca": "run_ca",
     "ca_staircase": "run_ca",
+    "levich_rpm_sweep_ca": "run_ca",
     "cv": "run_cv",
     "lsv": "run_lsv",
     "eis": "run_eis",

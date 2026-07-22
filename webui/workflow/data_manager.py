@@ -139,6 +139,7 @@ def load_manifest(run_dir: str | Path) -> dict[str, Any]:
             "samples": [],
             "protocols": [],
             "outputs": [],
+            "analysis_results": [],
             "errors": [],
         }
 
@@ -153,13 +154,14 @@ def write_storage_guide(run_dir: str | Path) -> None:
     guide = """RDE RUN DATA
 
 The folders directly beside this file are the sample/group folders.
-All user-facing .DTA files are stored directly inside those folders.
+User-facing .DTA files and registered post-run analysis artifacts are stored
+directly inside those folders.
 
 Internal worker jobs, protocol snapshots, and the detailed manifest are
 kept in _system/ and normally do not need to be opened.
 
 Useful files:
-- run_summary.json : final status and a list of every DTA file
+- run_summary.json : final status, DTA files, and analysis artifacts
 - run.log          : readable execution history
 """
     (Path(run_dir) / "README_DATA.txt").write_text(guide, encoding="utf-8")
@@ -182,6 +184,7 @@ def create_run_workspace(run_plan: dict[str, Any]) -> dict[str, Any]:
         "samples": [],
         "protocols": [],
         "outputs": [],
+        "analysis_results": [],
         "errors": [],
     }
 
@@ -225,7 +228,8 @@ def create_sample_workspace(
         repetitions=repetitions,
     )
 
-    # Sample folders live directly at run root. They contain only DTA files.
+    # Sample folders live directly at run root. They contain raw DTA files and
+    # any explicitly registered post-run analysis artifacts.
     sample_dir = run_dir / folder_name
     sample_dir.mkdir(parents=True, exist_ok=True)
 
@@ -390,6 +394,81 @@ def register_step_outputs(
     return record
 
 
+def relative_run_file(run_dir: str | Path, path: str | Path) -> str:
+    root = Path(run_dir).resolve()
+    resolved = Path(path).resolve()
+    try:
+        return resolved.relative_to(root).as_posix()
+    except ValueError as exc:
+        raise DataManagerError(f"Analysis artifact is outside the run folder: {path}") from exc
+
+
+def register_analysis_result(
+    run_dir: str | Path,
+    *,
+    raw_dta: str | Path,
+    analysis_artifacts: dict[str, str | Path],
+    label: str = "Levich CA RPM Sweep",
+    technique: str = "levich_rpm_sweep_ca",
+    rpm_source: str = "commanded",
+    stabilization_mode: str = "fixed delay",
+) -> dict[str, Any]:
+    run_dir = Path(run_dir)
+    raw_path = Path(raw_dta).resolve()
+    if not raw_path.is_file():
+        raise DataManagerError(f"Raw analysis DTA does not exist: {raw_dta}")
+    for key, value in analysis_artifacts.items():
+        artifact_path = Path(value).resolve()
+        if not artifact_path.is_file():
+            raise DataManagerError(f"Analysis artifact does not exist ({key}): {value}")
+        if artifact_path.parent != raw_path.parent:
+            raise DataManagerError(
+                f"Analysis artifact must be stored beside its raw DTA ({key}): {value}"
+            )
+    raw_relative = relative_run_file(run_dir, raw_dta)
+    artifact_relatives = {
+        str(key): relative_run_file(run_dir, value)
+        for key, value in analysis_artifacts.items()
+    }
+    result = {
+        "technique": technique,
+        "label": label,
+        "raw_dta": raw_relative,
+        "rpm_source": rpm_source,
+        "stabilization_mode": stabilization_mode,
+        "analysis_artifacts": artifact_relatives,
+        "registered_at": utc_timestamp(),
+    }
+
+    manifest = load_manifest(run_dir)
+    existing = [
+        item
+        for item in manifest.get("analysis_results", [])
+        if str(item.get("raw_dta", "")) != raw_relative
+    ]
+    existing.append(result)
+    manifest["analysis_results"] = existing
+
+    raw_resolved = raw_path
+    for output_record in manifest.get("outputs", []):
+        output_paths = [Path(value).resolve() for value in output_record.get("outputs", [])]
+        if raw_resolved in output_paths:
+            output_record.update(
+                {
+                    "label": label,
+                    "raw_dta": raw_relative,
+                    "rpm_source": rpm_source,
+                    "stabilization_mode": stabilization_mode,
+                    "analysis_artifacts": artifact_relatives,
+                }
+            )
+            break
+
+    save_manifest(run_dir, manifest)
+    append_log(run_dir, f"Registered analysis result: {label} ({raw_relative}).")
+    return result
+
+
 def prepare_protocol_outputs(
     run_dir: str | Path,
     sample_dir: str | Path,
@@ -488,6 +567,7 @@ def write_run_summary(run_dir: str | Path) -> None:
             if item.get("folder_name")
         ],
         "dta_files": relative_dta_files(run_dir),
+        "analysis_results": manifest.get("analysis_results", []),
         "errors": manifest.get("errors", []),
     }
 

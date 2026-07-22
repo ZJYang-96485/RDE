@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_file
 
 from hardware.motion_controller import (
     emergency_stop_motion,
@@ -56,6 +56,12 @@ from workflow.dta_viewer import (
     parse_dta_file,
     resolve_listed_dta_path,
 )
+from workflow.history_artifacts import (
+    HistoryArtifactError,
+    list_analysis_groups,
+    resolve_registered_artifact,
+)
+from workflow.levich_runner import read_levich_progress
 from workflow.run_plan_loader import (
     RunPlanError,
     default_run_plan_payload,
@@ -244,7 +250,30 @@ def idle_live_status() -> dict[str, Any]:
         "status": "idle",
         "error": None,
         "stream_error": None,
+        "phase": None,
+        "commanded_rpm": None,
+        "rpm_source": None,
+        "stabilization_mode": None,
     }
+
+
+def live_status_with_progress(live_dir: Path | None) -> dict[str, Any]:
+    current = read_live_status(live_dir) if live_dir is not None else None
+    payload = current or idle_live_status()
+    if live_dir is None:
+        return payload
+    progress = read_levich_progress(live_dir)
+    if (
+        isinstance(progress, dict)
+        and progress.get("technique") == "levich_rpm_sweep_ca"
+        and (not payload.get("run_id") or progress.get("run_id") == payload.get("run_id"))
+        and (
+            str(payload.get("technique") or "").lower() == "levich_rpm_sweep_ca"
+            or (bool(progress.get("active", False)) and not payload.get("run_id"))
+        )
+    ):
+        payload.update(progress)
+    return payload
 
 
 def echem_measurement_is_active() -> bool:
@@ -306,8 +335,7 @@ def api_gamry_cell_off():
 @app.get("/api/live/status")
 def live_status():
     live_dir = current_live_dir()
-    current = read_live_status(live_dir) if live_dir is not None else None
-    payload = current or idle_live_status()
+    payload = live_status_with_progress(live_dir)
     return jsonify({"ok": True, "active": bool(payload.get("active", False)), "status": payload})
 
 
@@ -338,8 +366,7 @@ def live_points():
     limit = min(limit, live_config["max_browser_points"])
 
     live_dir = current_live_dir()
-    current = read_live_status(live_dir) if live_dir is not None else None
-    status_payload = current or idle_live_status()
+    status_payload = live_status_with_progress(live_dir)
     points = read_live_points(live_dir, after=after, limit=limit) if live_dir is not None else []
     latest_seq = int(status_payload.get("point_count", 0) or 0)
     if points:
@@ -391,18 +418,39 @@ def current_run_dta_files():
         )
 
     files = list_dta_files(run_dir)
+    analysis_groups = list_analysis_groups(run_dir)
     return jsonify(
         {
             "ok": True,
             "run_id": run_dir.name,
             "run_dir": current_run_display_path(run_dir),
             "files": files,
+            "analysis_groups": analysis_groups,
             "message": (
-                f"{len(files)} DTA file(s) are available from this automation trial."
-                if files
-                else "No completed DTA files are available in this automation trial yet."
+                f"{len(files)} DTA file(s) and {len(analysis_groups)} grouped analysis result(s) "
+                "are available from this automation trial."
+                if files or analysis_groups
+                else "No completed DTA files or analysis results are available in this automation trial yet."
             ),
         }
+    )
+
+
+@app.get("/api/current-run/history-artifact")
+def current_run_history_artifact():
+    run_dir = current_automation_run_dir()
+    if run_dir is None:
+        return json_error("No current automation trial is available.", 404)
+    try:
+        path = resolve_registered_artifact(run_dir, request.args.get("path", ""))
+    except HistoryArtifactError as exc:
+        return json_error(str(exc), exc.status_code)
+    download = str(request.args.get("download", "")).strip().lower() in {"1", "true", "yes"}
+    return send_file(
+        path,
+        as_attachment=download,
+        download_name=path.name,
+        conditional=True,
     )
 
 

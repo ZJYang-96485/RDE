@@ -18,6 +18,7 @@ ALLOWED_TECHNIQUES = {
     "lsv",
     "ca",
     "ca_staircase",
+    "levich_rpm_sweep_ca",
     "eis",
     "cp",
     "cc_charge",
@@ -378,6 +379,124 @@ def validate_ca_staircase_step(raw_step: dict[str, Any], index: int) -> dict[str
     return step
 
 
+def parse_rpm_values(value: Any, field_name: str) -> list[int]:
+    if isinstance(value, str):
+        raw_values = [part for part in re.split(r"[,;\s]+", value.strip()) if part]
+    elif isinstance(value, (list, tuple)):
+        raw_values = list(value)
+    else:
+        raise ProtocolError(f"{field_name} must be a comma-separated list or an array.")
+
+    if len(raw_values) < 2:
+        raise ProtocolError(f"{field_name} must contain at least two RPM values.")
+    if len(raw_values) > 50:
+        raise ProtocolError(f"{field_name} cannot contain more than 50 RPM values.")
+
+    rde = load_config()["rde"]
+    rpm_min = int(rde["rpm_min"])
+    rpm_max = int(rde["rpm_max"])
+    values: list[int] = []
+
+    for raw_value in raw_values:
+        try:
+            numeric = float(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ProtocolError(f"{field_name} contains a non-numeric RPM value.") from exc
+        if not numeric.is_integer():
+            raise ProtocolError(f"{field_name} values must be whole-number RPM commands.")
+        rpm = int(numeric)
+        if rpm < rpm_min or rpm > rpm_max:
+            raise ProtocolError(
+                f"{field_name} values must be between {rpm_min} and {rpm_max} RPM."
+            )
+        values.append(rpm)
+
+    if len(set(values)) != len(values):
+        raise ProtocolError(f"{field_name} cannot contain duplicate RPM values.")
+    return values
+
+
+def validate_levich_rpm_sweep_ca_step(
+    raw_step: dict[str, Any],
+    index: int,
+) -> dict[str, Any]:
+    step = validate_common_step_fields(raw_step, index)
+    if not optional_string(raw_step.get("output")):
+        step["output"] = "Levich_CA_sweep.DTA"
+    normalize_dta_output(step)
+    output_path = Path(step["output"])
+    if not output_path.stem.lower().endswith("levich_ca_sweep"):
+        step["output"] = f"{output_path.stem}_Levich_CA_sweep.DTA"
+
+    rpm_values = parse_rpm_values(
+        raw_step.get("rpm_values", raw_step.get("rpms", [400, 900, 1600, 2500])),
+        f"{step['name']}: rpm_values",
+    )
+    pre_stabilization_s = parse_nonnegative_float(
+        first_present(
+            raw_step,
+            ["pre_stabilization_s", "rpm_pre_stabilization_s", "rpm_settle_s"],
+            10,
+        ),
+        f"{step['name']}: pre_stabilization_s",
+    )
+    stabilization_s = parse_nonnegative_float(
+        raw_step.get("stabilization_s", raw_step.get("fixed_stabilization_s", 10)),
+        f"{step['name']}: stabilization_s",
+    )
+    collection_s = parse_positive_float(
+        raw_step.get("collection_s", raw_step.get("collection_time_s", 20)),
+        f"{step['name']}: collection_s",
+    )
+    transition_overhead_s = parse_nonnegative_float(
+        raw_step.get("transition_overhead_s", 2),
+        f"{step['name']}: transition_overhead_s",
+    )
+    voltage_v = parse_float(
+        raw_step.get("voltage_v", 0),
+        f"{step['name']}: voltage_v",
+    )
+    expected_max_v = parse_positive_float(
+        raw_step.get("expected_max_v", max(1.0, abs(voltage_v))),
+        f"{step['name']}: expected_max_v",
+    )
+    if expected_max_v < abs(voltage_v):
+        raise ProtocolError(
+            f"{step['name']}: expected_max_v must be at least the absolute CA voltage."
+        )
+
+    step.update(
+        {
+            "rpm_values": rpm_values,
+            "voltage_v": voltage_v,
+            "pre_stabilization_s": pre_stabilization_s,
+            "stabilization_s": stabilization_s,
+            "collection_s": collection_s,
+            "sample_period_s": parse_positive_float(
+                raw_step.get("sample_period_s", 1),
+                f"{step['name']}: sample_period_s",
+            ),
+            "expected_max_v": expected_max_v,
+            "area_cm2": parse_positive_float(
+                raw_step.get("area_cm2", 1),
+                f"{step['name']}: area_cm2",
+            ),
+            "transition_overhead_s": transition_overhead_s,
+            "rpm_source": "commanded",
+            "stabilization_mode": "fixed delay",
+        }
+    )
+    # Keep one CA acquisition alive for the entire staircase. The small
+    # transition allowance prevents serial ACK time from shortening the final
+    # collection window; analysis ignores this trailing margin.
+    step["duration_s"] = (
+        collection_s
+        + (len(rpm_values) - 1) * (stabilization_s + collection_s)
+        + len(rpm_values) * transition_overhead_s
+    )
+    return step
+
+
 def validate_eis_step(raw_step: dict[str, Any], index: int) -> dict[str, Any]:
     step = validate_common_step_fields(raw_step, index)
 
@@ -582,6 +701,7 @@ def validate_protocol_step(raw_step: dict[str, Any], index: int) -> dict[str, An
         "lsv": validate_lsv_step,
         "ca": validate_ca_step,
         "ca_staircase": validate_ca_staircase_step,
+        "levich_rpm_sweep_ca": validate_levich_rpm_sweep_ca_step,
         "eis": validate_eis_step,
         "cp": validate_cp_step,
         "cc_charge": validate_cc_step,

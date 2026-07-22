@@ -349,7 +349,12 @@ def _decimate(points: list[dict[str, float]], limit: int) -> list[dict[str, floa
     return [points[round(index * last / (limit - 1))] for index in range(limit)]
 
 
-def parse_dta_file(path: str | Path, max_points: int = MAX_PLOT_POINTS) -> dict[str, Any]:
+def parse_dta_file(
+    path: str | Path,
+    max_points: int = MAX_PLOT_POINTS,
+    *,
+    allow_analysis_point_limit: bool = False,
+) -> dict[str, Any]:
     dta_path = Path(path)
     if not dta_path.is_file():
         raise DtaViewerError("DTA file does not exist.", 404)
@@ -381,7 +386,12 @@ def parse_dta_file(path: str | Path, max_points: int = MAX_PLOT_POINTS) -> dict[
         raise DtaViewerError("No numeric plot points were found in the DTA table.", 422)
 
     original_point_count = len(points)
-    point_limit = max(1, min(int(max_points), MAX_PLOT_POINTS))
+    requested_limit = max(1, int(max_points))
+    point_limit = (
+        requested_limit
+        if allow_analysis_point_limit
+        else min(requested_limit, MAX_PLOT_POINTS)
+    )
     points = _decimate(points, point_limit)
     return {
         "technique_guess": technique,

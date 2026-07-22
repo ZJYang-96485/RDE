@@ -182,6 +182,10 @@ def run_single_cv(
             "estimated_time_s": estimated_time,
             "points": int(curve.count()),
             "ir_compensation_enabled": bool(trial_settings["ir_compensation_enabled"]),
+            "ir_compensation_reason": trial_settings.get("ir_compensation_reason"),
+            "ir_compensation_resistance_readback_ohm": trial_settings.get(
+                "ir_compensation_resistance_readback_ohm"
+            ),
             "ru_selected_ohm": step.get("_trial_ru_selected_ohm"),
             "ru_applied_ohm": step.get("_trial_ru_applied_ohm"),
         }

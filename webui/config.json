@@ -110,6 +110,7 @@
       "ru_settle_s": 0.5,
       "ru_speed": 1,
       "ru_readz_passes": 30,
+      "ru_vch_range_headroom_factor": 5.0,
       "continue_without_ir_on_ru_failure": true,
       "fixed_current_range_a": 0.003,
       "electrode_channel": "primary",

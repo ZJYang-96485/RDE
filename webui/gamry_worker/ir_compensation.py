@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 
@@ -44,17 +45,47 @@ def apply_trial_settings(pstat: Any, step: dict[str, Any]) -> dict[str, Any]:
     technique = str(step.get("technique", "")).strip().lower()
     validated = bool(step.get("_trial_ru_validation_passed", False))
     applied = step.get("_trial_ru_applied_ohm")
+    requested = bool(validated and technique_supports_positive_feedback(technique))
     enabled = False
-    if validated and technique_supports_positive_feedback(technique):
+    reason = None
+    resistance_readback = None
+    if requested:
         resistance = float(applied)
         if resistance <= 0:
             raise ValueError("applied compensation resistance must be positive")
-        pstat.set_pos_feed_resistance(resistance)
+        # Gamry requires positive-feedback mode to be enabled before writing
+        # its resistance.  Some instruments accept the calls but return False
+        # because the hardware does not support positive feedback, so verify
+        # both settings instead of reporting success from call completion.
         pstat.set_pos_feed_enable(True)
-        enabled = True
+        pstat.set_pos_feed_resistance(resistance)
+
+        enabled_reader = getattr(pstat, "pos_feed_enable", None)
+        resistance_reader = getattr(pstat, "pos_feed_resistance", None)
+        if callable(enabled_reader) and callable(resistance_reader):
+            enabled_readback = bool(enabled_reader())
+            resistance_readback = float(resistance_reader())
+            enabled = bool(
+                enabled_readback
+                and math.isclose(resistance_readback, resistance, rel_tol=0.02, abs_tol=1e-6)
+            )
+        else:
+            # Deterministic fakes and older Toolkit bindings may not expose
+            # getters.  In that case successful setters are the best evidence.
+            enabled = True
+
+        if not enabled:
+            reason = (
+                "Positive-feedback iR compensation is not supported or was rejected by "
+                "this potentiostat; measurement continued uncompensated"
+            )
+            disable_ir_compensation(pstat)
 
     return {
         "fixed_current_range_a": fixed_current,
         "fixed_current_range_setting": current_range,
+        "ir_compensation_requested": requested,
         "ir_compensation_enabled": enabled,
+        "ir_compensation_reason": reason,
+        "ir_compensation_resistance_readback_ohm": resistance_readback,
     }

@@ -308,7 +308,7 @@ def run_job(job: dict[str, Any]) -> dict[str, Any]:
                 and technique_supports_positive_feedback(effective_step.get("technique"))
             )
             emit(
-                "ir_compensation_configured" if supports_ir else "ir_compensation_skipped",
+                "ir_compensation_requested" if supports_ir else "ir_compensation_skipped",
                 compensation_fraction=metadata["compensation_fraction"],
                 ru_selected_ohm=metadata["ru_selected_ohm"],
                 ru_applied_ohm=metadata["ru_applied_ohm"],
@@ -332,6 +332,23 @@ def run_job(job: dict[str, Any]) -> dict[str, Any]:
             metadata["ir_compensation_enabled"] = bool(
                 supports_ir and result.get("ir_compensation_enabled", True)
             )
+            metadata["ir_compensation_reason"] = result.get("ir_compensation_reason")
+            metadata["ir_compensation_resistance_readback_ohm"] = result.get(
+                "ir_compensation_resistance_readback_ohm"
+            )
+            if supports_ir:
+                emit(
+                    (
+                        "ir_compensation_enabled"
+                        if metadata["ir_compensation_enabled"]
+                        else "ir_compensation_skipped"
+                    ),
+                    ru_applied_ohm=metadata["ru_applied_ohm"],
+                    resistance_readback_ohm=metadata[
+                        "ir_compensation_resistance_readback_ohm"
+                    ],
+                    reason=metadata["ir_compensation_reason"],
+                )
             metadata["trial_status"] = "completed"
             metadata["completed_at"] = trial_utc_now()
             emit("measurement_completed", outputs=outputs)

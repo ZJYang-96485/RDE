@@ -124,6 +124,7 @@ _DEFAULT_CONFIG = {
             "ru_settle_s": 0.50,
             "ru_speed": 1,
             "ru_readz_passes": 30,
+            "ru_vch_range_headroom_factor": 5.0,
             "continue_without_ir_on_ru_failure": True,
             "fixed_current_range_a": 0.003,
             "electrode_channel": "primary",
@@ -399,6 +400,11 @@ def validate_gamry_config(config: dict[str, Any]) -> None:
         raise ConfigError("gamry.ru_preparation.ocp_stability_window must be at least 2.")
     if int(ru.get("ru_readz_passes", 0)) < 10:
         raise ConfigError("gamry.ru_preparation.ru_readz_passes must be at least 10.")
+    headroom = float(ru.get("ru_vch_range_headroom_factor", 0))
+    if headroom < 1 or headroom > 10:
+        raise ConfigError(
+            "gamry.ru_preparation.ru_vch_range_headroom_factor must be between 1 and 10."
+        )
 
 
 def validate_config(config: dict[str, Any]) -> None:

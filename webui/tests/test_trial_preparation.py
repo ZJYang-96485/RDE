@@ -1,9 +1,18 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from gamry_worker.ir_compensation import apply_trial_settings, disable_ir_compensation
 from gamry_worker.trial_preparation import CriticalHardwareError, determine_ru
+
+try:
+    import toolkitpy as tkp
+    from gamry_worker.real_trial_preparation import _initialize_for_ru, _measure_ru_once
+except (ImportError, OSError):
+    tkp = None
+    _initialize_for_ru = None
+    _measure_ru_once = None
 
 
 SETTINGS = {
@@ -21,12 +30,21 @@ class FakePstat:
         self.resistance = None
         self.range_mode = None
         self.range_value = None
+        self.compensation_calls = []
 
     def set_pos_feed_enable(self, value):
         self.enabled = bool(value)
+        self.compensation_calls.append(("enable", bool(value)))
 
     def set_pos_feed_resistance(self, value):
         self.resistance = float(value)
+        self.compensation_calls.append(("resistance", float(value)))
+
+    def pos_feed_enable(self):
+        return self.enabled
+
+    def pos_feed_resistance(self):
+        return self.resistance
 
     def test_ie_range(self, value):
         return f"range:{value}"
@@ -38,7 +56,108 @@ class FakePstat:
         self.range_mode = value
 
 
+class UnsupportedPositiveFeedbackPstat(FakePstat):
+    def set_pos_feed_enable(self, value):
+        self.enabled = False
+        self.compensation_calls.append(("enable", bool(value)))
+
+    def set_pos_feed_resistance(self, value):
+        self.resistance = 0.0
+        self.compensation_calls.append(("resistance", float(value)))
+
+
+class RecordingPstat:
+    def __init__(self) -> None:
+        self.calls = []
+        self.cell_state = None
+
+    def __getattr__(self, name):
+        if name.startswith("set_"):
+            def record(*args):
+                self.calls.append((name, args))
+                if name == "set_cell":
+                    self.cell_state = args[0]
+                return args[0] if args else None
+
+            return record
+        raise AttributeError(name)
+
+    def cell(self):
+        return self.cell_state
+
+    def freq_limit_lower(self):
+        return 0.01
+
+    def freq_limit_upper(self):
+        return 1_000_000.0
+
+    def measure_i(self):
+        return 0.0
+
+    def measure_temp(self):
+        return 25.0
+
+    def test_ie_range(self, _value):
+        return 3
+
+    def test_vch_range(self, required_v):
+        self.calls.append(("test_vch_range", (required_v,)))
+        return 0 if required_v < 0.03 else 1
+
+
+class FakeReadZ:
+    def __init__(self, pstat) -> None:
+        self.pstat = pstat
+        self.passes = 10
+        self.zmod = 42.0
+        self.gain = 1.0
+
+    def __getattr__(self, name):
+        if name.startswith("set_"):
+            return lambda *_args: None
+        raise AttributeError(name)
+
+    def measure(self, *_args):
+        assert ("set_sig_gen_filter", (10,)) in self.pstat.calls
+        assert self.pstat.test_vch_range(0.0071) == 1
+        return True
+
+
+class FakeZCurve:
+    def __init__(self, _count) -> None:
+        pass
+
+    def add_point(self, _readz, _temperature):
+        pass
+
+    def acq_data(self):
+        return [["fake point"]]
+
+
 class TrialPreparationTests(unittest.TestCase):
+    @unittest.skipUnless(tkp is not None, "requires the 32-bit Gamry ToolkitPy runtime")
+    def test_ru_initialization_matches_vendor_control_settings(self) -> None:
+        pstat = RecordingPstat()
+        _initialize_for_ru(pstat)
+        self.assertIn(("set_ca_speed", (tkp.CASPEED_MEDFAST,)), pstat.calls)
+        self.assertIn(("set_sense_speed_mode", (True,)), pstat.calls)
+
+    @unittest.skipUnless(tkp is not None, "requires the 32-bit Gamry ToolkitPy runtime")
+    def test_ru_measurement_applies_vendor_signal_generator_filter_fix(self) -> None:
+        pstat = RecordingPstat()
+        with patch("gamry_worker.real_trial_preparation.tkp.pstat_is_valid", return_value=True):
+            with patch("gamry_worker.real_trial_preparation.tkp.ReadZ", FakeReadZ):
+                with patch("gamry_worker.real_trial_preparation.tkp.ZCurve", FakeZCurve):
+                    with patch(
+                        "gamry_worker.real_trial_preparation.normalize_eis_point",
+                        return_value={"zreal_ohm": 18.5},
+                    ):
+                        with patch("gamry_worker.real_trial_preparation.time.sleep"):
+                            result = _measure_ru_once(pstat, {}, 0.01)
+        self.assertEqual(result, 18.5)
+        self.assertIn(("set_sig_gen_filter", (10,)), pstat.calls)
+        self.assertEqual(pstat.test_vch_range(0.0071), 0)
+
     def test_ru_failure_can_continue_without_ir_compensation(self) -> None:
         events = []
         result = determine_ru(
@@ -129,6 +248,10 @@ class TrialPreparationTests(unittest.TestCase):
                     },
                 )
                 self.assertTrue(pstat.enabled)
+                self.assertEqual(
+                    pstat.compensation_calls[-2:],
+                    [("enable", True), ("resistance", 15.0)],
+                )
                 try:
                     if outcome == "exception":
                         raise RuntimeError("measurement failed")
@@ -137,6 +260,22 @@ class TrialPreparationTests(unittest.TestCase):
                 finally:
                     disable_ir_compensation(pstat)
                 self.assertFalse(pstat.enabled)
+
+    def test_unsupported_positive_feedback_is_reported_and_measurement_can_continue(self) -> None:
+        pstat = UnsupportedPositiveFeedbackPstat()
+        result = apply_trial_settings(
+            pstat,
+            {
+                "technique": "cv",
+                "_trial_ru_validation_passed": True,
+                "_trial_ru_applied_ohm": 15.0,
+                "_trial_fixed_current_range_a": 0.003,
+            },
+        )
+        self.assertTrue(result["ir_compensation_requested"])
+        self.assertFalse(result["ir_compensation_enabled"])
+        self.assertIn("not supported", result["ir_compensation_reason"])
+        self.assertFalse(pstat.enabled)
 
 
 if __name__ == "__main__":

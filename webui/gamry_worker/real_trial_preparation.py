@@ -51,7 +51,11 @@ def _initialize_for_ru(pstat: Any) -> None:
         pass
     pstat.set_ach_select(tkp.ACHSELECT_GND)
     pstat.set_ie_stability(tkp.STABILITY_FAST)
-    pstat.set_ca_speed(tkp.CASPEED_NORM)
+    # Match Gamry's installed GetRu.exp initialization.  ReadZ can oscillate
+    # between voltage/current overload ranges when it starts at CASPEED_NORM;
+    # the vendor Ru routine starts at MEDFAST and may adjust from there.
+    pstat.set_ca_speed(tkp.CASPEED_MEDFAST)
+    pstat.set_sense_speed_mode(True)
     pstat.set_ground(tkp.FLOAT)
     pstat.set_i_convention(tkp.ICONVENTION.ANODIC)
     pstat.set_ich_range(3.0)
@@ -148,6 +152,12 @@ def _measure_ru_once(pstat: Any, settings: dict[str, Any], ocp_v: float) -> floa
     ie_range = pstat.test_ie_range(abs(dc_current) + 1.414 * (ac_voltage_v / estimated_z))
     pstat.set_ie_range(ie_range)
     pstat.set_ie_range_mode(False)
+    # Gamry added this to the current Framework classReadZ implementation as
+    # fix #9239.  The ToolkitPy ReadZ bundled on this machine predates that
+    # change, so apply it here before ReadZ performs its internal ranging.
+    # The Python 7.11 binding exposes this selector as an integer even though
+    # the Framework Explain script writes the equivalent numeric value 10.0.
+    pstat.set_sig_gen_filter(10)
 
     readz = tkp.ReadZ(pstat)
     curve = tkp.ZCurve(1)
@@ -162,7 +172,23 @@ def _measure_ru_once(pstat: Any, settings: dict[str, Any], ocp_v: float) -> floa
         readz.set_speed(int(settings.get("ru_speed", 1)))
         readz.set_drift_cor(False)
         readz.set_idc(dc_current)
-        status = readz.measure(frequency_hz, ac_voltage_v, float(ocp_v))
+        # ToolkitPy 7.11 selects the smallest Vch range with no transient
+        # headroom.  On an IFC1010, a ~7 mV OCP plus a 5 mV-rms perturbation
+        # therefore lands on the 30 mV range and FraCurve repeatedly reports
+        # OverVac even though its final Vmod is valid.  Apply extra headroom
+        # only while ReadZ chooses its range, then restore ToolkitPy exactly.
+        headroom = max(1.0, float(settings.get("ru_vch_range_headroom_factor", 5.0)))
+        pstat_type = type(pstat)
+        original_test_vch_range = pstat_type.test_vch_range
+
+        def test_vch_range_with_headroom(instance: Any, required_v: float) -> Any:
+            return original_test_vch_range(instance, abs(float(required_v)) * headroom)
+
+        pstat_type.test_vch_range = test_vch_range_with_headroom
+        try:
+            status = readz.measure(frequency_hz, ac_voltage_v, float(ocp_v))
+        finally:
+            pstat_type.test_vch_range = original_test_vch_range
         _ensure_valid(pstat, "measuring Ru")
         if status is False:
             raise RuntimeError(

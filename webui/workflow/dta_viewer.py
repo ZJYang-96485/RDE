@@ -41,6 +41,16 @@ def list_dta_files(run_dir: str | Path) -> list[dict[str, Any]]:
         stat = resolved.stat()
         relative_path = relative.as_posix()
         sample = relative.parts[0] if len(relative.parts) > 1 else "Run root"
+        csv_path = resolved.with_suffix(".csv")
+        csv_relative_path = None
+        csv_size_bytes = None
+        if csv_path.is_file():
+            try:
+                csv_relative_path = csv_path.resolve().relative_to(root).as_posix()
+                csv_size_bytes = int(csv_path.stat().st_size)
+            except ValueError:
+                csv_relative_path = None
+                csv_size_bytes = None
         records.append(
             {
                 "label": " / ".join(relative.parts),
@@ -48,6 +58,9 @@ def list_dta_files(run_dir: str | Path) -> list[dict[str, Any]]:
                 "filename": relative.name,
                 "relative_path": relative_path,
                 "size_bytes": int(stat.st_size),
+                "csv_filename": csv_path.name if csv_relative_path else None,
+                "csv_relative_path": csv_relative_path,
+                "csv_size_bytes": csv_size_bytes,
                 "modified_time": datetime.fromtimestamp(
                     stat.st_mtime, tz=timezone.utc
                 ).isoformat(),

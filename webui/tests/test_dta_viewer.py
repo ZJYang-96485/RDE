@@ -6,6 +6,7 @@ from pathlib import Path
 
 from app import app
 from workflow import state
+from workflow.data_manager import export_run_dta_to_csv, save_manifest
 from workflow.dta_viewer import DtaViewerError, TECHNIQUE_PLOT_SPECS, parse_dta_file
 
 
@@ -127,6 +128,34 @@ class DtaViewerTest(unittest.TestCase):
                     self.assertEqual(parsed["y_label"], y_label)
                     self.assertEqual(parsed["points"][-1], expected_point)
 
+    def test_history_lists_and_serves_automatic_csv_export(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "run"
+            dta = self.write_dta(
+                root,
+                "01_Sample/OCP.DTA",
+                "TECHNIQUE\tocp\ntime_s\tpotential_v\n0\t0.12\n1\t0.13\n",
+            )
+            save_manifest(
+                root,
+                {
+                    "outputs": [{"outputs": [str(dta)]}],
+                    "trials": [],
+                    "analysis_results": [],
+                },
+            )
+            export_run_dta_to_csv(root)
+            self.set_current_run(root)
+
+            payload = self.client.get("/api/current-run/dta-files").get_json()
+            self.assertEqual(payload["files"][0]["csv_relative_path"], "01_Sample/OCP.csv")
+            response = self.client.get(
+                "/api/current-run/history-artifact?path=01_Sample/OCP.csv&download=1"
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b"time_s,potential_v", response.data)
+            response.close()
+
     def test_technique_plot_specs_define_final_x_and_y_axes(self) -> None:
         expected = {
             "ocp": ("time", "potential"),
@@ -237,7 +266,7 @@ class DtaViewerUiTest(unittest.TestCase):
         self.assertIn('id="sameTrialBackLiveBtn"', self.page)
         self.assertIn('id="sameTrialFileList"', self.page)
         self.assertIn('id="sameTrialCanvas"', self.page)
-        self.assertIn("Showing DTA files from the current automation trial only", self.page)
+        self.assertIn("Showing DTA files and their automatic CSV exports", self.page)
 
     def test_saved_figure_view_does_not_pause_live_collection(self) -> None:
         self.assertIn("Viewing saved DTA file", self.source)

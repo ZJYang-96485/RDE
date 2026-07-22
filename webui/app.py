@@ -419,6 +419,7 @@ def current_run_dta_files():
 
     files = list_dta_files(run_dir)
     analysis_groups = list_analysis_groups(run_dir)
+    csv_count = sum(1 for item in files if item.get("csv_relative_path"))
     return jsonify(
         {
             "ok": True,
@@ -427,7 +428,8 @@ def current_run_dta_files():
             "files": files,
             "analysis_groups": analysis_groups,
             "message": (
-                f"{len(files)} DTA file(s) and {len(analysis_groups)} grouped analysis result(s) "
+                f"{len(files)} DTA file(s), {csv_count} matching CSV export(s), and "
+                f"{len(analysis_groups)} grouped analysis result(s) "
                 "are available from this automation trial."
                 if files or analysis_groups
                 else "No completed DTA files or analysis results are available in this automation trial yet."

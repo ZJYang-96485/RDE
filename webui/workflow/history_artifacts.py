@@ -14,6 +14,7 @@ class HistoryArtifactError(RuntimeError):
 
 
 ARTIFACT_LABELS = {
+    "raw_csv": "Raw data CSV",
     "rpm_schedule_json": "RPM schedule JSON",
     "summary_csv": "Summary CSV",
     "analysis_json": "Analysis JSON",
@@ -38,10 +39,20 @@ def normalized_relative_path(value: Any) -> str:
 def registered_paths(run_dir: str | Path) -> set[str]:
     manifest = load_manifest(run_dir)
     paths: set[str] = set()
+    for export in manifest.get("dta_csv_exports", []):
+        if not isinstance(export, dict):
+            continue
+        for key in ("source_dta", "csv_file"):
+            value = export.get(key)
+            if value:
+                paths.add(normalized_relative_path(value))
     for result in manifest.get("analysis_results", []):
         raw = result.get("raw_dta")
         if raw:
             paths.add(normalized_relative_path(raw))
+        raw_csv = result.get("raw_csv")
+        if raw_csv:
+            paths.add(normalized_relative_path(raw_csv))
         artifacts = result.get("analysis_artifacts", {})
         if isinstance(artifacts, dict):
             for value in artifacts.values():
@@ -91,6 +102,16 @@ def list_analysis_groups(run_dir: str | Path) -> list[dict[str, Any]]:
                 label="Raw continuous CA DTA",
             )
             artifacts = []
+            raw_csv = result.get("raw_csv")
+            if raw_csv:
+                artifacts.append(
+                    file_payload(
+                        root,
+                        str(raw_csv),
+                        kind="raw_csv",
+                        label=ARTIFACT_LABELS["raw_csv"],
+                    )
+                )
             artifact_map = result.get("analysis_artifacts", {})
             if not isinstance(artifact_map, dict):
                 raise HistoryArtifactError("Analysis artifact record is incomplete.")

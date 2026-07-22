@@ -35,7 +35,10 @@ class DataStorageTest(unittest.TestCase):
                 {"technique": "ocp", "name": "OCP before"},
                 step_index=1,
             )
-            Path(outputs[0]).write_text("TEST DTA\n", encoding="utf-8")
+            Path(outputs[0]).write_text(
+                "TECHNIQUE\tocp\ntime_s\tpotential_v\n0\t0.12\n1\t0.13\n",
+                encoding="utf-8",
+            )
             mark_run_complete(run_dir)
 
             self.assertEqual(sample_dir.parent, run_dir)
@@ -44,12 +47,15 @@ class DataStorageTest(unittest.TestCase):
             self.assertTrue((run_dir / "run.log").is_file())
             self.assertTrue((run_dir / "_system" / "manifest.json").is_file())
             self.assertFalse((sample_dir / "sample.json").exists())
+            self.assertTrue(Path(outputs[0]).with_suffix(".csv").is_file())
 
             summary = json.loads(
                 (run_dir / "run_summary.json").read_text(encoding="utf-8")
             )
             self.assertEqual(summary["status"], "complete")
             self.assertEqual(len(summary["dta_files"]), 1)
+            self.assertEqual(len(summary["csv_files"]), 1)
+            self.assertEqual(len(summary["dta_csv_exports"]), 1)
 
     def test_worker_jobs_are_stored_under_system_folder(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

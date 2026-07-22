@@ -38,6 +38,22 @@ The web UI is organized around three main functions:
 
 The app supports both mock testing and real Gamry/ToolkitPy execution.
 
+## Automatic DTA-to-CSV export
+
+When a run completes, fails, or is aborted, every DTA file already present in
+that run is converted to a same-named CSV file beside the original. The CSV
+contains the complete primary Gamry data table, combines column names and units
+into one header row, and uses Excel-friendly UTF-8 encoding. Conversion results
+and any per-file errors are recorded in the run manifest and `run_summary.json`.
+History provides Open and Download links for registered CSV exports.
+
+To backfill an existing run or the complete output archive without starting
+the web server or accessing hardware:
+
+```powershell
+python .\convert_output_dta_to_csv.py [optional-run-or-runs-directory]
+```
+
 ## Current hardware mapping
 
 The COM ports are configured in `webui/config.json`, not hardcoded in `app.py`.

@@ -793,6 +793,15 @@
         overflow-y: auto;
       }
 
+      .same-trial-file-entry {
+        display: grid;
+        gap: 5px;
+      }
+
+      .same-trial-file-entry .analysis-artifact-name {
+        margin: 0;
+      }
+
       .same-trial-file-button {
         width: 100%;
         margin: 0;
@@ -1216,7 +1225,7 @@
             <h3 id="sameTrialFiguresTitle">Same Trial EChem Figures &amp; Analysis</h3>
             <span id="sameTrialViewMode" class="figure-view-mode">Viewing live measurement</span>
           </div>
-          <p class="hint">Showing DTA files from the current automation trial only, together with its registered analysis artifacts. Historical run folders are never scanned.</p>
+          <p class="hint">Showing DTA files and their automatic CSV exports from the current automation trial, together with registered analysis artifacts. Historical run folders are never scanned.</p>
           <div class="cmd-buttons">
             <button id="sameTrialRefreshBtn" class="home-btn" type="button">Refresh History</button>
             <button id="sameTrialBackLiveBtn" class="home-btn" type="button">Back to Live Plot</button>
@@ -1890,11 +1899,13 @@
         }
 
         ungroupedFiles.forEach((file) => {
+          const entry = document.createElement("div");
+          entry.className = "same-trial-file-entry";
+          entry.setAttribute("role", "listitem");
           const button = document.createElement("button");
           button.type = "button";
           button.className = `same-trial-file-button${file.relative_path === sameTrialSelectedPath ? " is-selected" : ""}`;
           button.dataset.relativePath = file.relative_path;
-          button.setAttribute("role", "listitem");
 
           const name = document.createElement("span");
           name.className = "same-trial-file-name";
@@ -1905,7 +1916,17 @@
           meta.textContent = `${formatDtaFileSize(file.size_bytes)} · ${modified}`;
           button.appendChild(name);
           button.appendChild(meta);
-          sameTrialFileListEl.appendChild(button);
+          entry.appendChild(button);
+          if (file.csv_relative_path) {
+            const csvName = document.createElement("span");
+            csvName.className = "analysis-artifact-name";
+            csvName.textContent = `CSV: ${file.csv_filename}`;
+            entry.appendChild(csvName);
+            appendArtifactLinks(entry, {
+              relative_path: file.csv_relative_path,
+            });
+          }
+          sameTrialFileListEl.appendChild(entry);
         });
       }
 

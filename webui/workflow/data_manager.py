@@ -155,14 +155,14 @@ def write_storage_guide(run_dir: str | Path) -> None:
     guide = """RDE RUN DATA
 
 The folders directly beside this file are the sample/group folders.
-User-facing .DTA files and registered post-run analysis artifacts are stored
-directly inside those folders.
+User-facing .DTA files, matching data-table .csv exports, and registered
+post-run analysis artifacts are stored directly inside those folders.
 
 Internal worker jobs, protocol snapshots, and the detailed manifest are
 kept in _system/ and normally do not need to be opened.
 
 Useful files:
-- run_summary.json : final status, DTA files, and analysis artifacts
+- run_summary.json : final status, DTA/CSV files, and analysis artifacts
 - run.log          : readable execution history
 """
     (Path(run_dir) / "README_DATA.txt").write_text(guide, encoding="utf-8")
@@ -609,6 +609,70 @@ def relative_dta_files(run_dir: str | Path) -> list[str]:
     )
 
 
+def relative_csv_files(run_dir: str | Path) -> list[str]:
+    run_dir = Path(run_dir)
+    return sorted(
+        str(path.relative_to(run_dir))
+        for path in run_dir.rglob("*")
+        if path.is_file() and path.suffix.lower() == ".csv"
+    )
+
+
+def export_run_dta_to_csv(run_dir: str | Path) -> dict[str, Any]:
+    """Create a complete table CSV beside every DTA in a finished run."""
+
+    from workflow.dta_csv import convert_dta_directory
+
+    run_dir = Path(run_dir).resolve()
+    report = convert_dta_directory(run_dir)
+    exported_at = utc_timestamp()
+    converted = [dict(item, exported_at=exported_at) for item in report["converted"]]
+    errors = [dict(item, attempted_at=exported_at) for item in report["errors"]]
+    csv_by_dta = {
+        str(item["source_dta"]): str(item["csv_file"])
+        for item in converted
+    }
+
+    manifest = load_manifest(run_dir)
+    manifest["dta_csv_exports"] = converted
+    manifest["dta_csv_errors"] = errors
+
+    def mapped_csv_outputs(values: Any) -> list[str]:
+        mapped: list[str] = []
+        for value in values if isinstance(values, list) else []:
+            try:
+                relative = relative_run_file(run_dir, value)
+            except DataManagerError:
+                continue
+            csv_relative = csv_by_dta.get(relative)
+            if csv_relative:
+                mapped.append(str(run_dir / Path(*Path(csv_relative).parts)))
+        return mapped
+
+    for output_record in manifest.get("outputs", []):
+        output_record["csv_outputs"] = mapped_csv_outputs(output_record.get("outputs", []))
+    for trial_record in manifest.get("trials", []):
+        trial_record["csv_outputs"] = mapped_csv_outputs(trial_record.get("outputs", []))
+    for analysis_result in manifest.get("analysis_results", []):
+        raw_dta = str(analysis_result.get("raw_dta", ""))
+        raw_csv = csv_by_dta.get(raw_dta)
+        if raw_csv:
+            analysis_result["raw_csv"] = raw_csv
+
+    save_manifest(run_dir, manifest)
+    append_log(
+        run_dir,
+        f"DTA-to-CSV export finished: {report['converted_count']} converted, "
+        f"{report['error_count']} failed.",
+    )
+    for error in errors:
+        append_log(
+            run_dir,
+            f"DTA-to-CSV export failed for {error['source_dta']}: {error['error']}",
+        )
+    return report
+
+
 def write_run_summary(run_dir: str | Path) -> None:
     run_dir = Path(run_dir)
     manifest = load_manifest(run_dir)
@@ -626,6 +690,9 @@ def write_run_summary(run_dir: str | Path) -> None:
             if item.get("folder_name")
         ],
         "dta_files": relative_dta_files(run_dir),
+        "csv_files": relative_csv_files(run_dir),
+        "dta_csv_exports": manifest.get("dta_csv_exports", []),
+        "dta_csv_errors": manifest.get("dta_csv_errors", []),
         "analysis_results": manifest.get("analysis_results", []),
         "trials": manifest.get("trials", []),
         "errors": manifest.get("errors", []),
@@ -639,6 +706,7 @@ def mark_run_complete(run_dir: str | Path) -> None:
     manifest["status"] = "complete"
     manifest["completed_at"] = utc_timestamp()
     save_manifest(run_dir, manifest)
+    export_run_dta_to_csv(run_dir)
     write_run_summary(run_dir)
     append_log(run_dir, "Run marked complete.")
 
@@ -654,6 +722,7 @@ def mark_run_failed(run_dir: str | Path, error: str) -> None:
         }
     )
     save_manifest(run_dir, manifest)
+    export_run_dta_to_csv(run_dir)
     write_run_summary(run_dir)
     append_log(run_dir, f"Run marked failed: {error}")
 
@@ -663,5 +732,6 @@ def mark_run_aborted(run_dir: str | Path) -> None:
     manifest["status"] = "aborted"
     manifest["completed_at"] = utc_timestamp()
     save_manifest(run_dir, manifest)
+    export_run_dta_to_csv(run_dir)
     write_run_summary(run_dir)
     append_log(run_dir, "Run marked aborted.")

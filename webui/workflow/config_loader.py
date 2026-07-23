@@ -64,18 +64,6 @@ _DEFAULT_CONFIG = {
         "home_command": "0",
         "ccw_command": "1"
     },
-    "rinse": {
-        "enabled": True,
-        "position": {
-            "x": 120000,
-            "y": 60000,
-            "z": 50000
-        },
-        "rpm": 1000,
-        "duration_s": 10,
-        "rotation_command": "",
-        "return_to_safe_z_after": True
-    },
     "automation": {
         "max_repetitions": 100,
         "max_samples": 100,
@@ -285,33 +273,6 @@ def validate_motion_config(config: dict[str, Any]) -> None:
         int(home.get(axis, 0))
 
 
-def validate_rinse_config(config: dict[str, Any]) -> None:
-    rinse = config.get("rinse")
-
-    if not isinstance(rinse, dict):
-        raise ConfigError("rinse config must be an object.")
-
-    position = rinse.get("position", {})
-
-    if not isinstance(position, dict):
-        raise ConfigError("rinse.position must be an object.")
-
-    for axis in ["x", "y", "z"]:
-        int(position.get(axis, 0))
-
-    rpm = int(rinse.get("rpm", 0))
-    duration_s = float(rinse.get("duration_s", 0))
-
-    if bool(rinse.get("enabled", False)):
-        rde = config["rde"]
-
-        if rpm < int(rde["rpm_min"]) or rpm > int(rde["rpm_max"]):
-            raise ConfigError("rinse.rpm must be within the configured RDE RPM range.")
-
-        if duration_s <= 0:
-            raise ConfigError("rinse.duration_s must be > 0 when rinse is enabled.")
-
-
 def validate_automation_config(config: dict[str, Any]) -> None:
     automation = config.get("automation")
 
@@ -413,7 +374,6 @@ def validate_config(config: dict[str, Any]) -> None:
     validate_serial_config(config)
     validate_rde_config(config)
     validate_motion_config(config)
-    validate_rinse_config(config)
     validate_automation_config(config)
     validate_paths_config(config)
     validate_gamry_config(config)

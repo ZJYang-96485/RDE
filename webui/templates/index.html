@@ -343,7 +343,6 @@
       .preview-icon-motion { color: #28719d; }
       .preview-icon-rde { color: #825e20; }
       .preview-icon-echem { color: #6b4ca5; }
-      .preview-icon-rinse { color: #147f85; }
       .preview-icon-cell { color: #34754a; }
       .preview-icon-wait { color: #66727c; }
       .preview-icon-parallel { color: #8d4b83; }
@@ -1105,7 +1104,7 @@
 
       <section class="panel automation-panel workspace-panel" data-workspace-panel="runplan">
         <h2>Sample Run Plan</h2>
-        <p class="hint">Build named groups such as Sample 1. Inside each group, add atomic steps for X, Z, simultaneous X + Z, rotation, RPM, wait, EChem, or rinse. Use Concurrent RPM + EChem when both must operate together. Automatic homing is disabled during physical calibration.</p>
+        <p class="hint">Build named groups such as Sample 1. Inside each group, add atomic steps for X, Z, simultaneous X + Z, rotation, RPM, wait, or EChem. Use Concurrent RPM + EChem when both must operate together. Build any rinse or cleaning sequence explicitly from these steps. Automatic homing is disabled during physical calibration.</p>
 
         <label for="gamryModeSelect">Gamry Backend</label>
         <div class="inline-control-row">
@@ -1296,6 +1295,7 @@
       <section class="panel echem-builder-panel workspace-panel" data-workspace-panel="echem">
         <h2>EChem Protocol Builder</h2>
         <p class="hint">Start from a blank EChem recipe. Add, remove, reorder, and edit individual EChem steps or compact CA voltage ranges. Saved protocols appear in each sample's EChem Protocol dropdown.</p>
+        <p class="hint"><strong>Potential reference:</strong> All applied and recorded potentials are versus the physical reference electrode connected to the Gamry (V vs. Ref.). This builder does not convert potentials to SHE or RHE.</p>
 
         <label for="echemSavedProtocolSelect">Saved EChem Protocols</label>
         <select id="echemSavedProtocolSelect"></select>
@@ -1386,7 +1386,6 @@
             <option value="gamry_cell_on">Gamry Cell ON</option>
             <option value="gamry_cell_off">Gamry Cell OFF</option>
             <option value="stop_rpm">Stop RDE</option>
-            <option value="rinse">Rinse Cycle</option>
           </select>
           <button class="group-add-step home-btn" type="button">Add Step</button>
         </div>
@@ -1421,7 +1420,6 @@
           <option value="gamry_cell_on">Gamry Cell ON</option>
           <option value="gamry_cell_off">Gamry Cell OFF</option>
           <option value="stop_rpm">Stop RDE</option>
-          <option value="rinse">Rinse Cycle</option>
         </select>
 
         <label>Step Name</label>
@@ -1613,7 +1611,6 @@
       let runPlanEditorMode = "edit";
       let echemProtocolEditorMode = "create";
       let protocolPreviewCache = new Map();
-      let previewRinseDurationS = null;
       let selectedRunPlanPreviewKey = "";
       let runPlanPreviewQueued = false;
       const collapsedRunPlanPreviewGroups = new Set();
@@ -2657,10 +2654,6 @@
 
         const config = data.config || {};
         renderGamryModeStatus(config.gamry_mode, config.gamry_real_runner_configured);
-        const rinseDuration = Number(config.rinse_duration_s);
-        previewRinseDurationS = Number.isFinite(rinseDuration) && rinseDuration > 0
-          ? rinseDuration
-          : null;
         const livePlot = config.live_plot || {};
         livePollIntervalMs = Math.max(100, Number(livePlot.poll_interval_ms || 500));
         liveMaxVisiblePoints = Math.max(1, Number(livePlot.max_browser_points || 5000));
@@ -2960,7 +2953,6 @@
           echem: "EChem Measurement",
           rpm_echem: "Concurrent RPM + EChem",
           stop_rpm: "Stop RDE",
-          rinse: "Rinse Cycle",
           gamry_cell_on: "Gamry Cell ON",
           gamry_cell_off: "Gamry Cell OFF",
         };
@@ -2981,7 +2973,6 @@
         rde: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="1.6"/><path d="M12 10V6M13.7 13l3.5 2M10.3 13l-3.5 2"/>',
         stopRde: '<circle cx="12" cy="12" r="8"/><path d="M8.5 8.5l7 7M15.5 8.5l-7 7"/>',
         echem: '<path d="M3 18h18M4 15l3-5 3 3 3-7 3 7 4-3"/>',
-        rinse: '<path d="M12 3s6 6.2 6 11a6 6 0 0 1-12 0c0-4.8 6-11 6-11Z"/><path d="M9 15.5c.7 1 1.6 1.5 3 1.5"/>',
         cell: '<rect x="4" y="6" width="15" height="12" rx="2"/><path d="M19 10h2v4h-2M8 12h4M10 10v4M15 12h1"/>',
         wait: '<path d="M8 5v14M16 5v14"/>',
         parallel: '<path d="M4 7h14M15 4l3 3-3 3M4 17h14M15 14l3 3-3 3"/>',
@@ -3032,7 +3023,6 @@
           stop_rpm: { category: "rde", categoryLabel: "RDE", icon: "stopRde" },
           echem: { category: "echem", categoryLabel: "EChem", icon: "echem" },
           rpm_echem: { category: "parallel", categoryLabel: "Parallel", icon: "parallel" },
-          rinse: { category: "rinse", categoryLabel: "Rinse", icon: "rinse" },
           gamry_cell_on: { category: "cell", categoryLabel: "Cell", icon: "cell" },
           gamry_cell_off: { category: "cell", categoryLabel: "Cell", icon: "cell" },
           wait: { category: "wait", categoryLabel: "Pause", icon: "wait" },
@@ -3243,8 +3233,6 @@
         } else if (action === "gamry_cell_on") {
           const duration = previewNumberFrom(block, ".atomic-cell-duration", 0);
           step.duration_s = duration > 0 ? duration : null;
-        } else if (action === "rinse") {
-          step.duration_s = previewRinseDurationS;
         }
         return step;
       }
@@ -3295,11 +3283,6 @@
             unknownReasons: protocol.unknownReasons,
           };
         }
-        if (step.action === "rinse") {
-          return step.duration_s === null
-            ? { seconds: 0, approximate: true, unknownReasons: ["rinse cycle"] }
-            : { seconds: Math.max(0, step.duration_s), approximate: true, unknownReasons: [] };
-        }
         if (step.action === "gamry_cell_on") {
           return step.duration_s === null
             ? { seconds: 0, approximate: false, unknownReasons: [] }
@@ -3320,11 +3303,6 @@
         if (step.action === "wait") return `Wait ${formatRunPlanDuration(step.duration_s, false)}`;
         if (step.action === "echem") return `Run EChem protocol: ${step.protocol || "not selected"}`;
         if (step.action === "rpm_echem") return `Run ${step.protocol || "EChem"} at ${step.rpm} RPM — together`;
-        if (step.action === "rinse") {
-          return step.duration_s === null
-            ? "Run the configured rinse cycle"
-            : `Run configured rinse for ${formatRunPlanDuration(step.duration_s, false)}`;
-        }
         if (step.action === "gamry_cell_on") {
           return step.duration_s === null
             ? "Cell ON until a later OFF command"
@@ -3335,7 +3313,7 @@
       }
 
       function applyRunPlanPreviewState(previousState, step, enabled) {
-        const state = { ...previousState, echem: "idle", rinse: "idle" };
+        const state = { ...previousState, echem: "idle" };
         if (!enabled) return state;
 
         if (step.action === "move_x") state.x += step.steps || 0;
@@ -3351,7 +3329,6 @@
           state.rpm = step.stop_rpm_after ? 0 : Math.max(0, step.rpm || 0);
           state.cell = "off";
         }
-        if (step.action === "rinse") state.rpm = 0;
         if (step.action === "gamry_cell_on") state.cell = step.duration_s === null ? "on" : "off";
         if (step.action === "gamry_cell_off") state.cell = "off";
         return state;
@@ -3367,7 +3344,7 @@
           addWarning("Some steps or groups are disabled and will be skipped.");
         }
 
-        let state = { x: 0, z: 0, rpm: 0, cell: "unknown", echem: "idle", rinse: "idle" };
+        let state = { x: 0, z: 0, rpm: 0, cell: "unknown", echem: "idle" };
         flatSteps.forEach((item, flatIndex) => {
           const { step, effectiveEnabled } = item;
           if (!effectiveEnabled) return;
@@ -3426,7 +3403,7 @@
       function buildRunPlanPreviewModel() {
         const groups = readRunPlanForPreview();
         const flatSteps = [];
-        let state = { x: 0, z: 0, rpm: 0, cell: "unknown", echem: "idle", rinse: "idle" };
+        let state = { x: 0, z: 0, rpm: 0, cell: "unknown", echem: "idle" };
         let knownSeconds = 0;
         const unknownReasons = [];
         let sequence = 0;
@@ -3522,7 +3499,6 @@
             <span class="preview-state-item">RPM: ${escapeRunPlanHtml(rpmText)}</span>
             <span class="preview-state-item">Gamry cell: ${escapeRunPlanHtml(state.cell)}</span>
             <span class="preview-state-item">EChem: idle</span>
-            <span class="preview-state-item">Rinse: idle</span>
           </div>
           <p class="hint">Preview state is based on planned relative moves only; it is not an exact physical position.</p>
         `;
@@ -3923,12 +3899,10 @@
           note.className = "hint";
           note.textContent = "Turns the Gamry cell relay/output OFF immediately, then continues.";
           container.appendChild(note);
-        } else if (action === "stop_rpm" || action === "rinse") {
+        } else if (action === "stop_rpm") {
           const note = document.createElement("p");
           note.className = "hint";
-          note.textContent = action === "stop_rpm"
-            ? "Stops the RDE immediately."
-            : "Runs the configured rinse cycle.";
+          note.textContent = "Stops the RDE immediately.";
           container.appendChild(note);
         } else {
           const note = document.createElement("p");

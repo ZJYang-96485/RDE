@@ -22,7 +22,6 @@ ATOMIC_ACTIONS = {
     "echem",
     "rpm_echem",
     "stop_rpm",
-    "rinse",
     "gamry_cell_on",
     "gamry_cell_off",
 }
@@ -284,6 +283,12 @@ def validate_sample(raw_sample: dict[str, Any], index: int) -> dict[str, Any]:
         raise RunPlanError(f"sample {index} must be an object.")
 
     label = optional_string(raw_sample.get("label") or raw_sample.get("sample_id"), f"Sample {index}")
+    if bool(raw_sample.get("rinse_after", False)):
+        raise RunPlanError(
+            f"{label}: rinse_after is no longer supported. "
+            "Build the rinse sequence from explicit motion, rotation, RPM, and wait steps."
+        )
+
     position = raw_sample.get("position", {})
     if not isinstance(position, dict):
         raise RunPlanError(f"{label}: position must be an object.")
@@ -302,7 +307,6 @@ def validate_sample(raw_sample: dict[str, Any], index: int) -> dict[str, Any]:
         "protocol": optional_string(raw_sample.get("protocol"), "ocp_only"),
         "rotation_command": optional_string(raw_sample.get("rotation_command"), ""),
         "post_echem_wait_s": parse_nonnegative_float(raw_sample.get("post_echem_wait_s", 0), f"{label}: post_echem_wait_s"),
-        "rinse_after": bool(raw_sample.get("rinse_after", False)),
     }
 
 

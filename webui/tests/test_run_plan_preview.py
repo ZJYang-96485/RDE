@@ -21,7 +21,6 @@ class RunPlanPreviewUiTest(unittest.TestCase):
         self.assertIn('id="runPlanWarnings"', self.page)
         self.assertIn("const runPlanIconPaths = {", self.page)
         self.assertIn('motionX: \'<path d="M3 12h18', self.page)
-        self.assertIn('rinse: \'<path d="M12 3s6', self.page)
         self.assertIn('echem: \'<path d="M3 18h18', self.page)
         self.assertNotIn("cdnjs.cloudflare.com", self.page)
 
@@ -87,7 +86,6 @@ class RunPlanPreviewUiTest(unittest.TestCase):
             "wait",
             "echem",
             "rpm_echem",
-            "rinse",
             "gamry_cell_on",
             "gamry_cell_off",
         ):
@@ -133,11 +131,14 @@ class RunPlanPreviewUiTest(unittest.TestCase):
         self.assertIn("await refreshProtocolPreviewCache()", self.source)
         self.assertIn('automationRepetitionsInput.addEventListener("input"', self.source)
 
-    def test_config_exposes_read_only_rinse_duration_for_preview(self) -> None:
+    def test_dedicated_rinse_action_is_removed(self) -> None:
+        self.assertNotIn('<option value="rinse">', self.page)
+        self.assertNotIn('rinse: { category:', self.source)
+
         response = app.test_client().get("/api/config")
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
-        self.assertGreater(float(payload["config"]["rinse_duration_s"]), 0)
+        self.assertNotIn("rinse_duration_s", payload["config"])
 
 
 if __name__ == "__main__":

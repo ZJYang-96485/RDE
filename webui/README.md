@@ -25,7 +25,7 @@ The web UI is organized around three main functions:
 
 2. **Sample Run Plan**
    - Create and save reusable sample run plans
-   - Define sample name, X/Y/Z position, RPM, stabilization time, rotation command, EChem protocol, and rinse behavior
+   - Define sample name, X/Y/Z movement, RPM, stabilization time, rotation command, and EChem protocol
    - Start, monitor, and abort automated runs
 
 3. **EChem Protocol Builder**
@@ -178,7 +178,6 @@ RDE/
     │   ├── gamry_client.py
     │   ├── motion_controller.py
     │   ├── rde_controller.py
-    │   ├── rinse_controller.py
     │   ├── rotation_controller.py
     │   └── serial_base.py
     ├── workflow/
@@ -280,7 +279,7 @@ A run plan defines physical/sample information:
 - rotation command
 - selected EChem protocol
 - post-EChem wait time
-- whether to rinse after the sample
+- explicit motion, rotation, RPM, and wait steps for any custom rinse or cleaning sequence
 
 Example files:
 
@@ -416,37 +415,12 @@ EIS: 10 kHz to 1 kHz
 
 Do not start a full 300-second-per-step protocol until the saved protocol has been previewed and the output paths look correct.
 
-## Rinse behavior
+## Rinse and cleaning sequences
 
-Rinse is done by moving the electrode to a water beaker position and spinning.
-
-The rinse position is configured in `config.json`:
-
-```json
-"rinse": {
-  "enabled": true,
-  "position": {
-    "x": 120000,
-    "y": 60000,
-    "z": 50000
-  },
-  "rpm": 1000,
-  "duration_s": 10,
-  "rotation_command": "",
-  "return_to_safe_z_after": true
-}
-```
-
-The current rinse sequence is:
-
-```text
-move to safe Z
-move to rinse beaker X/Y
-lower to rinse Z
-spin at rinse RPM
-stop RDE
-lift back to safe Z
-```
+There is no dedicated built-in rinse action. Build rinse and cleaning behavior
+as an explicit group of motion, rotation, RPM, stop, and wait steps in the run
+plan. This keeps the complete physical sequence visible and editable in the
+same saved plan.
 
 ## Gamry mode
 

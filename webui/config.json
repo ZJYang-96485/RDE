@@ -59,18 +59,6 @@
     "home_command": "0",
     "ccw_command": "1"
   },
-  "rinse": {
-    "enabled": true,
-    "position": {
-      "x": 120000,
-      "y": 60000,
-      "z": 50000
-    },
-    "rpm": 1000,
-    "duration_s": 10,
-    "rotation_command": "",
-    "return_to_safe_z_after": true
-  },
   "automation": {
     "max_repetitions": 100,
     "max_samples": 100,

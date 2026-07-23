@@ -16,7 +16,6 @@ from hardware.gamry_client import run_gamry_step
 from hardware.gamry_cell_client import gamry_cell_off, gamry_cell_on
 from hardware.motion_controller import move_horizontal_steps, move_linear_steps, move_to_xyz, move_xz_steps_parallel
 from hardware.rde_controller import send_rpm, stop_rde
-from hardware.rinse_controller import run_rinse_cycle
 from hardware.rotation_controller import send_rotation_text
 from gamry_worker.live_writer import fail_live_stream
 from workflow.data_manager import (
@@ -326,13 +325,6 @@ def run_protocol_for_sample(
         append_log(run_dir, f"{label}: finished EChem step {step_index}: {result}.")
 
 
-def run_rinse_after_sample(run_dir: Path, label: str) -> None:
-    set_automation_state(step=f"Rinse after {label}")
-    append_log(run_dir, f"{label}: rinse started.")
-    rinse_result = run_rinse_cycle()
-    append_log(run_dir, f"{label}: rinse finished: {rinse_result}.")
-
-
 def run_group_echem_action(
     *,
     run_dir: Path,
@@ -431,10 +423,6 @@ def run_sample(
 
     stop_sample_rpm(run_dir, label)
 
-    if bool(sample.get("rinse_after", False)):
-        run_rinse_after_sample(run_dir, label)
-
-
 # ---------------------------------------------------------------------------
 # New grouped, atomic-step execution
 # ---------------------------------------------------------------------------
@@ -450,7 +438,6 @@ def group_workspace_sample(group: dict[str, Any], group_index: int) -> dict[str,
         "protocol": "ocp_only",
         "rotation_command": "",
         "post_echem_wait_s": 0,
-        "rinse_after": False,
     }
 
 
@@ -620,9 +607,6 @@ def run_group(
                 stop_rde(None)
                 rde_is_running = False
                 append_log(run_dir, f"{label}: RDE stopped.")
-
-            elif action == "rinse":
-                run_rinse_after_sample(run_dir, label)
 
             elif action == "gamry_cell_on":
                 duration_s = step.get("duration_s")

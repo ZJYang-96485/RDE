@@ -460,6 +460,17 @@ home recovery, and marks angle confidence uncertain. Inspect the arm manually
 before resuming. Segment requests and acknowledgements are saved under
 `action_results` in the run manifest and summary.
 
+The same relative controls are also available in **Motor Control**:
+
+- **Short Angle Movement** accepts an angle magnitude. Use **Move + CCW** or
+  **Move − CW** for one signed relative movement.
+- **Arm Rinse Oscillation** accepts amplitude, cycles, and pause. Its safe
+  first-test preset is `2 degrees / 1 cycle / 0.2 seconds`.
+
+Both manual actions stop the RDE disk first. While either action is running,
+the UI and API reject RDE start, X/Z commands, other arm commands, and
+automation start. Emergency Stop remains available.
+
 ### Required manual hardware validation
 
 These checks are required before enabling the default 5-degree/3-cycle

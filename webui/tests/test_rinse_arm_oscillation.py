@@ -162,6 +162,32 @@ class RinseArmExecutorTests(unittest.TestCase):
         self.assertEqual(controller.commands, [])
         self.assertEqual(records[-1]["status"], "failed")
 
+    def test_confidence_change_during_pause_prevents_next_segment(self) -> None:
+        controller = FakeRotationController()
+        records: list[dict] = []
+
+        def interrupt_during_pause(_seconds: float) -> None:
+            controller.confidence = "uncertain"
+
+        with patch("workflow.rinse_arm_oscillation.check_abort"):
+            with self.assertRaisesRegex(RuntimeError, "no further"):
+                execute_rinse_arm_oscillation(
+                    run_dir=Path("."),
+                    label="Rinse",
+                    amplitude_deg=2,
+                    amplitude_steps=9,
+                    cycles=1,
+                    pause_between_moves_s=0.2,
+                    controller=controller,
+                    pause_fn=interrupt_during_pause,
+                    record_fn=lambda _run_dir, record: records.append(dict(record)) or record,
+                    log_fn=lambda _run_dir, _message: None,
+                )
+
+        self.assertEqual(controller.commands, [9])
+        self.assertEqual(records[-1]["status"], "failed")
+        self.assertEqual(records[-1]["angle_confidence"], "uncertain")
+
 
 if __name__ == "__main__":
     unittest.main()

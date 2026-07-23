@@ -4,6 +4,8 @@ import json
 import math
 import os
 import threading
+import time
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -26,7 +28,14 @@ from hardware.gamry_cell_client import (
     gamry_cell_status,
 )
 from hardware.rde_controller import send_rpm, stop_rde
-from hardware.rotation_controller import emergency_stop_rotation, send_rotation_text
+from hardware.rotation_controller import (
+    RotationControllerError,
+    RotationMoveInterrupted,
+    angle_to_steps,
+    emergency_stop_rotation,
+    get_rotation_controller,
+    send_rotation_text,
+)
 from workflow.config_loader import (
     ConfigError,
     get_baud_rate,
@@ -53,6 +62,8 @@ from workflow.protocol_loader import (
     validate_protocol_payload,
 )
 from workflow.recipe_runner import RecipeRunnerError, abort_automation, run_plan_payload_background
+from workflow.rinse_arm_oscillation import execute_rinse_arm_oscillation
+from workflow.rinse_arm_paths import validate_rinse_arm_settings
 from gamry_worker.live_writer import clear_live_stream, read_live_events, read_live_points, read_live_status
 from workflow.dta_viewer import (
     DtaViewerError,
@@ -99,6 +110,7 @@ from workflow.state import (
 app = Flask(__name__)
 
 stop_timer: threading.Timer | None = None
+manual_arm_motion_lock = threading.Lock()
 
 
 def config_payload() -> dict[str, Any]:
@@ -565,6 +577,11 @@ def start():
 
     if automation_is_running():
         return json_error("automation is running; manual RDE control is disabled.", 409)
+    if manual_arm_motion_lock.locked():
+        return json_error(
+            "manual arm movement is running; RDE start is disabled until it finishes.",
+            409,
+        )
 
     payload = request.get_json(silent=True) or {}
 
@@ -617,6 +634,8 @@ def stop():
 def rotation_send():
     if automation_is_running():
         return json_error("automation is running; manual rotation commands are disabled.", 409)
+    if manual_arm_motion_lock.locked():
+        return json_error("another manual arm movement is already running.", 409)
 
     payload = request.get_json(silent=True) or {}
     command = str(payload.get("command", "")).strip()
@@ -655,6 +674,168 @@ def rotation_send():
     )
 
 
+def stop_rde_before_manual_arm_motion() -> None:
+    """Stop timed/manual disk rotation before moving the arm mechanism."""
+
+    global stop_timer
+
+    if stop_timer is not None:
+        stop_timer.cancel()
+        stop_timer = None
+    stop_rde(None)
+
+
+@app.post("/api/rotation/relative-angle")
+def rotation_relative_angle():
+    if automation_is_running():
+        return json_error(
+            "automation is running; manual short-angle movement is disabled.",
+            409,
+        )
+
+    payload = request.get_json(silent=True) or {}
+    rotation = get_rotation_config()
+    try:
+        requested_angle_deg = float(payload.get("angle_deg"))
+        requested_steps = angle_to_steps(
+            requested_angle_deg,
+            motor_full_steps_per_rev=int(rotation["motor_full_steps_per_rev"]),
+            microstep=int(rotation["microstep"]),
+        )
+        if requested_steps == 0:
+            raise RotationControllerError(
+                "angle_deg rounds to zero motor steps."
+            )
+        maximum = int(rotation["max_relative_steps"])
+        if abs(requested_steps) > maximum:
+            raise RotationControllerError(
+                f"angle_deg converts to {requested_steps} steps; "
+                f"the configured limit is +/-{maximum} steps."
+            )
+    except (TypeError, ValueError, RotationControllerError) as exc:
+        return json_error(f"Invalid short-angle movement: {exc}", 400)
+
+    if not manual_arm_motion_lock.acquire(blocking=False):
+        return json_error("another manual arm movement is already running.", 409)
+    try:
+        com_port = get_serial_port("rotation")
+        controller = get_rotation_controller()
+        if controller.expected_relative_state()["angle_confidence"] != "tracked":
+            return json_error(
+                (
+                    "Rotation-arm angle confidence is uncertain. Inspect the arm "
+                    "and restart the web app before sending another relative move."
+                ),
+                409,
+            )
+        try:
+            stop_rde_before_manual_arm_motion()
+            result = controller.relative_steps(
+                requested_steps,
+                requested_angle_deg=requested_angle_deg,
+            )
+        except RotationMoveInterrupted as exc:
+            return (
+                jsonify(
+                    {
+                        "error": (
+                            "Short-angle movement was interrupted; inspect the arm "
+                            "before sending another relative movement."
+                        ),
+                        "com_port": com_port,
+                        "move": asdict(exc.result),
+                    }
+                ),
+                500,
+            )
+        except Exception as exc:
+            app.logger.exception(
+                "Manual short-angle movement failed on %s.",
+                com_port,
+            )
+            return json_error(
+                f"Short-angle movement failed on {com_port}: {exc}",
+                500,
+            )
+
+        return jsonify(
+            {
+                "ok": True,
+                "com_port": com_port,
+                "disk_rpm_stopped": True,
+                "move": asdict(result),
+            }
+        )
+    finally:
+        manual_arm_motion_lock.release()
+
+
+@app.post("/api/rotation/oscillate")
+def rotation_oscillate():
+    if automation_is_running():
+        return json_error(
+            "automation is running; manual arm oscillation is disabled.",
+            409,
+        )
+
+    payload = request.get_json(silent=True) or {}
+    rotation = get_rotation_config()
+    try:
+        settings = validate_rinse_arm_settings(
+            amplitude_deg=payload.get("amplitude_deg"),
+            cycles=payload.get("cycles"),
+            pause_between_moves_s=payload.get("pause_between_moves_s", 0.2),
+            return_to_start=True,
+            motor_full_steps_per_rev=int(rotation["motor_full_steps_per_rev"]),
+            microstep=int(rotation["microstep"]),
+            max_relative_steps=int(rotation["max_relative_steps"]),
+        )
+    except (TypeError, ValueError) as exc:
+        return json_error(f"Invalid arm oscillation: {exc}", 400)
+
+    if not manual_arm_motion_lock.acquire(blocking=False):
+        return json_error("another manual arm movement is already running.", 409)
+    try:
+        com_port = get_serial_port("rotation")
+        try:
+            stop_rde_before_manual_arm_motion()
+            result = execute_rinse_arm_oscillation(
+                run_dir=Path(__file__).resolve().parent,
+                label="Manual Motor Control arm oscillation",
+                amplitude_deg=float(settings["amplitude_deg"]),
+                amplitude_steps=int(settings["amplitude_steps"]),
+                cycles=int(settings["cycles"]),
+                pause_between_moves_s=float(settings["pause_between_moves_s"]),
+                pause_fn=time.sleep,
+                abort_check_fn=lambda _message: None,
+                record_fn=lambda _run_dir, record: record,
+                log_fn=lambda _run_dir, _message: None,
+            )
+        except Exception as exc:
+            app.logger.exception(
+                "Manual arm oscillation failed on %s.",
+                com_port,
+            )
+            return json_error(
+                (
+                    f"Arm oscillation failed on {com_port}: {exc}. "
+                    "No automatic return or homing was attempted; inspect the arm."
+                ),
+                500,
+            )
+
+        return jsonify(
+            {
+                "ok": True,
+                "com_port": com_port,
+                "disk_rpm_stopped": True,
+                "oscillation": result,
+            }
+        )
+    finally:
+        manual_arm_motion_lock.release()
+
+
 @app.post("/api/rotation/ccw")
 def rotation_ccw():
     return rotation_send_with_command("1")
@@ -668,6 +849,8 @@ def rotation_home_route():
 def rotation_send_with_command(command: str):
     if automation_is_running():
         return json_error("automation is running; manual rotation commands are disabled.", 409)
+    if manual_arm_motion_lock.locked():
+        return json_error("another manual arm movement is already running.", 409)
 
     com_port = get_serial_port("rotation")
     app.logger.info(
@@ -725,6 +908,8 @@ def parse_axis_command_request(axis_name: str) -> int | tuple[Any, int]:
 def linear_send():
     if automation_is_running():
         return json_error("automation is running; manual linear commands are disabled.", 409)
+    if manual_arm_motion_lock.locked():
+        return json_error("manual arm movement is running; X/Z commands are disabled.", 409)
 
     steps_or_error = parse_axis_command_request("linear")
 
@@ -750,6 +935,8 @@ def linear_send():
 def horizontal_send():
     if automation_is_running():
         return json_error("automation is running; manual horizontal commands are disabled.", 409)
+    if manual_arm_motion_lock.locked():
+        return json_error("manual arm movement is running; X/Z commands are disabled.", 409)
 
     steps_or_error = parse_axis_command_request("horizontal")
 
@@ -775,6 +962,8 @@ def horizontal_send():
 def vertical_send():
     if automation_is_running():
         return json_error("automation is running; manual vertical commands are disabled.", 409)
+    if manual_arm_motion_lock.locked():
+        return json_error("manual arm movement is running; X/Z commands are disabled.", 409)
 
     steps_or_error = parse_axis_command_request("vertical")
 
@@ -1263,6 +1452,11 @@ def automation_status():
 def automation_start():
     if automation_is_running():
         return json_error("automation is already running.", 409)
+    if manual_arm_motion_lock.locked():
+        return json_error(
+            "manual arm movement is running; wait for it to finish before automation.",
+            409,
+        )
 
     rde_state = get_rde_state()
     if rde_state["running"]:

@@ -155,6 +155,35 @@
         margin-bottom: 4px;
       }
 
+      .manual-arm-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 12px;
+        margin: 12px 0;
+      }
+
+      .manual-arm-card {
+        border: 1px solid #bdd2e3;
+        border-radius: 12px;
+        background: #f7fbfe;
+        padding: 14px;
+      }
+
+      .manual-arm-card h3 {
+        margin-top: 0;
+      }
+
+      .manual-arm-actions {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 8px;
+      }
+
+      .manual-arm-actions button {
+        width: 100%;
+        margin: 0;
+      }
+
       .run-plan-layout {
         display: block;
         border: 1px solid #aec8da;
@@ -1029,8 +1058,42 @@
 
         <label>Send To Rotation ({{ rotation_com_port }})</label>
         <div class="cmd-buttons">
-          <button id="sendOneBtn" class="icon-btn up" title="Send 1">&#9650;</button>
-          <button id="sendZeroBtn" class="icon-btn down" title="Send 0">&#9660;</button>
+          <button id="sendOneBtn" class="icon-btn up" title="Legacy command 1: move toward 180° CCW" aria-label="Legacy move toward 180 degrees counterclockwise">&#9650;</button>
+          <button id="sendZeroBtn" class="icon-btn down" title="Legacy command 0: move toward legacy start position" aria-label="Legacy move toward start position">&#9660;</button>
+        </div>
+        <p class="hint">Legacy full-range commands: ▲ moves toward the 180° CCW position; ▼ moves toward the legacy start position.</p>
+
+        <div class="manual-arm-grid">
+          <section class="manual-arm-card" aria-labelledby="shortRotationHeading">
+            <h3 id="shortRotationHeading">Short Angle Movement</h3>
+            <label for="shortRotationAngle">Angle magnitude (degrees)</label>
+            <input id="shortRotationAngle" type="number" min="0.225" max="10" step="0.1" value="2" />
+            <p id="shortRotationPreview" class="hint">2° ≈ 9 steps</p>
+            <div class="manual-arm-actions">
+              <button id="shortRotationCcwBtn" class="home-btn" type="button">↶ Move + CCW</button>
+              <button id="shortRotationCwBtn" class="home-btn" type="button">↷ Move − CW</button>
+            </div>
+            <p class="hint">One signed relative move. The RDE disk is stopped first.</p>
+          </section>
+
+          <section class="manual-arm-card" aria-labelledby="manualOscillationHeading">
+            <h3 id="manualOscillationHeading">Arm Rinse Oscillation</h3>
+            <label for="manualOscillationAmplitude">Amplitude from center (degrees)</label>
+            <input id="manualOscillationAmplitude" type="number" min="0.225" max="5" step="0.1" value="2" />
+
+            <label for="manualOscillationCycles">Cycles</label>
+            <input id="manualOscillationCycles" type="number" min="1" step="1" value="1" />
+
+            <label for="manualOscillationPause">Pause between moves (seconds)</label>
+            <input id="manualOscillationPause" type="number" min="0" step="0.1" value="0.2" />
+
+            <p id="manualOscillationPreview" class="hint"></p>
+            <div class="manual-arm-actions">
+              <button id="manualOscillationPresetBtn" class="home-btn" type="button">Safe preset: 2° / 1 cycle</button>
+              <button id="manualOscillationStartBtn" class="home-btn" type="button">Start Oscillation</button>
+            </div>
+            <p class="error">Expected commanded movement only—not a measured physical angle. Runs +A, −2A, +A with the disk stopped and no X/Z motion.</p>
+          </section>
         </div>
         <p id="rotationStatus" class="hint"></p>
 
@@ -1442,6 +1505,16 @@
       const sendOneBtn = document.getElementById("sendOneBtn");
       const sendZeroBtn = document.getElementById("sendZeroBtn");
       const rotationStatusEl = document.getElementById("rotationStatus");
+      const shortRotationAngleInput = document.getElementById("shortRotationAngle");
+      const shortRotationPreviewEl = document.getElementById("shortRotationPreview");
+      const shortRotationCcwBtn = document.getElementById("shortRotationCcwBtn");
+      const shortRotationCwBtn = document.getElementById("shortRotationCwBtn");
+      const manualOscillationAmplitudeInput = document.getElementById("manualOscillationAmplitude");
+      const manualOscillationCyclesInput = document.getElementById("manualOscillationCycles");
+      const manualOscillationPauseInput = document.getElementById("manualOscillationPause");
+      const manualOscillationPreviewEl = document.getElementById("manualOscillationPreview");
+      const manualOscillationPresetBtn = document.getElementById("manualOscillationPresetBtn");
+      const manualOscillationStartBtn = document.getElementById("manualOscillationStartBtn");
       const linearStepsSlider = document.getElementById("linearStepsSlider");
       const linearStepsInput = document.getElementById("linearStepsInput");
       const linearStepsValue = document.getElementById("linearStepsValue");
@@ -1613,6 +1686,7 @@
       let runPlanEditorMode = "edit";
       let echemProtocolEditorMode = "create";
       let protocolPreviewCache = new Map();
+      let manualArmRequestRunning = false;
       let rotationArmConfig = {
         motor_full_steps_per_rev: 200,
         microstep: 8,
@@ -2669,6 +2743,7 @@
 
         const config = data.config || {};
         rotationArmConfig = config.rotation_arm || rotationArmConfig;
+        updateManualArmPreviews();
         renderGamryModeStatus(config.gamry_mode, config.gamry_real_runner_configured);
         const livePlot = config.live_plot || {};
         livePollIntervalMs = Math.max(100, Number(livePlot.poll_interval_ms || 500));
@@ -2695,23 +2770,32 @@
           setAutomationError(data.automation_error || "");
           startExperimentBtn.disabled = automationRunning;
           abortHomeBtn.disabled = !automationRunning;
-          btn.disabled = automationRunning;
-          sendOneBtn.disabled = automationRunning;
-          sendZeroBtn.disabled = automationRunning;
-          linearUpBtn.disabled = automationRunning;
-          linearDownBtn.disabled = automationRunning;
-          horizontalLeftBtn.disabled = automationRunning;
-          horizontalRightBtn.disabled = automationRunning;
-          verticalUpBtn.disabled = automationRunning;
-          verticalDownBtn.disabled = automationRunning;
-          rpmInput.disabled = automationRunning;
-          secondsInput.disabled = automationRunning;
-          linearStepsSlider.disabled = automationRunning;
-          linearStepsInput.disabled = automationRunning;
-          horizontalStepsSlider.disabled = automationRunning;
-          horizontalStepsInput.disabled = automationRunning;
-          verticalStepsSlider.disabled = automationRunning;
-          verticalStepsInput.disabled = automationRunning;
+          const manualArmDisabled = automationRunning || manualArmRequestRunning;
+          btn.disabled = manualArmDisabled;
+          sendOneBtn.disabled = manualArmDisabled;
+          sendZeroBtn.disabled = manualArmDisabled;
+          shortRotationAngleInput.disabled = manualArmDisabled;
+          shortRotationCcwBtn.disabled = manualArmDisabled;
+          shortRotationCwBtn.disabled = manualArmDisabled;
+          manualOscillationAmplitudeInput.disabled = manualArmDisabled;
+          manualOscillationCyclesInput.disabled = manualArmDisabled;
+          manualOscillationPauseInput.disabled = manualArmDisabled;
+          manualOscillationPresetBtn.disabled = manualArmDisabled;
+          manualOscillationStartBtn.disabled = manualArmDisabled;
+          linearUpBtn.disabled = manualArmDisabled;
+          linearDownBtn.disabled = manualArmDisabled;
+          horizontalLeftBtn.disabled = manualArmDisabled;
+          horizontalRightBtn.disabled = manualArmDisabled;
+          verticalUpBtn.disabled = manualArmDisabled;
+          verticalDownBtn.disabled = manualArmDisabled;
+          rpmInput.disabled = manualArmDisabled;
+          secondsInput.disabled = manualArmDisabled;
+          linearStepsSlider.disabled = manualArmDisabled;
+          linearStepsInput.disabled = manualArmDisabled;
+          horizontalStepsSlider.disabled = manualArmDisabled;
+          horizontalStepsInput.disabled = manualArmDisabled;
+          verticalStepsSlider.disabled = manualArmDisabled;
+          verticalStepsInput.disabled = manualArmDisabled;
           automationRepetitionsInput.disabled = automationRunning;
           gamryModeSelect.disabled = true;
           saveGamryModeBtn.disabled = true;
@@ -2822,6 +2906,165 @@
           rotationStatusEl.textContent = message;
           setError(message);
           return false;
+        }
+      }
+
+      function setManualArmControlsDisabled(disabled) {
+        btn.disabled = disabled;
+        sendOneBtn.disabled = disabled;
+        sendZeroBtn.disabled = disabled;
+        rpmInput.disabled = disabled;
+        secondsInput.disabled = disabled;
+        linearStepsSlider.disabled = disabled;
+        linearStepsInput.disabled = disabled;
+        linearUpBtn.disabled = disabled;
+        linearDownBtn.disabled = disabled;
+        horizontalStepsSlider.disabled = disabled;
+        horizontalStepsInput.disabled = disabled;
+        horizontalLeftBtn.disabled = disabled;
+        horizontalRightBtn.disabled = disabled;
+        verticalStepsSlider.disabled = disabled;
+        verticalStepsInput.disabled = disabled;
+        verticalUpBtn.disabled = disabled;
+        verticalDownBtn.disabled = disabled;
+        shortRotationAngleInput.disabled = disabled;
+        shortRotationCcwBtn.disabled = disabled;
+        shortRotationCwBtn.disabled = disabled;
+        manualOscillationAmplitudeInput.disabled = disabled;
+        manualOscillationCyclesInput.disabled = disabled;
+        manualOscillationPauseInput.disabled = disabled;
+        manualOscillationPresetBtn.disabled = disabled;
+        manualOscillationStartBtn.disabled = disabled;
+      }
+
+      function setRotationStatus(message, isError = false) {
+        rotationStatusEl.classList.toggle("error", isError);
+        rotationStatusEl.classList.toggle("hint", !isError);
+        rotationStatusEl.textContent = message;
+        setError(isError ? message : "");
+      }
+
+      function updateManualArmPreviews() {
+        const magnitude = Math.abs(Number(shortRotationAngleInput.value) || 0);
+        const shortSteps = rinseArmDegreesToSteps(magnitude);
+        shortRotationPreviewEl.textContent = (
+          `+${magnitude}° → +${shortSteps} steps CCW; `
+          + `−${magnitude}° → −${shortSteps} steps CW`
+        );
+
+        const amplitude = Number(manualOscillationAmplitudeInput.value) || 0;
+        const cycles = Number(manualOscillationCyclesInput.value) || 0;
+        manualOscillationPreviewEl.textContent = rinseArmPreviewText(
+          amplitude,
+          cycles
+        );
+        manualOscillationPreviewEl.style.whiteSpace = "pre-line";
+      }
+
+      function validateManualArmMagnitude(magnitude, forOscillation = false) {
+        if (!Number.isFinite(magnitude) || magnitude <= 0) {
+          throw new Error("Angle must be a number greater than 0 degrees.");
+        }
+        const steps = rinseArmDegreesToSteps(magnitude);
+        const maximum = Number(rotationArmConfig.max_relative_steps || 44);
+        if (steps < 1) {
+          throw new Error("Angle rounds to zero motor steps.");
+        }
+        if (forOscillation ? 2 * steps > maximum : steps > maximum) {
+          throw new Error(
+            forOscillation
+              ? `Oscillation −2A segment would exceed ±${maximum} steps.`
+              : `Short movement would exceed ±${maximum} steps.`
+          );
+        }
+        return steps;
+      }
+
+      async function sendShortRotation(direction) {
+        const magnitude = Math.abs(Number(shortRotationAngleInput.value));
+        validateManualArmMagnitude(magnitude, false);
+        const angleDeg = direction === "ccw" ? magnitude : -magnitude;
+        manualArmRequestRunning = true;
+        setManualArmControlsDisabled(true);
+        setRotationStatus(
+          `Stopping the RDE disk, then moving ${angleDeg > 0 ? "CCW" : "CW"} `
+          + `${Math.abs(angleDeg)}°...`
+        );
+
+        try {
+          const res = await fetch("/api/rotation/relative-angle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ angle_deg: angleDeg }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || "Short-angle movement failed.");
+          }
+          const move = data.move || {};
+          setRotationStatus(
+            `Short movement completed: ${move.executed_steps > 0 ? "+" : ""}`
+            + `${move.executed_steps} steps ${move.direction} `
+            + `(${Number(move.executed_angle_deg).toFixed(3)}°). `
+            + `Board: ${move.raw_response || "ACK received"}`
+          );
+        } catch (err) {
+          setRotationStatus(
+            err instanceof Error ? err.message : String(err),
+            true
+          );
+        } finally {
+          manualArmRequestRunning = false;
+          setManualArmControlsDisabled(automationRunning);
+        }
+      }
+
+      async function startManualArmOscillation() {
+        const amplitudeDeg = Number(manualOscillationAmplitudeInput.value);
+        const cycles = Number(manualOscillationCyclesInput.value);
+        const pauseBetweenMovesS = Number(manualOscillationPauseInput.value);
+        validateManualArmMagnitude(amplitudeDeg, true);
+        if (!Number.isInteger(cycles) || cycles <= 0) {
+          throw new Error("Cycles must be a positive integer.");
+        }
+        if (!Number.isFinite(pauseBetweenMovesS) || pauseBetweenMovesS < 0) {
+          throw new Error("Pause must be 0 or greater.");
+        }
+
+        manualArmRequestRunning = true;
+        setManualArmControlsDisabled(true);
+        setRotationStatus(
+          `Stopping the RDE disk, then running ${cycles} symmetric arm `
+          + `cycle(s) at ${amplitudeDeg}° amplitude...`
+        );
+        try {
+          const res = await fetch("/api/rotation/oscillate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              amplitude_deg: amplitudeDeg,
+              cycles,
+              pause_between_moves_s: pauseBetweenMovesS,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || "Arm oscillation failed.");
+          }
+          const result = data.oscillation || {};
+          setRotationStatus(
+            `Oscillation completed: ${result.cycles_completed || 0} cycle(s), `
+            + `${result.segments_completed || 0} segments, `
+            + `net ${result.net_relative_steps ?? 0} commanded steps.`
+          );
+        } catch (err) {
+          setRotationStatus(
+            err instanceof Error ? err.message : String(err),
+            true
+          );
+        } finally {
+          manualArmRequestRunning = false;
+          setManualArmControlsDisabled(automationRunning);
         }
       }
 
@@ -5265,6 +5508,52 @@
           sendZeroBtn.disabled = automationRunning;
         }
       });
+
+      shortRotationAngleInput.addEventListener("input", updateManualArmPreviews);
+      manualOscillationAmplitudeInput.addEventListener("input", updateManualArmPreviews);
+      manualOscillationCyclesInput.addEventListener("input", updateManualArmPreviews);
+
+      shortRotationCcwBtn.addEventListener("click", async () => {
+        try {
+          await sendShortRotation("ccw");
+        } catch (err) {
+          setRotationStatus(
+            err instanceof Error ? err.message : String(err),
+            true
+          );
+        }
+      });
+
+      shortRotationCwBtn.addEventListener("click", async () => {
+        try {
+          await sendShortRotation("cw");
+        } catch (err) {
+          setRotationStatus(
+            err instanceof Error ? err.message : String(err),
+            true
+          );
+        }
+      });
+
+      manualOscillationPresetBtn.addEventListener("click", () => {
+        manualOscillationAmplitudeInput.value = "2";
+        manualOscillationCyclesInput.value = "1";
+        manualOscillationPauseInput.value = "0.2";
+        updateManualArmPreviews();
+      });
+
+      manualOscillationStartBtn.addEventListener("click", async () => {
+        try {
+          await startManualArmOscillation();
+        } catch (err) {
+          setRotationStatus(
+            err instanceof Error ? err.message : String(err),
+            true
+          );
+        }
+      });
+
+      updateManualArmPreviews();
 
       linearStepsSlider.addEventListener("input", () => updateFromSlider(linearStepsSlider, linearStepsInput, linearStepsValue));
       horizontalStepsSlider.addEventListener("input", () => updateFromSlider(horizontalStepsSlider, horizontalStepsInput, horizontalStepsValue));

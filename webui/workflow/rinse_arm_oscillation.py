@@ -24,6 +24,7 @@ def execute_rinse_arm_oscillation(
     pause_between_moves_s: float,
     controller: RotationController | None = None,
     pause_fn: Callable[[float], None] | None = None,
+    abort_check_fn: Callable[[str], None] = check_abort,
     record_fn: Callable[[str | Path, dict[str, Any]], dict[str, Any]] = register_action_result,
     log_fn: Callable[[str | Path, str], None] = append_log,
 ) -> dict[str, Any]:
@@ -86,7 +87,13 @@ def execute_rinse_arm_oscillation(
 
     try:
         for segment_index, segment in enumerate(segments):
-            check_abort("Abort requested before rinse-arm movement.")
+            abort_check_fn("Abort requested before rinse-arm movement.")
+            live_state = arm.expected_relative_state()
+            if live_state["angle_confidence"] != "tracked":
+                raise RuntimeError(
+                    "Rotation-arm angle became uncertain; no further "
+                    "oscillation command was sent."
+                )
             move_result = arm.relative_steps(segment.relative_steps)
             record = {
                 **asdict(segment),

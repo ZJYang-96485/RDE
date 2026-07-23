@@ -38,6 +38,7 @@ from workflow.config_loader import (
     get_serial_port,
     load_config,
     set_gamry_mode,
+    user_axis_to_internal_axis,
 )
 from workflow.protocol_loader import (
     ProtocolError,
@@ -74,12 +75,18 @@ from workflow.run_plan_loader import (
     save_run_plan,
     validate_run_plan_payload,
 )
-from workflow.safety import validate_axis_move, validate_duration_seconds, validate_rpm
+from workflow.safety import (
+    validate_axis_move,
+    validate_axis_position,
+    validate_duration_seconds,
+    validate_rpm,
+)
 from workflow.state import (
     automation_is_running,
     get_rde_state,
     get_status_payload,
     get_automation_state,
+    set_axis_position,
     start_rde_run,
 )
 
@@ -773,6 +780,54 @@ def axes_home():
     return json_error(
         "Axis homing is temporarily disabled while the physical home position is being calibrated.",
         409,
+    )
+
+
+@app.post("/api/axes/tracked-position")
+def axes_tracked_position():
+    """
+    Correct one software-tracked coordinate without commanding any hardware.
+
+    This is intentionally separate from the motion and homing routes. The
+    caller must explicitly acknowledge that the physical axis will not move.
+    """
+    if automation_is_running():
+        return json_error(
+            "automation is running; tracked positions cannot be corrected.",
+            409,
+        )
+
+    payload = request.get_json(silent=True) or {}
+    if payload.get("confirm_software_only") is not True:
+        return json_error(
+            "confirm_software_only must be true; this changes only the software record.",
+            400,
+        )
+
+    user_axis = str(payload.get("axis", "") or "").strip().lower()
+    if user_axis not in {"x", "y", "z"}:
+        return json_error("axis must be x, y, or z.", 400)
+
+    try:
+        position = int(payload.get("position"))
+        internal_axis = user_axis_to_internal_axis(user_axis)
+        validate_axis_position(internal_axis, position)
+        set_axis_position(internal_axis, position)
+    except (TypeError, ValueError, ConfigError) as exc:
+        return json_error(str(exc), 400)
+
+    return jsonify(
+        {
+            "ok": True,
+            "axis": user_axis,
+            "internal_axis": internal_axis,
+            "position": position,
+            "hardware_command_sent": False,
+            "message": (
+                f"Tracked {user_axis.upper()} was corrected to {position}. "
+                "No physical movement or serial command was performed."
+            ),
+        }
     )
 
 

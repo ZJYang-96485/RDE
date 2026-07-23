@@ -876,6 +876,38 @@
         font-size: 0.7rem;
       }
 
+      .analysis-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+        gap: 6px;
+        margin: 0 0 9px;
+      }
+
+      .analysis-summary-item {
+        border-radius: 7px;
+        padding: 6px 8px;
+        background: #e8f2f8;
+        color: #244b65;
+        font-size: 0.7rem;
+      }
+
+      .analysis-summary-item strong {
+        display: block;
+        margin-bottom: 2px;
+      }
+
+      .echem-analysis-option {
+        margin-top: 12px;
+        border: 1px solid #bdd3e1;
+        border-radius: 9px;
+        padding: 11px;
+        background: #f2f8fb;
+      }
+
+      .echem-analysis-option .hint {
+        margin: 6px 0 0;
+      }
+
       .analysis-artifact-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -1205,6 +1237,10 @@
             <span id="liveLevichRpm" hidden>Commanded RPM: —</span>
             <span id="liveLevichPhase" hidden>Phase: —</span>
             <span id="liveGamryCount">Points: 0</span>
+            <span id="liveChargeCurrent" hidden>Current: unavailable</span>
+            <span id="liveChargeTotal" hidden>Cumulative signed charge (live estimate): unavailable</span>
+            <span id="liveChargeIntervals" hidden>Integrated intervals: unavailable</span>
+            <span id="liveChargeStatus" hidden>Charge analysis: unavailable</span>
             <span id="liveGamryElapsed">Elapsed: —</span>
             <span id="liveGamryUpdated">Last update: —</span>
           </div>
@@ -1214,6 +1250,8 @@
             <div id="liveGamryEmpty" hidden></div>
           </div>
           <div class="cmd-buttons">
+            <button id="liveCurrentPlotBtn" class="home-btn" type="button" hidden>Current vs Time</button>
+            <button id="liveChargePlotBtn" class="home-btn" type="button" hidden>Cumulative Charge vs Time</button>
             <button id="livePauseBtn" class="home-btn" type="button">Pause Display</button>
             <button id="liveClearBtn" class="home-btn" type="button">Clear View</button>
             <button id="liveScaleBtn" class="home-btn" type="button">Auto Scale: On</button>
@@ -1486,6 +1524,10 @@
       const liveLevichPhaseEl = document.getElementById("liveLevichPhase");
       const liveGamryCountEl = document.getElementById("liveGamryCount");
       const liveGamryElapsedEl = document.getElementById("liveGamryElapsed");
+      const liveChargeCurrentEl = document.getElementById("liveChargeCurrent");
+      const liveChargeTotalEl = document.getElementById("liveChargeTotal");
+      const liveChargeIntervalsEl = document.getElementById("liveChargeIntervals");
+      const liveChargeStatusEl = document.getElementById("liveChargeStatus");
       const liveGamryUpdatedEl = document.getElementById("liveGamryUpdated");
       const liveTrialEventsEl = document.getElementById("liveTrialEvents");
       const liveGamryCanvas = document.getElementById("liveGamryCanvas");
@@ -1493,6 +1535,8 @@
       const livePauseBtn = document.getElementById("livePauseBtn");
       const liveClearBtn = document.getElementById("liveClearBtn");
       const liveScaleBtn = document.getElementById("liveScaleBtn");
+      const liveCurrentPlotBtn = document.getElementById("liveCurrentPlotBtn");
+      const liveChargePlotBtn = document.getElementById("liveChargePlotBtn");
       const liveViewModeLabelEl = document.getElementById("liveViewModeLabel");
       const sameTrialViewModeEl = document.getElementById("sameTrialViewMode");
       const sameTrialRefreshBtn = document.getElementById("sameTrialRefreshBtn");
@@ -1580,6 +1624,7 @@
       let liveEvents = [];
       let livePaused = false;
       let liveAutoScale = true;
+      let liveCaPlotMode = "current";
       let liveMaxVisiblePoints = 5000;
       let livePollIntervalMs = 500;
       let livePollTimer = null;
@@ -1601,13 +1646,34 @@
         if (axis === "x") {
           return technique === "cv" || technique === "lsv" ? Number(point.e_v) : Number(point.t_s);
         }
+        if (["ca", "ca_staircase"].includes(technique) && liveCaPlotMode === "charge") {
+          return Number(point.q_live_c);
+        }
         return ["ocp", "cp", "cc_charge", "cc_discharge"].includes(technique) ? Number(point.e_v) : Number(point.i_a);
       }
 
-      function livePlotLabels(technique) {
+      function chargeDisplayUnit(values) {
+        const magnitude = Math.max(0, ...values.map((value) => Math.abs(Number(value))).filter(Number.isFinite));
+        if (magnitude === 0 || magnitude >= 1) return { unit: "C", scale: 1 };
+        if (magnitude >= 0.001) return { unit: "mC", scale: 1000 };
+        return { unit: "µC", scale: 1000000 };
+      }
+
+      function formatSignedCharge(value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return "unavailable";
+        const display = chargeDisplayUnit([numeric]);
+        const displayed = Number((numeric * display.scale).toPrecision(5));
+        return `${displayed > 0 ? "+" : ""}${displayed} ${display.unit}`;
+      }
+
+      function livePlotLabels(technique, chargeUnit = "C") {
         if (technique === "eis" || technique === "geis") return ["Zreal (ohm)", "-Zimag (ohm)"];
         if (technique === "ocp") return ["Time (s)", "Potential (V)"];
-        if (technique === "ca" || technique === "levich_rpm_sweep_ca") return ["Time (s)", "Current (A)"];
+        if (["ca", "ca_staircase"].includes(technique) && liveCaPlotMode === "charge") {
+          return ["Time (s)", `Cumulative signed charge (${chargeUnit})`];
+        }
+        if (["ca", "ca_staircase", "levich_rpm_sweep_ca"].includes(technique)) return ["Time (s)", "Current (A)"];
         if (technique === "cp") return ["Time (s)", "Potential (V)"];
         if (technique === "cc_charge" || technique === "cc_discharge") return ["Time (s)", "Potential (V)"];
         return ["Potential (V)", "Current (A)"];
@@ -1615,7 +1681,9 @@
 
       function formatLiveNumber(value, technique, axis) {
         if (!Number.isFinite(value)) return "—";
-        const currentAxis = axis === "y" && ["ca", "cv", "lsv", "levich_rpm_sweep_ca"].includes(technique);
+        const currentAxis = axis === "y"
+          && ["ca", "ca_staircase", "cv", "lsv", "levich_rpm_sweep_ca"].includes(technique)
+          && !(["ca", "ca_staircase"].includes(technique) && liveCaPlotMode === "charge");
         const magnitude = Math.abs(value);
         if ((currentAxis && magnitude > 0) || (magnitude > 0 && magnitude < 0.001) || magnitude >= 10000) {
           return value.toExponential(2);
@@ -1639,12 +1707,17 @@
         const valid = livePoints.filter((point) => Number.isFinite(liveValue(point, "x", technique)) && Number.isFinite(liveValue(point, "y", technique)));
         liveGamryEmptyEl.hidden = valid.length > 0;
         if (!valid.length) return;
+        const chargeMode = ["ca", "ca_staircase"].includes(technique) && liveCaPlotMode === "charge";
+        const chargeUnit = chargeMode
+          ? chargeDisplayUnit(valid.map((point) => liveValue(point, "y", technique)))
+          : { unit: "C", scale: 1 };
+        const displayY = (point) => liveValue(point, "y", technique) * chargeUnit.scale;
 
         const margin = { left: 76, right: 18, top: 16, bottom: 48 };
         const plotWidth = width - margin.left - margin.right;
         const plotHeight = height - margin.top - margin.bottom;
         let xs = valid.map((point) => liveValue(point, "x", technique));
-        let ys = valid.map((point) => liveValue(point, "y", technique));
+        let ys = valid.map(displayY);
         let xmin = Math.min(...xs), xmax = Math.max(...xs);
         let ymin = Math.min(...ys), ymax = Math.max(...ys);
         if (!liveAutoScale) {
@@ -1685,7 +1758,7 @@
           ctx.fillText(formatLiveNumber(yValue, technique, "y"), margin.left - 8, y + 4);
           ctx.textAlign = "center";
         }
-        const labels = livePlotLabels(technique);
+        const labels = livePlotLabels(technique, chargeUnit.unit);
         ctx.fillText(labels[0], margin.left + plotWidth / 2 - 30, height - 10);
         ctx.save();
         ctx.translate(14, margin.top + plotHeight / 2 + 25);
@@ -1698,7 +1771,7 @@
         ctx.beginPath();
         valid.forEach((point, index) => {
           const x = sx(liveValue(point, "x", technique));
-          const y = sy(liveValue(point, "y", technique));
+          const y = sy(displayY(point));
           if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         });
         ctx.stroke();
@@ -1802,7 +1875,7 @@
 
       function setSameTrialViewMode(mode) {
         const viewingSaved = mode === "saved";
-        sameTrialViewModeEl.textContent = viewingSaved ? "Viewing saved DTA file" : "Viewing live measurement";
+        sameTrialViewModeEl.textContent = viewingSaved ? "Viewing saved result" : "Viewing live measurement";
         sameTrialViewModeEl.classList.toggle("is-saved", viewingSaved);
       }
 
@@ -1828,6 +1901,22 @@
         container.appendChild(links);
       }
 
+      function formatAnalysisSummaryValue(item) {
+        const value = item?.value;
+        if (value === null || value === undefined || value === "") return "unavailable";
+        if (item.format === "charge") return formatSignedCharge(value);
+        if (item.format === "duration") {
+          const numeric = Number(value);
+          return Number.isFinite(numeric) ? `${Number(numeric.toPrecision(6))} s` : "unavailable";
+        }
+        if (item.format === "integer") {
+          const numeric = Number(value);
+          return Number.isFinite(numeric) ? Math.round(numeric).toString() : "unavailable";
+        }
+        if (item.format === "boolean") return value ? "yes" : "no";
+        return String(value).replaceAll("_", " ");
+      }
+
       function renderSameTrialAnalysisGroups() {
         sameTrialAnalysisGroupsEl.replaceChildren();
         for (const group of sameTrialAnalysisGroups) {
@@ -1837,9 +1926,47 @@
           title.textContent = group.label || "Levich CA RPM Sweep";
           const meta = document.createElement("p");
           meta.className = "analysis-history-meta";
-          meta.textContent = `RPM source: ${group.rpm_source || "commanded"} · Stabilization mode: ${group.stabilization_mode || "fixed delay"}`;
+          const metaItems = Array.isArray(group.meta_items) && group.meta_items.length
+            ? group.meta_items
+            : [
+                `RPM source: ${group.rpm_source || "commanded"}`,
+                `Stabilization mode: ${group.stabilization_mode || "fixed delay"}`
+              ];
+          meta.textContent = metaItems.join(" · ");
           card.appendChild(title);
           card.appendChild(meta);
+
+          if (group.analysis_status === "failed") {
+            const error = document.createElement("p");
+            error.className = "error";
+            error.textContent = `Analysis failed; acquisition data remains available. ${group.error || ""}`.trim();
+            card.appendChild(error);
+          }
+
+          const summaryItems = Array.isArray(group.summary_items) ? group.summary_items : [];
+          if (summaryItems.length) {
+            const summaryGrid = document.createElement("div");
+            summaryGrid.className = "analysis-summary-grid";
+            for (const summaryItem of summaryItems) {
+              const summaryItemEl = document.createElement("div");
+              summaryItemEl.className = "analysis-summary-item";
+              const summaryLabel = document.createElement("strong");
+              summaryLabel.textContent = summaryItem.label || "Result";
+              const summaryValue = document.createElement("span");
+              summaryValue.textContent = formatAnalysisSummaryValue(summaryItem);
+              summaryItemEl.appendChild(summaryLabel);
+              summaryItemEl.appendChild(summaryValue);
+              summaryGrid.appendChild(summaryItemEl);
+            }
+            card.appendChild(summaryGrid);
+          }
+
+          if (Array.isArray(group.warnings) && group.warnings.length) {
+            const warnings = document.createElement("p");
+            warnings.className = "analysis-history-meta";
+            warnings.textContent = `Warnings: ${group.warnings.join(" ")}`;
+            card.appendChild(warnings);
+          }
 
           const grid = document.createElement("div");
           grid.className = "analysis-artifact-grid";
@@ -1869,6 +1996,15 @@
               plotButton.className = "same-trial-file-button";
               plotButton.dataset.relativePath = artifact.relative_path;
               plotButton.textContent = "Plot raw CA trace";
+              item.appendChild(plotButton);
+            }
+            if (artifact.plot_kind === "xy") {
+              const plotButton = document.createElement("button");
+              plotButton.type = "button";
+              plotButton.className = "same-trial-file-button analysis-series-button";
+              plotButton.dataset.relativePath = artifact.relative_path;
+              plotButton.dataset.plotLabel = artifact.plot_label || artifact.label;
+              plotButton.textContent = `Plot ${artifact.plot_label || artifact.label}`;
               item.appendChild(plotButton);
             }
             appendArtifactLinks(item, artifact);
@@ -1930,6 +2066,17 @@
         });
       }
 
+      function sameTrialRegisteredPlotPaths() {
+        const paths = new Set(sameTrialFiles.map((file) => file.relative_path));
+        for (const group of sameTrialAnalysisGroups) {
+          if (group.raw_dta?.relative_path) paths.add(group.raw_dta.relative_path);
+          for (const artifact of (Array.isArray(group.artifacts) ? group.artifacts : [])) {
+            if (artifact.relative_path) paths.add(artifact.relative_path);
+          }
+        }
+        return paths;
+      }
+
       function resetSameTrialViewer(message = "No current automation trial is available.") {
         sameTrialRunId = "";
         sameTrialFiles = [];
@@ -1978,7 +2125,7 @@
             ? `Trial: ${nextRunId} · ${data.run_dir || "current run folder"}`
             : "Trial: none";
 
-          if (sameTrialSelectedPath && !sameTrialFiles.some((file) => file.relative_path === sameTrialSelectedPath)) {
+          if (sameTrialSelectedPath && !sameTrialRegisteredPlotPaths().has(sameTrialSelectedPath)) {
             sameTrialSelectedPath = "";
             sameTrialSavedData = null;
             setSameTrialViewMode("live");
@@ -2026,6 +2173,39 @@
           return true;
         } catch (error) {
           setSameTrialStatus(`Unable to plot ${selected.label}: ${error.message}`, true);
+          return false;
+        }
+      }
+
+      async function loadAnalysisFigure(relativePath, plotLabel = "Analysis result") {
+        sameTrialSelectedPath = relativePath;
+        setSameTrialStatus(`Loading ${plotLabel}...`);
+        try {
+          const response = await fetch(
+            `/api/current-run/analysis-data?path=${encodeURIComponent(relativePath)}`
+          );
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || "Unable to load analysis data.");
+
+          sameTrialSavedData = data;
+          sameTrialPlotTitleEl.textContent = plotLabel;
+          sameTrialTechniqueEl.textContent = `Analysis: ${data.technique_guess || "saved result"}`;
+          const originalCount = Number(data.original_point_count || data.points?.length || 0);
+          const displayedCount = Number(data.point_count || data.points?.length || 0);
+          sameTrialPointCountEl.textContent = data.decimated
+            ? `Points: ${displayedCount} displayed of ${originalCount}`
+            : `Points: ${displayedCount}`;
+          sameTrialAxisLabelsEl.textContent = `Axes: ${data.x_label || "X"} / ${data.y_label || "Y"}`;
+          sameTrialEmptyEl.textContent = "No plottable analysis points were found.";
+          setSameTrialViewMode("saved");
+          setSameTrialStatus(
+            `Viewing ${plotLabel}. Live collection continues independently.`
+          );
+          drawSameTrialPlot(data);
+          renderSameTrialFileList();
+          return true;
+        } catch (error) {
+          setSameTrialStatus(`Unable to plot ${plotLabel}: ${error.message}`, true);
           return false;
         }
       }
@@ -2094,6 +2274,12 @@
         const state = String(status.status || "idle");
         const technique = String(status.technique || "").toLowerCase();
         const isLevich = technique === "levich_rpm_sweep_ca";
+        const latestChargePoint = [...livePoints].reverse().find(
+          (point) => Number.isFinite(Number(point.q_live_c))
+        );
+        const hasChargeAnalysis = ["ca", "ca_staircase"].includes(technique) && (
+          Boolean(status.charge_analysis_enabled) || Boolean(latestChargePoint)
+        );
         liveGamryTitleEl.textContent = isLevich
           ? "Live CA trace for Levich RPM sweep"
           : "Live Gamry Plot";
@@ -2107,6 +2293,48 @@
         liveGamryStepEl.textContent = `EChem step: ${status.step_name || "—"}`;
         liveGamryTechniqueEl.textContent = `Technique: ${isLevich ? "continuous CA / Levich RPM sweep" : (status.technique || "—")}`;
         liveGamryCountEl.textContent = `Points: ${status.point_count || livePoints.length || 0}`;
+        for (const element of [
+          liveChargeCurrentEl,
+          liveChargeTotalEl,
+          liveChargeIntervalsEl,
+          liveChargeStatusEl,
+          liveCurrentPlotBtn,
+          liveChargePlotBtn
+        ]) {
+          element.hidden = !hasChargeAnalysis;
+        }
+        if (hasChargeAnalysis) {
+          const current = Number(latestChargePoint?.i_a);
+          const statusCharge = Number(status.charge_live_c);
+          const pointCharge = Number(latestChargePoint?.q_live_c);
+          const charge = Number.isFinite(statusCharge) ? statusCharge : pointCharge;
+          const statusIntervals = Number(status.charge_integrated_intervals);
+          const pointIntervals = Number(latestChargePoint?.q_live_integrated_intervals);
+          const intervals = Number.isFinite(statusIntervals)
+            ? statusIntervals
+            : pointIntervals;
+          liveChargeCurrentEl.textContent = `Current: ${
+            Number.isFinite(current) ? `${current.toExponential(4)} A` : "unavailable"
+          }`;
+          liveChargeTotalEl.textContent = `Cumulative signed charge (live estimate): ${formatSignedCharge(charge)}`;
+          liveChargeIntervalsEl.textContent = `Integrated intervals: ${
+            Number.isFinite(intervals) ? Math.round(intervals) : "unavailable"
+          }`;
+          const chargeStatus = String(
+            status.charge_analysis_status
+            || latestChargePoint?.q_live_status
+            || "live_estimate"
+          ).replaceAll("_", " ");
+          liveChargeStatusEl.textContent = `Charge analysis: ${chargeStatus}; final result will be recomputed from DTA`;
+          liveCurrentPlotBtn.textContent = liveCaPlotMode === "current"
+            ? "Current vs Time (selected)"
+            : "Current vs Time";
+          liveChargePlotBtn.textContent = liveCaPlotMode === "charge"
+            ? "Cumulative Charge vs Time (selected)"
+            : "Cumulative Charge vs Time";
+        } else if (liveCaPlotMode === "charge") {
+          liveCaPlotMode = "current";
+        }
         const startedMs = status.started_at ? Date.parse(status.started_at) : NaN;
         const finishedMs = status.finished_at ? Date.parse(status.finished_at) : Date.now();
         const elapsedS = Number.isFinite(startedMs) ? Math.max(0, (finishedMs - startedMs) / 1000) : null;
@@ -2116,6 +2344,17 @@
           liveGamryMessageEl.textContent = `Acquisition error: ${status.error}`;
         } else if (status.stream_error) {
           liveGamryMessageEl.textContent = `Live display warning (measurement continues; final DTA is unaffected): ${status.stream_error}`;
+        } else if (
+          hasChargeAnalysis
+          && (
+            (Array.isArray(status.charge_analysis_warnings) && status.charge_analysis_warnings.length)
+            || (Array.isArray(latestChargePoint?.q_live_warnings) && latestChargePoint.q_live_warnings.length)
+          )
+        ) {
+          const chargeWarnings = status.charge_analysis_warnings?.length
+            ? status.charge_analysis_warnings
+            : latestChargePoint.q_live_warnings;
+          liveGamryMessageEl.textContent = `Charge live-estimate warning (acquisition continues): ${chargeWarnings.join(" ")}`;
         } else if (!status.run_id) {
           liveGamryMessageEl.textContent = "Live plot ready.";
         } else if (!livePoints.length) {
@@ -2141,12 +2380,20 @@
           const statusResponse = await fetch("/api/live/status");
           const statusData = await statusResponse.json();
           const status = statusData.status || {};
-          const key = status.run_id ? [status.run_id, status.sample_id, status.step_name, status.technique, status.started_at].join("|") : "";
+          const key = status.run_id ? [
+            status.run_id,
+            status.sample_id,
+            status.step_name,
+            status.technique,
+            status.started_at,
+            status.charge_analysis_segment || ""
+          ].join("|") : "";
           const changed = key !== liveStreamKey;
           if (changed) {
             liveStreamKey = key;
             livePoints = [];
             liveLatestSeq = 0;
+            liveCaPlotMode = "current";
             liveEvents = [];
             liveEventLatestSeq = 0;
             renderLiveTrialEvents();
@@ -2158,7 +2405,14 @@
             const pointsResponse = await fetch(`/api/live/points?after=${encodeURIComponent(initialAfter)}&limit=${encodeURIComponent(liveMaxVisiblePoints)}`);
             const pointsData = await pointsResponse.json();
             if (pointsResponse.ok && Array.isArray(pointsData.points)) {
-              const newPoints = pointsData.points;
+              const activeChargeSegment = Number(
+                (pointsData.status || status).charge_analysis_segment
+              );
+              const newPoints = Number.isFinite(activeChargeSegment)
+                ? pointsData.points.filter(
+                    (point) => Number(point.q_live_segment) === activeChargeSegment
+                  )
+                : pointsData.points;
               livePoints = [...livePoints, ...newPoints].slice(-liveMaxVisiblePoints);
               if (newPoints.length) {
                 liveLatestSeq = Math.max(liveLatestSeq, ...newPoints.map((point) => Number(point.seq || 0)));
@@ -4309,6 +4563,15 @@
             values[key] = field.value;
           }
         }
+        const chargeAnalysis = block.querySelector(".echem-analysis-charge");
+        if (chargeAnalysis) {
+          values.analysis = {
+            cumulative_charge: {
+              enabled: chargeAnalysis.checked,
+              method: "trapezoidal"
+            }
+          };
+        }
         return values;
       }
 
@@ -4356,6 +4619,37 @@
           if (spec.positive) input.min = "0.000000001";
           fieldWrap.appendChild(label);
           fieldWrap.appendChild(input);
+        }
+
+        if (kind === "ca" || kind === "ca_range") {
+          const option = document.createElement("div");
+          option.className = "echem-analysis-option";
+          const optionTitle = document.createElement("strong");
+          optionTitle.textContent = "Analysis";
+          const optionLabel = document.createElement("label");
+          optionLabel.className = "check-label";
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.className = "echem-analysis-charge";
+          checkbox.checked = Boolean(
+            values.analysis?.cumulative_charge?.enabled
+          );
+          const labelText = document.createElement("span");
+          labelText.textContent = " Calculate cumulative signed charge";
+          optionLabel.appendChild(checkbox);
+          optionLabel.appendChild(labelText);
+          const hint = document.createElement("p");
+          hint.className = "hint";
+          hint.textContent = "Uses signed Gamry current and trapezoidal integration. The live value is an estimate; the final result is recomputed from the completed DTA.";
+          option.appendChild(optionTitle);
+          option.appendChild(optionLabel);
+          option.appendChild(hint);
+          fieldWrap.appendChild(option);
+        } else if (kind === "levich_rpm_sweep_ca") {
+          const hint = document.createElement("p");
+          hint.className = "hint";
+          hint.textContent = "Cumulative-charge analysis is not supported for Levich RPM sweep CA in pilot v1.";
+          fieldWrap.appendChild(hint);
         }
       }
 
@@ -4508,6 +4802,15 @@
             if (spec.optional && input.value.trim() === "") continue;
             payload[spec.key] = numberValueFromInput(input, `${name}: ${spec.label}`, Boolean(spec.positive), false);
           }
+        }
+
+        if (kind === "ca" || kind === "ca_range") {
+          payload.analysis = {
+            cumulative_charge: {
+              enabled: Boolean(block.querySelector(".echem-analysis-charge")?.checked),
+              method: "trapezoidal"
+            }
+          };
         }
 
         if (kind === "cp") {
@@ -5011,6 +5314,16 @@
         drawLivePlot(liveStatus);
       });
 
+      liveCurrentPlotBtn.addEventListener("click", () => {
+        liveCaPlotMode = "current";
+        updateLiveMeta(liveStatus);
+      });
+
+      liveChargePlotBtn.addEventListener("click", () => {
+        liveCaPlotMode = "charge";
+        updateLiveMeta(liveStatus);
+      });
+
       sameTrialRefreshBtn.addEventListener("click", () => {
         refreshSameTrialFigures();
       });
@@ -5032,6 +5345,13 @@
       sameTrialAnalysisGroupsEl.addEventListener("click", (event) => {
         const button = event.target.closest(".same-trial-file-button");
         if (!button) return;
+        if (button.classList.contains("analysis-series-button")) {
+          loadAnalysisFigure(
+            button.dataset.relativePath || "",
+            button.dataset.plotLabel || "Analysis result"
+          );
+          return;
+        }
         loadSameTrialFigure(button.dataset.relativePath || "");
       });
 
@@ -5077,9 +5397,15 @@
 
       addEchemOcpBtn.addEventListener("click", () => addEchemStep("ocp", { name: "ocp" }));
       addEchemEisBtn.addEventListener("click", () => addEchemStep("eis", { name: "eis" }));
-      addEchemCaBtn.addEventListener("click", () => addEchemStep("ca", { name: "ca" }));
+      addEchemCaBtn.addEventListener("click", () => addEchemStep("ca", {
+        name: "ca",
+        analysis: { cumulative_charge: { enabled: true, method: "trapezoidal" } }
+      }));
       addEchemLevichBtn.addEventListener("click", () => addEchemStep("levich_rpm_sweep_ca", { name: "levich_rpm_sweep_ca" }));
-      addEchemCaRangeBtn.addEventListener("click", () => addEchemStep("ca_range", { name: "ca_range" }));
+      addEchemCaRangeBtn.addEventListener("click", () => addEchemStep("ca_range", {
+        name: "ca_range",
+        analysis: { cumulative_charge: { enabled: true, method: "trapezoidal" } }
+      }));
       addEchemLsvBtn.addEventListener("click", () => addEchemStep("lsv", { name: "lsv" }));
       addEchemCvBtn.addEventListener("click", () => addEchemStep("cv", { name: "cv" }));
       addEchemCpBtn.addEventListener("click", () => addEchemStep("cp", { name: "cp" }));

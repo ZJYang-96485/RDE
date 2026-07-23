@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 try:
     from gamry_worker.live_writer import append_live_point, append_live_points, update_live_status
@@ -46,7 +46,19 @@ def normalize_ocp_acq_rows(raw_data: Any) -> dict[str, Any]:
 
 def normalize_ca_acq_rows(raw_data: Any) -> dict[str, Any]:
     # Installed ChronoCurve: time, vf, im.
-    return _normalized(raw_data, "ca", (("t_s", "time"), ("e_v", "vf"), ("i_a", "im")))
+    point = _normalized(raw_data, "ca", (("t_s", "time"), ("e_v", "vf"), ("i_a", "im")))
+    if isinstance(raw_data, dict):
+        for key in (
+            "q_live_c",
+            "q_live_integrated_intervals",
+            "q_live_skipped_intervals",
+            "q_live_status",
+            "q_live_warnings",
+            "q_live_segment",
+        ):
+            if key in raw_data:
+                point[key] = raw_data[key]
+    return point
 
 
 def normalize_cv_acq_rows(raw_data: Any) -> dict[str, Any]:
@@ -100,9 +112,13 @@ class LiveCurveEmitter:
         self,
         live_dir: str | Path | None,
         normalizer: Callable[[Any], dict[str, Any]],
+        point_transform: Optional[
+            Callable[[dict[str, Any]], Optional[dict[str, Any]]]
+        ] = None,
     ) -> None:
         self.live_dir = Path(live_dir) if live_dir else None
         self.normalizer = normalizer
+        self.point_transform = point_transform
         self.emitted_count = 0
         self.errors: list[str] = []
 
@@ -124,7 +140,13 @@ class LiveCurveEmitter:
             if count < self.emitted_count:
                 # ToolkitPy ring-buffer wrap: emit the currently available rows.
                 self.emitted_count = 0
-            rows = [self.normalizer(acquisition_rows[index]) for index in range(self.emitted_count, count)]
+            rows = []
+            for index in range(self.emitted_count, count):
+                point = self.normalizer(acquisition_rows[index])
+                if self.point_transform is not None:
+                    point = self.point_transform(point)
+                if point is not None:
+                    rows.append(point)
             if rows:
                 append_live_points(self.live_dir, rows)
             self.emitted_count = count
@@ -137,7 +159,12 @@ class LiveCurveEmitter:
         if self.live_dir is None:
             return False
         try:
-            append_live_point(self.live_dir, self.normalizer(acquisition_row))
+            point = self.normalizer(acquisition_row)
+            if self.point_transform is not None:
+                point = self.point_transform(point)
+            if point is None:
+                return False
+            append_live_point(self.live_dir, point)
             self.emitted_count += 1
             return True
         except Exception as exc:

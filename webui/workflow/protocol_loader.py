@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from analysis.registry import normalize_analysis_config
 from workflow.config_loader import get_path, load_config
 
 MAX_PROTOCOL_NAME_LENGTH = 80
@@ -114,6 +115,17 @@ def optional_string(value: Any, default: str = "") -> str:
         return default
 
     return str(value).strip()
+
+
+def validated_analysis(raw_step: dict[str, Any], technique: str, step_name: str) -> dict[str, Any]:
+    try:
+        return normalize_analysis_config(
+            raw_step.get("analysis"),
+            technique=technique,
+            default_cumulative_charge=False,
+        )
+    except ValueError as exc:
+        raise ProtocolError(f"{step_name}: {exc}") from exc
 
 
 def normalize_dta_output(step: dict[str, Any]) -> None:
@@ -353,6 +365,9 @@ def validate_ca_step(raw_step: dict[str, Any], index: int) -> dict[str, Any]:
     step["duration_s"] = parse_positive_float(raw_step.get("duration_s", 300), f"{step['name']}: duration_s")
     step["sample_period_s"] = parse_positive_float(raw_step.get("sample_period_s", 1), f"{step['name']}: sample_period_s")
     step["area_cm2"] = parse_positive_float(raw_step.get("area_cm2", 1), f"{step['name']}: area_cm2")
+    analysis = validated_analysis(raw_step, "ca", step["name"])
+    if analysis:
+        step["analysis"] = analysis
     return step
 
 
@@ -376,6 +391,9 @@ def validate_ca_staircase_step(raw_step: dict[str, Any], index: int) -> dict[str
     step["equilibration_time_s"] = parse_nonnegative_float(raw_step.get("equilibration_time_s", 0), f"{step['name']}: equilibration_time_s")
     step["ir_compensation"] = optional_string(raw_step.get("ir_compensation"), "none")
     step["pf_correction_ohm"] = parse_nonnegative_float(raw_step.get("pf_correction_ohm", 0), f"{step['name']}: pf_correction_ohm")
+    analysis = validated_analysis(raw_step, "ca_staircase", step["name"])
+    if analysis:
+        step["analysis"] = analysis
     return step
 
 
@@ -421,6 +439,9 @@ def validate_levich_rpm_sweep_ca_step(
     index: int,
 ) -> dict[str, Any]:
     step = validate_common_step_fields(raw_step, index)
+    analysis = validated_analysis(raw_step, "levich_rpm_sweep_ca", step["name"])
+    if analysis:
+        step["analysis"] = analysis
     if not optional_string(raw_step.get("output")):
         step["output"] = "Levich_CA_sweep.DTA"
     normalize_dta_output(step)
@@ -664,6 +685,7 @@ def expand_ca_range_step(raw_step: dict[str, Any], index: int) -> list[dict[str,
                 "sample_period_s": raw_step.get("sample_period_s", raw_step.get("sample_time_s", 1)),
                 "area_cm2": raw_step.get("area_cm2", 1),
                 "expected_max_v": raw_step.get("expected_max_v", max(1.0, abs(decimal_to_float(voltage)))),
+                "analysis": raw_step.get("analysis"),
             }
         )
 

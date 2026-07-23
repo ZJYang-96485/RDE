@@ -6,6 +6,12 @@ import time
 from pathlib import Path
 from typing import Any
 
+from analysis.ca_charge import (
+    ANALYSIS_TYPE as CA_CHARGE_ANALYSIS_TYPE,
+    ANALYSIS_VERSION as CA_CHARGE_ANALYSIS_VERSION,
+    cumulative_charge_enabled,
+    run_ca_charge_analysis,
+)
 from hardware.gamry_client import run_gamry_step
 from hardware.gamry_cell_client import gamry_cell_off, gamry_cell_on
 from hardware.motion_controller import move_horizontal_steps, move_linear_steps, move_to_xyz, move_xz_steps_parallel
@@ -21,6 +27,7 @@ from workflow.data_manager import (
     mark_run_complete,
     mark_run_failed,
     prepare_protocol_outputs,
+    register_trial_analysis_result,
     register_trial_result,
     save_protocol_snapshot,
 )
@@ -59,6 +66,74 @@ def sleep_interruptible(seconds: float, message: str = "Abort requested during w
 
 def protocol_outputs_by_step(protocol_outputs: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
     return {int(item["step_index"]): item for item in protocol_outputs}
+
+
+def run_requested_post_acquisition_analyses(
+    *,
+    run_dir: Path,
+    step: dict[str, Any],
+    outputs: list[str],
+) -> list[dict[str, Any]]:
+    """Run enabled analyses after acquisition without changing trial success."""
+
+    if not cumulative_charge_enabled(step):
+        return []
+
+    records: list[dict[str, Any]] = []
+    for output in outputs:
+        raw_dta = Path(output)
+        if not raw_dta.is_file():
+            append_log(
+                run_dir,
+                f"CA cumulative-charge analysis skipped because DTA is missing: {raw_dta}.",
+            )
+            continue
+        try:
+            analysis = run_ca_charge_analysis(raw_dta)
+            record = register_trial_analysis_result(
+                run_dir,
+                raw_dta=raw_dta,
+                analysis_type=analysis["analysis_type"],
+                analysis_version=analysis["analysis_version"],
+                label="CA Cumulative Charge",
+                technique="ca",
+                status="complete",
+                analysis_artifacts=analysis["artifacts"],
+                summary=analysis["summary"],
+            )
+            records.append(record)
+            final_charge = analysis["summary"]["result"]["final_signed_charge_c"]
+            append_log(
+                run_dir,
+                f"CA cumulative-charge analysis complete for {raw_dta.name}: "
+                f"{final_charge:.12g} C (recomputed from DTA).",
+            )
+        except Exception as exc:
+            error_text = str(exc)
+            try:
+                record = register_trial_analysis_result(
+                    run_dir,
+                    raw_dta=raw_dta,
+                    analysis_type=CA_CHARGE_ANALYSIS_TYPE,
+                    analysis_version=CA_CHARGE_ANALYSIS_VERSION,
+                    label="CA Cumulative Charge",
+                    technique="ca",
+                    status="failed",
+                    error=error_text,
+                )
+                records.append(record)
+            except Exception as registration_exc:
+                append_log(
+                    run_dir,
+                    "Unable to register the failed CA charge analysis: "
+                    f"{registration_exc}.",
+                )
+            append_log(
+                run_dir,
+                f"CA cumulative-charge analysis failed for {raw_dta.name}: "
+                f"{error_text}. Acquisition remains completed.",
+            )
+    return records
 
 
 def sample_label(sample: dict[str, Any], sample_index: int) -> str:
@@ -205,6 +280,27 @@ def run_protocol_for_sample(
             trial_metadata = dict(trial_metadata)
             trial_metadata["trial_status"] = "aborted"
             trial_metadata["skip_reason"] = "Automation abort requested."
+        trial_status = str(trial_metadata.get("trial_status", "")).lower()
+        analysis_records: list[dict[str, Any]] = []
+        if trial_status not in {"skipped", "failed", "aborted"} and not get_abort_event().is_set():
+            analysis_records = run_requested_post_acquisition_analyses(
+                run_dir=run_dir,
+                step=trial_step,
+                outputs=list(output_record["outputs"]),
+            )
+            if analysis_records:
+                worker_result = dict(worker_result)
+                worker_result["analysis_results"] = analysis_records
+                trial_metadata = dict(trial_metadata)
+                trial_metadata["analysis_results"] = [
+                    {
+                        "analysis_type": item.get("analysis_type"),
+                        "analysis_version": item.get("analysis_version"),
+                        "analysis_status": item.get("analysis_status"),
+                        "raw_dta": item.get("raw_dta"),
+                    }
+                    for item in analysis_records
+                ]
         if trial_metadata:
             register_trial_result(run_dir, output_record, trial_metadata, worker_result)
         if str(trial_metadata.get("trial_status", "")).lower() == "skipped":

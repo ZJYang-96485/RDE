@@ -432,6 +432,20 @@ def register_trial_result(
     }
 
     manifest = load_manifest(run_dir)
+    output_paths = {
+        Path(value).resolve()
+        for value in output_record.get("outputs", [])
+    }
+    matching_analysis_results = []
+    for analysis_result in manifest.get("analysis_results", []):
+        raw_dta = analysis_result.get("raw_dta")
+        if not raw_dta:
+            continue
+        if (run_dir / Path(str(raw_dta))).resolve() in output_paths:
+            matching_analysis_results.append(dict(analysis_result))
+    if matching_analysis_results:
+        record["analysis_results"] = matching_analysis_results
+
     trials = [item for item in manifest.get("trials", []) if str(item.get("trial_id")) != trial_id]
     trials.append(record)
     manifest["trials"] = trials
@@ -446,6 +460,8 @@ def register_trial_result(
             planned["trial_id"] = trial_id
             planned["trial_status"] = display_status
             planned["trial_metadata"] = metadata
+            if matching_analysis_results:
+                planned["analysis_results"] = matching_analysis_results
             break
 
     save_manifest(run_dir, manifest)
@@ -460,6 +476,114 @@ def relative_run_file(run_dir: str | Path, path: str | Path) -> str:
         return resolved.relative_to(root).as_posix()
     except ValueError as exc:
         raise DataManagerError(f"Analysis artifact is outside the run folder: {path}") from exc
+
+
+def register_trial_analysis_result(
+    run_dir: str | Path,
+    *,
+    raw_dta: str | Path,
+    analysis_type: str,
+    analysis_version: str,
+    label: str,
+    technique: str,
+    status: str,
+    analysis_artifacts: dict[str, str | Path] | None = None,
+    summary: dict[str, Any] | None = None,
+    error: str | None = None,
+) -> dict[str, Any]:
+    """Register one analysis through a technique-independent manifest schema.
+
+    New analyses should write their artifacts beside the source DTA, then call
+    this function.  History can discover them through ``analysis_type`` and
+    the standardized ``analysis_artifacts`` mapping without changing the
+    acquisition path.
+    """
+
+    root = Path(run_dir).resolve()
+    raw_path = Path(raw_dta).resolve()
+    if not raw_path.is_file():
+        raise DataManagerError(f"Raw analysis DTA does not exist: {raw_dta}")
+
+    normalized_status = str(status or "").strip().lower()
+    if normalized_status not in {"complete", "failed"}:
+        raise DataManagerError("Analysis status must be 'complete' or 'failed'.")
+
+    artifact_paths = dict(analysis_artifacts or {})
+    for key, value in artifact_paths.items():
+        artifact_path = Path(value).resolve()
+        if not artifact_path.is_file():
+            raise DataManagerError(f"Analysis artifact does not exist ({key}): {value}")
+        if artifact_path.parent != raw_path.parent:
+            raise DataManagerError(
+                f"Analysis artifact must be stored beside its raw DTA ({key}): {value}"
+            )
+
+    raw_relative = relative_run_file(root, raw_path)
+    artifact_relatives = {
+        str(key): relative_run_file(root, value)
+        for key, value in artifact_paths.items()
+    }
+    result = {
+        "analysis_type": str(analysis_type),
+        "analysis_version": str(analysis_version),
+        "analysis_status": normalized_status,
+        "technique": str(technique),
+        "label": str(label),
+        "raw_dta": raw_relative,
+        "analysis_artifacts": artifact_relatives,
+        "summary": dict(summary or {}),
+        "registered_at": utc_timestamp(),
+    }
+    if error:
+        result["error"] = str(error)
+
+    manifest = load_manifest(root)
+    existing = [
+        item
+        for item in manifest.get("analysis_results", [])
+        if not (
+            str(item.get("raw_dta", "")) == raw_relative
+            and str(item.get("analysis_type", "")) == str(analysis_type)
+        )
+    ]
+    existing.append(result)
+    manifest["analysis_results"] = existing
+
+    for output_record in manifest.get("outputs", []):
+        output_paths = [Path(value).resolve() for value in output_record.get("outputs", [])]
+        if raw_path not in output_paths:
+            continue
+        output_analyses = [
+            item
+            for item in output_record.get("analysis_results", [])
+            if str(item.get("analysis_type", "")) != str(analysis_type)
+            or str(item.get("raw_dta", "")) != raw_relative
+        ]
+        output_analyses.append(result)
+        output_record["analysis_results"] = output_analyses
+        break
+
+    for trial in manifest.get("trials", []):
+        trial_paths = [Path(value).resolve() for value in trial.get("outputs", [])]
+        if raw_path not in trial_paths:
+            continue
+        trial_analyses = [
+            item
+            for item in trial.get("analysis_results", [])
+            if str(item.get("analysis_type", "")) != str(analysis_type)
+            or str(item.get("raw_dta", "")) != raw_relative
+        ]
+        trial_analyses.append(result)
+        trial["analysis_results"] = trial_analyses
+        break
+
+    save_manifest(root, manifest)
+    detail = f"failed: {error}" if normalized_status == "failed" else "complete"
+    append_log(
+        root,
+        f"Registered {analysis_type} analysis ({raw_relative}): {detail}.",
+    )
+    return result
 
 
 def register_analysis_result(

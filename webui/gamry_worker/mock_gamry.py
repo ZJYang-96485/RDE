@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from analysis.ca_charge import LiveChargeDecorator, cumulative_charge_enabled
+
 try:
     from gamry_worker.live_adapters import (
         normalize_ca_acq_rows,
@@ -160,12 +162,29 @@ def run_ca(
     duration_s = as_float(step.get("duration_s", step.get("step_time_s")), 300)
     sample_period_s = as_float(step.get("sample_period_s"), 1)
     times = sample_times(duration_s, sample_period_s)
+    charge_decorator = (
+        LiveChargeDecorator(int(step.get("_charge_analysis_segment", 1)))
+        if cumulative_charge_enabled(step)
+        else None
+    )
 
     if emitter and emitter.live_dir:
         try:
             update_live_status(
                 emitter.live_dir,
                 acquisition_started_at=now_iso(),
+                charge_analysis_enabled=charge_decorator is not None,
+                charge_analysis_status=(
+                    "live_estimate" if charge_decorator is not None else "disabled"
+                ),
+                charge_analysis_source=(
+                    "live estimate" if charge_decorator is not None else None
+                ),
+                charge_analysis_segment=(
+                    charge_decorator.segment_id
+                    if charge_decorator is not None
+                    else None
+                ),
                 display_label=(
                     "Live CA trace for Levich RPM sweep"
                     if str(step.get("technique", "")).strip().lower()
@@ -202,19 +221,28 @@ def run_ca(
             current = base_current * (1 + 0.35 * decay) + 1e-7 * math.sin(t / 12)
         lines.append(f"{t:.6f}\t{voltage:.9f}\t{current:.12e}")
         if emitter:
-            emitter.emit(
-                "ca",
-                {
-                    "t_s": time_offset_s + t,
-                    "e_v": voltage,
-                    "i_a": current,
-                },
-            )
+            live_point = {
+                "technique": "ca",
+                "t_s": t,
+                "e_v": voltage,
+                "i_a": current,
+            }
+            if charge_decorator is not None:
+                live_point = charge_decorator(live_point)
+            if live_point is not None:
+                live_point["t_s"] = time_offset_s + t
+                emitter.emit("ca", live_point)
             emitter.wait(sample_period_s)
 
     write_text(output_path, "\n".join(lines) + "\n")
 
-    return {
+    if emitter and emitter.live_dir and charge_decorator is not None:
+        try:
+            update_live_status(emitter.live_dir, **charge_decorator.status_fields())
+        except Exception:
+            pass
+
+    result = {
         "ok": True,
         "technique": "ca",
         "output_path": str(output_path),
@@ -222,6 +250,9 @@ def run_ca(
         "points": len(times),
         "duration_s": duration_s,
     }
+    if charge_decorator is not None:
+        result["live_charge_analysis"] = charge_decorator.status_fields()
+    return result
 
 
 def run_cp(
@@ -598,13 +629,14 @@ def run_ca_staircase(
     results = []
     time_offset_s = 0.0
 
-    for output in _output_records(step, outputs):
+    for segment_index, output in enumerate(_output_records(step, outputs), start=1):
         voltage = float(output["voltage_v"])
         ca_step = {
             **step,
             "technique": "ca",
             "voltage_v": voltage,
             "duration_s": step.get("step_time_s", 300),
+            "_charge_analysis_segment": segment_index,
         }
         result = run_ca(
             ca_step,

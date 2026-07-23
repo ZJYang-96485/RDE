@@ -6,6 +6,8 @@ from typing import Any
 
 import toolkitpy as tkp
 
+from analysis.ca_charge import LiveChargeDecorator, cumulative_charge_enabled
+
 try:
     from gamry_worker.device import select_pstat_name
     from gamry_worker.live_adapters import LiveCurveEmitter, normalize_ca_acq_rows
@@ -95,7 +97,16 @@ def run_single_ca(
     trial_settings = apply_trial_settings(pstat, step)
 
     curve = tkp.ChronoCurve(pstat, max_size)
-    emitter = LiveCurveEmitter(live_dir, normalize_ca_acq_rows)
+    charge_decorator = (
+        LiveChargeDecorator(int(step.get("_charge_analysis_segment", 1)))
+        if cumulative_charge_enabled(step)
+        else None
+    )
+    emitter = LiveCurveEmitter(
+        live_dir,
+        normalize_ca_acq_rows,
+        point_transform=charge_decorator,
+    )
     signal = None
 
     try:
@@ -121,6 +132,18 @@ def run_single_ca(
                 update_live_status(
                     live_dir,
                     acquisition_started_at=utc_now(),
+                    charge_analysis_enabled=charge_decorator is not None,
+                    charge_analysis_status=(
+                        "live_estimate" if charge_decorator is not None else "disabled"
+                    ),
+                    charge_analysis_source=(
+                        "live estimate" if charge_decorator is not None else None
+                    ),
+                    charge_analysis_segment=(
+                        charge_decorator.segment_id
+                        if charge_decorator is not None
+                        else None
+                    ),
                     display_label=(
                         "Live CA trace for Levich RPM sweep"
                         if str(step.get("technique", "")).strip().lower()
@@ -139,6 +162,13 @@ def run_single_ca(
             time.sleep(max(0.01, min(sample_period_s, 0.25)))
 
         emitter.emit_new(curve.acq_data())
+
+        if live_dir and charge_decorator is not None:
+            try:
+                update_live_status(live_dir, **charge_decorator.status_fields())
+            except Exception:
+                # The scientific acquisition and final DTA remain authoritative.
+                pass
 
         tkp.reset_hve(pstat)
 
@@ -164,6 +194,8 @@ def run_single_ca(
             "ru_applied_ohm": step.get("_trial_ru_applied_ohm"),
         }
         result.update(emitter.result_fields())
+        if charge_decorator is not None:
+            result["live_charge_analysis"] = charge_decorator.status_fields()
         return result
 
     finally:
@@ -211,6 +243,7 @@ def run_ca_staircase(
         voltage = start_voltage + (index - 1) * step_voltage
         sub_step = dict(step)
         sub_step["voltage_v"] = voltage
+        sub_step["_charge_analysis_segment"] = index
 
         record = run_single_ca(
             pstat=pstat,

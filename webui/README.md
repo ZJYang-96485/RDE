@@ -54,6 +54,65 @@ the web server or accessing hardware:
 python .\convert_output_dta_to_csv.py [optional-run-or-runs-directory]
 ```
 
+## Optional CA cumulative signed-charge analysis
+
+New CA and CA Range blocks can enable:
+
+```json
+"analysis": {
+  "cumulative_charge": {
+    "enabled": true,
+    "method": "trapezoidal"
+  }
+}
+```
+
+Protocols that omit `analysis` retain their previous behavior. During an
+enabled CA measurement the browser can switch between Current vs Time and a
+**live estimate** of Cumulative Charge vs Time. The live estimate uses the
+signed Gamry current and is never presented as the authoritative final value.
+
+After each CA DTA closes, the application reads the DTA again and applies the
+composite trapezoidal rule:
+
+```text
+Q[k] = Q[k-1] + 0.5 * (I[k-1] + I[k]) * (t[k] - t[k-1])
+```
+
+Only intervals with finite endpoints and `dt > 0` are integrated. Duplicate,
+backward, or non-finite intervals are skipped and recorded as warnings; the
+cumulative value is not reset. The final signed result follows the Gamry
+current sign convention. It is not background-subtracted, smoothed, manually
+windowed, or converted to Faradaic mass.
+
+The cumulative charge includes all measured current contributions. It is not
+automatically background-corrected and must not be interpreted directly as
+metal-removal charge without an appropriate blank or baseline.
+
+Each source DTA receives two files in the same sample folder:
+
+- `*_charge_analysis.csv` with time, potential, current, and cumulative charge
+- `*_charge_analysis.json` with final charge, duration, interval counts,
+  method, source, version, and warnings
+
+History groups these files with their source DTA, shows the final summary, and
+plots cumulative charge with automatic C/mC/µC display units. A failed analysis
+is recorded separately and does not change a successfully completed acquisition
+into a failed trial. CA staircase/range outputs are analyzed independently.
+Levich RPM sweep CA intentionally remains unsupported in this pilot.
+
+The implementation is organized as an extensible analysis pipeline:
+
+- `analysis/registry.py` declares protocol-facing analysis capabilities.
+- `analysis/integration.py` contains hardware-independent numerical methods.
+- Each analysis adapter owns live decoration and authoritative final artifacts.
+- `register_trial_analysis_result()` stores a common manifest record.
+- History renders common metadata, summaries, artifacts, and plot adapters.
+
+Future analyses should add a registry entry and an adapter while reusing the
+same manifest and History contracts. They should not modify the physical
+acquisition sequence unless that is a separate, explicitly validated feature.
+
 ## Current hardware mapping
 
 The COM ports are configured in `webui/config.json`, not hardcoded in `app.py`.

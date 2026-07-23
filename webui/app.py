@@ -10,6 +10,8 @@ from typing import Any
 
 from flask import Flask, jsonify, render_template, request, send_file
 
+from analysis.ca_charge import CaChargeAnalysisError
+from analysis.registry import load_analysis_plot
 from hardware.motion_controller import (
     emergency_stop_motion,
     move_horizontal_steps,
@@ -58,6 +60,7 @@ from workflow.dta_viewer import (
 )
 from workflow.history_artifacts import (
     HistoryArtifactError,
+    analysis_artifact_descriptor,
     list_analysis_groups,
     resolve_registered_artifact,
 )
@@ -491,6 +494,39 @@ def current_run_dta_data():
             "ok": True,
             "run_id": run_dir.name,
             "relative_path": dta_path.relative_to(run_dir).as_posix(),
+            **parsed,
+        }
+    )
+
+
+@app.get("/api/current-run/analysis-data")
+def current_run_analysis_data():
+    """Return a registered analysis series for the shared History plotter."""
+
+    run_dir = current_automation_run_dir()
+    if run_dir is None:
+        return json_error("No current automation trial is available.", 404)
+    try:
+        relative_path = request.args.get("path", "")
+        path = resolve_registered_artifact(run_dir, relative_path)
+        descriptor = analysis_artifact_descriptor(run_dir, relative_path)
+        parsed = load_analysis_plot(
+            descriptor["analysis_type"],
+            descriptor["artifact_key"],
+            path,
+        )
+    except HistoryArtifactError as exc:
+        return json_error(str(exc), exc.status_code)
+    except ValueError as exc:
+        return json_error(str(exc), 400)
+    except (CaChargeAnalysisError, OSError) as exc:
+        return json_error(f"Unable to read analysis data: {exc}", 500)
+
+    return jsonify(
+        {
+            "ok": True,
+            "run_id": run_dir.name,
+            "relative_path": path.relative_to(run_dir).as_posix(),
             **parsed,
         }
     )

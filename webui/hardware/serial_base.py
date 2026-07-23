@@ -87,6 +87,16 @@ class MockSerialConnection:
 
         if text.upper() in {"STOP", "ABORT", "CANCEL"}:
             response = f"ACK STOP MOCK {self.name}\n"
+        elif text.upper().startswith("REL "):
+            try:
+                requested = int(text.split()[1])
+                direction = "CCW" if requested > 0 else "CW"
+                response = (
+                    f"ACK REL requested={requested} executed={requested} "
+                    f"direction={direction}\n"
+                )
+            except (IndexError, ValueError):
+                response = "ERR REL invalid signed integer\n"
         else:
             response = f"ACK MOCK {self.name} {text}\n"
 

@@ -417,10 +417,64 @@ Do not start a full 300-second-per-step protocol until the saved protocol has be
 
 ## Rinse and cleaning sequences
 
-There is no dedicated built-in rinse action. Build rinse and cleaning behavior
-as an explicit group of motion, rotation, RPM, stop, and wait steps in the run
-plan. This keeps the complete physical sequence visible and editable in the
-same saved plan.
+There is no opaque full-rinse action. Build the overall rinse and cleaning
+sequence as an explicit group of X/Z motion, packaged arm oscillation, RPM,
+stop, and wait steps in the run plan. This keeps the complete physical
+sequence visible and editable in the same saved plan.
+
+### Packaged small-angle rinse-arm oscillation
+
+The `Rinse Arm Oscillation` atomic action performs a small relative swing about
+the operator-confirmed rinse starting angle. It is opt-in and disabled by
+default. With configured values of 200 full motor steps/revolution and
+8 microsteps, one step is:
+
+```text
+360 degrees / (200 * 8) = 0.225 degrees
+```
+
+The action converts amplitude using the configured motor values. A 5-degree
+amplitude becomes 22 steps and one symmetric cycle is:
+
+```text
++22 steps CCW
+-44 steps CW
++22 steps CCW
+commanded net: 0 steps
+```
+
+The Arduino command is `REL <signed_steps>`, limited by default to `-44` through
+`+44`. A completed move returns an exact structured acknowledgement such as
+`ACK REL requested=22 executed=22 direction=CCW`. The runner waits for each
+matching acknowledgement before issuing the next segment.
+
+Place this atomic action after the X/Z rinse path. The runner stops the RDE disk
+before the arm package, and X/Z and arm movement are never launched in
+parallel. The tracked starting offset is software-only: it represents
+acknowledged commands and is not a calibrated origin, physical home, or
+measured angle.
+
+If a move times out, disconnects, returns malformed/mismatched data, or is
+partially stopped, the package sends no later segment, performs no reverse or
+home recovery, and marks angle confidence uncertain. Inspect the arm manually
+before resuming. Segment requests and acknowledgements are saved under
+`action_results` in the run manifest and summary.
+
+### Required manual hardware validation
+
+These checks are required before enabling the default 5-degree/3-cycle
+package. They are documented only; software tests do not complete physical
+validation.
+
+1. With the WE outside every cell, use the UI first-test preset
+   `2 degrees / 1 cycle`. Confirm `+9, -18, +9` moves in the intended
+   directions and returns visually near the rinse starting angle.
+2. Use an empty or nonhazardous setup and inspect arm, WE tip, shaft, RE, CE,
+   cell-wall, and cable clearance.
+3. Use DI water with the RDE disk at 0 RPM and repeat `2 degrees / 1 cycle`.
+   Check collision, splashing, wire tension, and mechanical oscillation.
+4. Increase gradually: `2 degrees / 1`, `3 degrees / 1`,
+   `5 degrees / 1`, then `5 degrees / 3`. Do not start at the maximum.
 
 ## Gamry mode
 

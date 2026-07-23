@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -62,7 +63,17 @@ _DEFAULT_CONFIG = {
     },
     "rotation": {
         "home_command": "0",
-        "ccw_command": "1"
+        "ccw_command": "1",
+        "motor_full_steps_per_rev": 200,
+        "microstep": 8,
+        "max_relative_steps": 44,
+        "rinse_oscillation": {
+            "enabled": False,
+            "amplitude_deg": 5.0,
+            "cycles": 3,
+            "pause_between_moves_s": 0.2,
+            "return_to_start": True
+        }
     },
     "automation": {
         "max_repetitions": 100,
@@ -273,6 +284,84 @@ def validate_motion_config(config: dict[str, Any]) -> None:
         int(home.get(axis, 0))
 
 
+def validate_rotation_config(config: dict[str, Any]) -> None:
+    rotation = config.get("rotation")
+    if not isinstance(rotation, dict):
+        raise ConfigError("rotation config must be an object.")
+
+    try:
+        motor_steps = int(rotation.get("motor_full_steps_per_rev", 0))
+        microstep = int(rotation.get("microstep", 0))
+        max_relative_steps = int(rotation.get("max_relative_steps", 0))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ConfigError(
+            "rotation motor steps, microstep, and max_relative_steps must be integers."
+        ) from exc
+
+    if motor_steps <= 0:
+        raise ConfigError("rotation.motor_full_steps_per_rev must be > 0.")
+    if microstep <= 0:
+        raise ConfigError("rotation.microstep must be > 0.")
+    if max_relative_steps <= 0:
+        raise ConfigError("rotation.max_relative_steps must be > 0.")
+
+    oscillation = rotation.get("rinse_oscillation")
+    if not isinstance(oscillation, dict):
+        raise ConfigError("rotation.rinse_oscillation must be an object.")
+
+    if not isinstance(oscillation.get("enabled", False), bool):
+        raise ConfigError("rotation.rinse_oscillation.enabled must be true or false.")
+    try:
+        amplitude_deg = float(oscillation.get("amplitude_deg", 0))
+        pause_s = float(oscillation.get("pause_between_moves_s", 0))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ConfigError(
+            "rotation rinse amplitude and pause must be numbers."
+        ) from exc
+    cycles_raw = oscillation.get("cycles", 0)
+
+    if not math.isfinite(amplitude_deg) or amplitude_deg <= 0:
+        raise ConfigError("rotation.rinse_oscillation.amplitude_deg must be finite and > 0.")
+    if isinstance(cycles_raw, bool):
+        raise ConfigError("rotation.rinse_oscillation.cycles must be a positive integer.")
+    try:
+        cycles = int(cycles_raw)
+        if float(cycles_raw) != float(cycles):
+            raise ValueError
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ConfigError(
+            "rotation.rinse_oscillation.cycles must be a positive integer."
+        ) from exc
+    if cycles <= 0:
+        raise ConfigError("rotation.rinse_oscillation.cycles must be a positive integer.")
+    if not math.isfinite(pause_s) or pause_s < 0:
+        raise ConfigError(
+            "rotation.rinse_oscillation.pause_between_moves_s must be finite and nonnegative."
+        )
+    if oscillation.get("return_to_start") is not True:
+        raise ConfigError(
+            "rotation.rinse_oscillation.return_to_start must be true for symmetric oscillation."
+        )
+
+    steps_per_revolution = motor_steps * microstep
+    degrees_per_step = 360.0 / steps_per_revolution
+    amplitude_steps = int(round(amplitude_deg / degrees_per_step))
+
+    if amplitude_steps < 1:
+        raise ConfigError(
+            "rotation.rinse_oscillation.amplitude_deg rounds to zero motor steps."
+        )
+    if amplitude_steps > max_relative_steps:
+        raise ConfigError(
+            "rotation.rinse_oscillation amplitude exceeds rotation.max_relative_steps."
+        )
+    if 2 * amplitude_steps > max_relative_steps:
+        raise ConfigError(
+            "rotation.rinse_oscillation center-to-center segment exceeds "
+            "rotation.max_relative_steps; reduce amplitude_deg."
+        )
+
+
 def validate_automation_config(config: dict[str, Any]) -> None:
     automation = config.get("automation")
 
@@ -374,6 +463,7 @@ def validate_config(config: dict[str, Any]) -> None:
     validate_serial_config(config)
     validate_rde_config(config)
     validate_motion_config(config)
+    validate_rotation_config(config)
     validate_automation_config(config)
     validate_paths_config(config)
     validate_gamry_config(config)
@@ -452,6 +542,10 @@ def get_rde_limits() -> dict[str, int]:
 
 def get_motion_config() -> dict[str, Any]:
     return load_config()["motion"]
+
+
+def get_rotation_config() -> dict[str, Any]:
+    return load_config()["rotation"]
 
 
 def get_axis_mapping() -> dict[str, str]:

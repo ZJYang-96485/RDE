@@ -34,6 +34,7 @@ from workflow.config_loader import (
     get_live_plot_config,
     get_motion_config,
     get_rde_limits,
+    get_rotation_config,
     get_safe_z,
     get_serial_port,
     load_config,
@@ -106,6 +107,11 @@ def config_payload() -> dict[str, Any]:
     motion = get_motion_config()
     gamry = config["gamry"]
     gamry_runtime = get_gamry_client().runtime_status()
+    rotation = get_rotation_config()
+    rinse_oscillation = rotation.get("rinse_oscillation", {})
+    degrees_per_step = 360.0 / (
+        int(rotation["motor_full_steps_per_rev"]) * int(rotation["microstep"])
+    )
 
     return {
         "baud_rate": get_baud_rate(),
@@ -121,6 +127,21 @@ def config_payload() -> dict[str, Any]:
         "max_axis_command": get_max_axis_command(),
         "axis_limits": motion["axis_limits"],
         "axis_mapping": motion["axis_mapping"],
+        "rotation_arm": {
+            "motor_full_steps_per_rev": int(rotation["motor_full_steps_per_rev"]),
+            "microstep": int(rotation["microstep"]),
+            "degrees_per_step": degrees_per_step,
+            "max_relative_steps": int(rotation["max_relative_steps"]),
+            "rinse_oscillation": {
+                "enabled": bool(rinse_oscillation.get("enabled", False)),
+                "amplitude_deg": float(rinse_oscillation.get("amplitude_deg", 5.0)),
+                "cycles": int(rinse_oscillation.get("cycles", 3)),
+                "pause_between_moves_s": float(
+                    rinse_oscillation.get("pause_between_moves_s", 0.2)
+                ),
+                "return_to_start": True,
+            },
+        },
         "gamry_mode": gamry["mode"],
         "gamry_real_runner_configured": bool(gamry_runtime.get("configured", False)),
         "gamry_instrument_label": str(gamry.get("instrument_label", "") or ""),

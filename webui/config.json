@@ -57,7 +57,17 @@
   },
   "rotation": {
     "home_command": "0",
-    "ccw_command": "1"
+    "ccw_command": "1",
+    "motor_full_steps_per_rev": 200,
+    "microstep": 8,
+    "max_relative_steps": 44,
+    "rinse_oscillation": {
+      "enabled": false,
+      "amplitude_deg": 5.0,
+      "cycles": 3,
+      "pause_between_moves_s": 0.2,
+      "return_to_start": true
+    }
   },
   "automation": {
     "max_repetitions": 100,

@@ -15,6 +15,7 @@ const unsigned int ACCELERATION_STEPS = 200;
 const unsigned int MOTOR_FULL_STEPS_PER_REV = 200;
 const unsigned int MICROSTEP = 8;  // Match this to TB6600 DIP microstep setting.
 const unsigned int HALF_TURN_STEPS = (MOTOR_FULL_STEPS_PER_REV * MICROSTEP) / 2;
+const unsigned int MAX_RELATIVE_STEPS = 44;  // 44 microsteps is approximately 10 degrees.
 
 unsigned int positionStepsFromHome = 0;
 String emergencyBuffer;
@@ -137,6 +138,79 @@ void discardPendingCommands() {
 }
 
 
+bool parseSignedInteger(const String &text, long &value) {
+  char buffer[32];
+
+  if (text.length() == 0 || text.length() >= sizeof(buffer)) {
+    return false;
+  }
+
+  text.toCharArray(buffer, sizeof(buffer));
+
+  char *endPointer = nullptr;
+  value = strtol(buffer, &endPointer, 10);
+
+  while (*endPointer == ' ' || *endPointer == '\t') {
+    endPointer++;
+  }
+
+  return *endPointer == '\0';
+}
+
+
+void printRelativeResult(
+  const bool stopped,
+  const long requestedSteps,
+  const long executedSteps,
+  const char *direction
+) {
+  Serial.print(stopped ? "ACK STOP REL requested=" : "ACK REL requested=");
+  Serial.print(requestedSteps);
+  Serial.print(" executed=");
+  Serial.print(executedSteps);
+  Serial.print(" direction=");
+  Serial.println(direction);
+}
+
+
+void runRelative(long signedSteps) {
+  if (signedSteps == 0) {
+    Serial.println("ERR REL zero steps are not allowed");
+    return;
+  }
+
+  if (
+    signedSteps > (long)MAX_RELATIVE_STEPS
+    || signedSteps < -(long)MAX_RELATIVE_STEPS
+  ) {
+    Serial.println("ERR REL exceeds max relative steps");
+    return;
+  }
+
+  const bool counterClockwise = signedSteps > 0;
+  const unsigned int requestedMagnitude = (unsigned int)(
+      counterClockwise ? signedSteps : -signedSteps
+  );
+  bool stopped = false;
+  const unsigned int executedMagnitude = stepManyInterruptible(
+      requestedMagnitude,
+      counterClockwise ? CCW_LEVEL : CW_LEVEL,
+      stopped
+  );
+  const long executedSigned = counterClockwise
+      ? (long)executedMagnitude
+      : -(long)executedMagnitude;
+
+  discardPendingCommands();
+  printRelativeResult(
+      stopped,
+      signedSteps,
+      executedSigned,
+      counterClockwise ? "CCW" : "CW"
+  );
+}
+
+
 const char *positionLabel() {
   if (positionStepsFromHome == 0U) {
     return "HOME";
@@ -231,9 +305,11 @@ void setup() {
   Serial.setTimeout(100);
   delay(500);
   Serial.println("rotation ready");
-  Serial.println("Commands: 1, 0, STOP, PING, STATUS, HELP");
+  Serial.println("Commands: 1, 0, REL <signed_steps>, STOP, PING, STATUS, HELP");
   Serial.print("Configured HALF_TURN_STEPS: ");
   Serial.println(HALF_TURN_STEPS);
+  Serial.print("Configured MAX_RELATIVE_STEPS: ");
+  Serial.println(MAX_RELATIVE_STEPS);
 }
 
 
@@ -250,14 +326,24 @@ void loop() {
   } else if (line.equalsIgnoreCase("STATUS")) {
     printStatus();
   } else if (line.equalsIgnoreCase("HELP") || line == "?") {
-    Serial.println("Rotation commands: 1, 0, STOP, PING, STATUS, HELP");
+    Serial.println("Rotation commands: 1, 0, REL <signed_steps>, STOP, PING, STATUS, HELP");
   } else if (isStopCommand(line)) {
     Serial.println("ACK STOP IDLE");
+  } else if (line == "REL" || line.startsWith("REL ")) {
+    String argument = line.length() > 3 ? line.substring(4) : "";
+    argument.trim();
+
+    long signedSteps = 0;
+    if (!parseSignedInteger(argument, signedSteps)) {
+      Serial.println("ERR REL invalid signed integer");
+    } else {
+      runRelative(signedSteps);
+    }
   } else if (line == "1") {
     runToCcw();
   } else if (line == "0") {
     runToHome();
   } else if (line.length() > 0) {
-    Serial.println("ERR rotation command must be 1, 0, STOP, PING, STATUS, or HELP");
+    Serial.println("ERR rotation command must be 1, 0, REL <signed_steps>, STOP, PING, STATUS, or HELP");
   }
 }

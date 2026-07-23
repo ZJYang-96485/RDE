@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from workflow.config_loader import get_path, load_config
+from workflow.config_loader import get_path, get_rotation_config, load_config
+from workflow.rinse_arm_paths import validate_rinse_arm_settings
 from workflow.safety import validate_axis_command, validate_rpm
 
 MAX_RUN_NAME_LENGTH = 80
@@ -17,6 +18,7 @@ ATOMIC_ACTIONS = {
     "move_z",
     "move_xz_parallel",
     "rotation",
+    "rinse_arm_oscillation",
     "set_rpm",
     "wait",
     "echem",
@@ -157,6 +159,43 @@ def validate_atomic_step(raw_step: dict[str, Any], group_label: str, index: int)
         if not command:
             raise RunPlanError(f"{group_label}/{name}: rotation command cannot be empty.")
         step["command"] = command
+
+    elif action == "rinse_arm_oscillation":
+        rotation = get_rotation_config()
+        defaults = rotation.get("rinse_oscillation", {})
+        enabled_value = raw_step.get(
+            "oscillation_enabled",
+            defaults.get("enabled", False),
+        )
+        if not isinstance(enabled_value, bool):
+            raise RunPlanError(
+                f"{group_label}/{name}: oscillation_enabled must be true or false."
+            )
+        oscillation_enabled = enabled_value
+        try:
+            settings = validate_rinse_arm_settings(
+                amplitude_deg=raw_step.get(
+                    "amplitude_deg",
+                    defaults.get("amplitude_deg", 5.0),
+                ),
+                cycles=raw_step.get("cycles", defaults.get("cycles", 3)),
+                pause_between_moves_s=raw_step.get(
+                    "pause_between_moves_s",
+                    defaults.get("pause_between_moves_s", 0.2),
+                ),
+                return_to_start=raw_step.get(
+                    "return_to_start",
+                    defaults.get("return_to_start", True),
+                ),
+                motor_full_steps_per_rev=int(rotation["motor_full_steps_per_rev"]),
+                microstep=int(rotation["microstep"]),
+                max_relative_steps=int(rotation["max_relative_steps"]),
+            )
+        except (TypeError, ValueError) as exc:
+            raise RunPlanError(f"{group_label}/{name}: {exc}") from exc
+
+        step["oscillation_enabled"] = oscillation_enabled
+        step.update(settings)
 
     elif action == "set_rpm":
         rpm = parse_int(raw_step.get("rpm", 0), f"{group_label}/{name}: rpm")

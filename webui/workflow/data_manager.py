@@ -141,6 +141,7 @@ def load_manifest(run_dir: str | Path) -> dict[str, Any]:
             "outputs": [],
             "trials": [],
             "analysis_results": [],
+            "action_results": [],
             "errors": [],
         }
 
@@ -149,6 +150,19 @@ def load_manifest(run_dir: str | Path) -> dict[str, Any]:
 
 def save_manifest(run_dir: str | Path, manifest: dict[str, Any]) -> None:
     write_json(manifest_path(run_dir), manifest)
+
+
+def register_action_result(
+    run_dir: str | Path,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    """Append a hardware action result to the run manifest."""
+
+    record = dict(result)
+    manifest = load_manifest(run_dir)
+    manifest.setdefault("action_results", []).append(record)
+    save_manifest(run_dir, manifest)
+    return record
 
 
 def write_storage_guide(run_dir: str | Path) -> None:
@@ -187,6 +201,7 @@ def create_run_workspace(run_plan: dict[str, Any]) -> dict[str, Any]:
         "outputs": [],
         "trials": [],
         "analysis_results": [],
+        "action_results": [],
         "errors": [],
     }
 
@@ -819,6 +834,7 @@ def write_run_summary(run_dir: str | Path) -> None:
         "dta_csv_errors": manifest.get("dta_csv_errors", []),
         "analysis_results": manifest.get("analysis_results", []),
         "trials": manifest.get("trials", []),
+        "action_results": manifest.get("action_results", []),
         "errors": manifest.get("errors", []),
     }
 

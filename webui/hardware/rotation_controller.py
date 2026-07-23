@@ -163,6 +163,13 @@ class RotationController:
         self.relative_state_lock = threading.Lock()
         self.expected_offset_steps = 0
         self.angle_confidence = "tracked"
+        self.last_relative_error: str | None = None
+        self.last_relative_command: str | None = None
+        self.last_relative_response: str | None = None
+        self.operator_tracking_resets = 0
+        self.relative_firmware_supported: bool | None = None
+        self.relative_firmware_response: str | None = None
+        self.relative_firmware_error: str | None = None
 
     def rotation_config(self) -> dict:
         return get_rotation_config()
@@ -195,19 +202,129 @@ class RotationController:
                 "angle_confidence": str(self.angle_confidence),
             }
 
-    def _mark_angle_uncertain(self) -> None:
+    def relative_diagnostic_state(self) -> dict[str, int | str | None]:
+        with self.relative_state_lock:
+            return {
+                "expected_offset_steps": int(self.expected_offset_steps),
+                "angle_confidence": str(self.angle_confidence),
+                "last_relative_error": self.last_relative_error,
+                "last_relative_command": self.last_relative_command,
+                "last_relative_response": self.last_relative_response,
+                "operator_tracking_resets": int(self.operator_tracking_resets),
+                "relative_firmware_supported": self.relative_firmware_supported,
+                "relative_firmware_response": self.relative_firmware_response,
+                "relative_firmware_error": self.relative_firmware_error,
+            }
+
+    def _mark_angle_uncertain(
+        self,
+        *,
+        error: str | None = None,
+        command: str | None = None,
+        response: str | None = None,
+    ) -> None:
         with self.relative_state_lock:
             self.angle_confidence = "uncertain"
+            if error and not self.last_relative_error:
+                self.last_relative_error = str(error)
+            if command:
+                self.last_relative_command = str(command)
+            if response:
+                self.last_relative_response = str(response)
 
-    def mark_angle_uncertain(self) -> None:
+    def mark_angle_uncertain(self, reason: str | None = None) -> None:
         """Invalidate software-only angle tracking without moving hardware."""
 
-        self._mark_angle_uncertain()
+        self._mark_angle_uncertain(error=reason)
+
+    def confirm_operator_inspection(self) -> dict[str, int | str | None]:
+        """
+        Accept the current physical angle as a new software-only starting angle.
+
+        This method never opens the serial port or sends a motor command.
+        """
+
+        if not self.command_lock.acquire(blocking=False):
+            raise RotationControllerError(
+                "cannot reset relative tracking while a rotation command is running."
+            )
+
+        try:
+            with self.relative_state_lock:
+                previous_error = self.last_relative_error
+                previous_command = self.last_relative_command
+                previous_response = self.last_relative_response
+                self.expected_offset_steps = 0
+                self.angle_confidence = "tracked"
+                self.last_relative_error = None
+                self.last_relative_command = None
+                self.last_relative_response = None
+                self.operator_tracking_resets += 1
+                return {
+                    "expected_offset_steps": 0,
+                    "angle_confidence": "tracked",
+                    "previous_relative_error": previous_error,
+                    "previous_relative_command": previous_command,
+                    "previous_relative_response": previous_response,
+                    "operator_tracking_resets": int(self.operator_tracking_resets),
+                }
+        finally:
+            self.command_lock.release()
+
+    def check_relative_firmware_support(self) -> dict[str, bool | str | None]:
+        """
+        Query HELP and report whether REL is advertised.
+
+        HELP is a non-motion command. A failed capability query does not change
+        relative-angle confidence because no relative movement was requested.
+        """
+
+        if not self.command_lock.acquire(blocking=False):
+            raise RotationControllerError(
+                "cannot check rotation firmware while a command is running."
+            )
+
+        try:
+            try:
+                response = self.device.send_line_wait_for_response(
+                    "HELP",
+                    timeout_s=min(self.completion_timeout_s, 3.0),
+                    expected_prefixes=("Rotation commands:",),
+                )
+                supported = "REL <signed_steps>" in response
+                error = None if supported else (
+                    "The connected rotation firmware does not advertise "
+                    "REL <signed_steps>."
+                )
+            except Exception as exc:
+                response = None
+                supported = False
+                error = f"Unable to read rotation firmware capabilities: {exc}"
+                self.device.close()
+
+            with self.relative_state_lock:
+                self.relative_firmware_supported = supported
+                self.relative_firmware_response = response
+                self.relative_firmware_error = error
+
+            return {
+                "supported": supported,
+                "response": response,
+                "error": error,
+                "motion_command_sent": False,
+            }
+        finally:
+            self.command_lock.release()
 
     def _record_completed_relative_move(self, result: RotationMoveResult) -> None:
         with self.relative_state_lock:
             self.expected_offset_steps += int(result.executed_steps)
             self.angle_confidence = "tracked"
+            self.last_relative_error = None
+            self.last_relative_command = None
+            self.last_relative_response = str(result.raw_response)
+            self.relative_firmware_supported = True
+            self.relative_firmware_error = None
 
     def _validate_relative_steps(self, steps: int) -> int:
         if isinstance(steps, bool) or not isinstance(steps, int):
@@ -254,7 +371,10 @@ class RotationController:
             except RotationMoveInterrupted:
                 raise
             except Exception as exc:
-                self._mark_angle_uncertain()
+                self._mark_angle_uncertain(
+                    error=str(exc),
+                    command=command,
+                )
                 self.device.close()
                 if isinstance(exc, RotationControllerError):
                     raise
@@ -263,7 +383,11 @@ class RotationController:
                 ) from exc
 
             if result.status != "completed":
-                self._mark_angle_uncertain()
+                self._mark_angle_uncertain(
+                    error="Relative movement was interrupted before completion.",
+                    command=command,
+                    response=result.raw_response,
+                )
                 self.device.close()
                 raise RotationMoveInterrupted(
                     (
@@ -350,7 +474,11 @@ class RotationController:
                     expected_prefixes=expected_prefixes,
                 )
                 if response.startswith("ACK STOP"):
-                    self._mark_angle_uncertain()
+                    self._mark_angle_uncertain(
+                        error=f"Rotation arm stopped during command '{command}'.",
+                        command=command,
+                        response=response,
+                    )
                     raise AutomationAbortRequested(
                         f"Rotation arm stopped during command '{command}': {response}"
                     )
@@ -359,7 +487,10 @@ class RotationController:
                 self.device.close()
                 raise
             except Exception as exc:
-                self._mark_angle_uncertain()
+                self._mark_angle_uncertain(
+                    error=str(exc),
+                    command=command,
+                )
                 # A failed transaction must not keep a serial connection with
                 # stale input/output around for the next request.
                 self.device.close()
@@ -380,7 +511,9 @@ class RotationController:
 
     def emergency_stop(self) -> bool:
         sent = self.device.send_emergency_line_if_open("STOP")
-        self._mark_angle_uncertain()
+        self._mark_angle_uncertain(
+            error="Emergency stop invalidated relative-angle tracking."
+        )
         return sent
 
     def close(self) -> None:

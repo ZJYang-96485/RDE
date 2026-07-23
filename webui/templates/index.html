@@ -173,6 +173,10 @@
         margin-top: 0;
       }
 
+      .manual-arm-card-wide {
+        grid-column: 1 / -1;
+      }
+
       .manual-arm-actions {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -182,6 +186,48 @@
       .manual-arm-actions button {
         width: 100%;
         margin: 0;
+      }
+
+      .oscillation-preset-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 8px;
+        margin: 8px 0 14px;
+      }
+
+      .oscillation-preset {
+        min-height: 64px;
+        margin: 0;
+        text-align: left;
+      }
+
+      .oscillation-preset.selected {
+        background: #173f60;
+        box-shadow: 0 0 0 3px #9bc5e2;
+      }
+
+      .oscillation-options {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 10px;
+      }
+
+      .rotation-recovery-panel {
+        border: 2px solid #b42318;
+        border-radius: 12px;
+        background: #fff4f2;
+        padding: 14px;
+        margin: 12px 0;
+      }
+
+      .rotation-recovery-panel h3 {
+        color: #9f1711;
+        margin: 0 0 8px;
+      }
+
+      .rotation-recovery-panel button {
+        width: 100%;
+        margin: 8px 0 0;
       }
 
       .run-plan-layout {
@@ -1056,46 +1102,107 @@
 
         <button id="startStopBtn" class="start">Start</button>
 
-        <label>Send To Rotation ({{ rotation_com_port }})</label>
-        <div class="cmd-buttons">
-          <button id="sendOneBtn" class="icon-btn up" title="Legacy command 1: move toward 180° CCW" aria-label="Legacy move toward 180 degrees counterclockwise">&#9650;</button>
-          <button id="sendZeroBtn" class="icon-btn down" title="Legacy command 0: move toward legacy start position" aria-label="Legacy move toward start position">&#9660;</button>
-        </div>
-        <p class="hint">Legacy full-range commands: ▲ moves toward the 180° CCW position; ▼ moves toward the legacy start position.</p>
-
         <div class="manual-arm-grid">
+          <section class="manual-arm-card" aria-labelledby="legacyRotationHeading">
+            <h3 id="legacyRotationHeading">Arm Position — Full Travel</h3>
+            <p class="hint">Existing controller commands on {{ rotation_com_port }}.</p>
+            <div class="cmd-buttons">
+              <button id="sendOneBtn" class="icon-btn up" title="Command 1: move toward 180° CCW" aria-label="Command 1: move toward 180 degrees counterclockwise">&#9650;</button>
+              <button id="sendZeroBtn" class="icon-btn down" title="Command 0: move toward the legacy start position" aria-label="Command 0: move toward the legacy start position">&#9660;</button>
+            </div>
+            <p class="hint"><strong>1 / ▲</strong> moves toward 180° CCW. <strong>0 / ▼</strong> moves toward the legacy start position.</p>
+          </section>
+
           <section class="manual-arm-card" aria-labelledby="shortRotationHeading">
             <h3 id="shortRotationHeading">Short Angle Movement</h3>
-            <label for="shortRotationAngle">Angle magnitude (degrees)</label>
-            <input id="shortRotationAngle" type="number" min="0.225" max="10" step="0.1" value="2" />
+            <label for="shortRotationAngle">Select movement angle</label>
+            <select id="shortRotationAngle">
+              <option value="1">1°</option>
+              <option value="2" selected>2°</option>
+              <option value="3">3°</option>
+              <option value="5">5°</option>
+              <option value="10">10°</option>
+            </select>
             <p id="shortRotationPreview" class="hint">2° ≈ 9 steps</p>
             <div class="manual-arm-actions">
               <button id="shortRotationCcwBtn" class="home-btn" type="button">↶ Move + CCW</button>
               <button id="shortRotationCwBtn" class="home-btn" type="button">↷ Move − CW</button>
             </div>
-            <p class="hint">One signed relative move. The RDE disk is stopped first.</p>
+            <p class="hint">Select an angle—no keyboard entry required. This is separate from commands 0 and 1.</p>
           </section>
 
-          <section class="manual-arm-card" aria-labelledby="manualOscillationHeading">
-            <h3 id="manualOscillationHeading">Arm Rinse Oscillation</h3>
-            <label for="manualOscillationAmplitude">Amplitude from center (degrees)</label>
-            <input id="manualOscillationAmplitude" type="number" min="0.225" max="5" step="0.1" value="2" />
+          <section class="manual-arm-card manual-arm-card-wide" aria-labelledby="manualOscillationHeading">
+            <h3 id="manualOscillationHeading">Oscillation</h3>
+            <p class="hint">Choose a complete oscillation preset, or select each setting below. This does not use full-travel command 0 or 1.</p>
 
-            <label for="manualOscillationCycles">Cycles</label>
-            <input id="manualOscillationCycles" type="number" min="1" step="1" value="1" />
+            <div class="oscillation-preset-grid" role="group" aria-label="Oscillation presets">
+              <button class="oscillation-preset home-btn selected" type="button" data-amplitude="2" data-cycles="1" data-pause="0.2" aria-pressed="true">
+                First test<br />2° · 1 cycle
+              </button>
+              <button class="oscillation-preset home-btn" type="button" data-amplitude="3" data-cycles="2" data-pause="0.2" aria-pressed="false">
+                Light rinse<br />3° · 2 cycles
+              </button>
+              <button class="oscillation-preset home-btn" type="button" data-amplitude="5" data-cycles="3" data-pause="0.2" aria-pressed="false">
+                Standard rinse<br />5° · 3 cycles
+              </button>
+            </div>
 
-            <label for="manualOscillationPause">Pause between moves (seconds)</label>
-            <input id="manualOscillationPause" type="number" min="0" step="0.1" value="0.2" />
+            <div class="oscillation-options">
+              <div>
+                <label for="manualOscillationAmplitude">Swing amplitude</label>
+                <select id="manualOscillationAmplitude">
+                  <option value="2" selected>2°</option>
+                  <option value="3">3°</option>
+                  <option value="5">5°</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="manualOscillationCycles">Number of cycles</label>
+                <select id="manualOscillationCycles">
+                  <option value="1" selected>1 cycle</option>
+                  <option value="2">2 cycles</option>
+                  <option value="3">3 cycles</option>
+                  <option value="5">5 cycles</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="manualOscillationPause">Pause between moves</label>
+                <select id="manualOscillationPause">
+                  <option value="0">No pause</option>
+                  <option value="0.1">0.1 seconds</option>
+                  <option value="0.2" selected>0.2 seconds</option>
+                  <option value="0.5">0.5 seconds</option>
+                  <option value="1">1 second</option>
+                </select>
+              </div>
+            </div>
 
             <p id="manualOscillationPreview" class="hint"></p>
             <div class="manual-arm-actions">
-              <button id="manualOscillationPresetBtn" class="home-btn" type="button">Safe preset: 2° / 1 cycle</button>
               <button id="manualOscillationStartBtn" class="home-btn" type="button">Start Oscillation</button>
             </div>
             <p class="error">Expected commanded movement only—not a measured physical angle. Runs +A, −2A, +A with the disk stopped and no X/Z motion.</p>
           </section>
         </div>
         <p id="rotationStatus" class="hint"></p>
+        <div class="manual-arm-actions">
+          <button id="checkRelativeFirmwareBtn" class="home-btn" type="button">
+            Check Relative Firmware — No Motion Command
+          </button>
+        </div>
+        <section id="rotationRecoveryPanel" class="rotation-recovery-panel" hidden aria-labelledby="rotationRecoveryHeading">
+          <h3 id="rotationRecoveryHeading">Relative Movement Locked</h3>
+          <p>The previous relative movement did not return a verified completion acknowledgement. No more short-angle or oscillation commands will be sent until you inspect the arm.</p>
+          <p id="rotationDiagnosticMessage" class="error"></p>
+          <div class="manual-arm-actions">
+            <button id="confirmArmInspectedBtn" class="home-btn" type="button">
+              Arm Inspected — Reset Relative Tracking
+            </button>
+          </div>
+          <p class="hint">This accepts the current physical angle as a new software-only starting angle. It does not move, home, or open the motor port.</p>
+        </section>
 
         <label for="linearStepsSlider">Z Axis — Original Linear Controller ({{ linear_com_port }})</label>
         <div class="linear-row">
@@ -1505,6 +1612,10 @@
       const sendOneBtn = document.getElementById("sendOneBtn");
       const sendZeroBtn = document.getElementById("sendZeroBtn");
       const rotationStatusEl = document.getElementById("rotationStatus");
+      const rotationRecoveryPanelEl = document.getElementById("rotationRecoveryPanel");
+      const rotationDiagnosticMessageEl = document.getElementById("rotationDiagnosticMessage");
+      const checkRelativeFirmwareBtn = document.getElementById("checkRelativeFirmwareBtn");
+      const confirmArmInspectedBtn = document.getElementById("confirmArmInspectedBtn");
       const shortRotationAngleInput = document.getElementById("shortRotationAngle");
       const shortRotationPreviewEl = document.getElementById("shortRotationPreview");
       const shortRotationCcwBtn = document.getElementById("shortRotationCcwBtn");
@@ -1513,7 +1624,9 @@
       const manualOscillationCyclesInput = document.getElementById("manualOscillationCycles");
       const manualOscillationPauseInput = document.getElementById("manualOscillationPause");
       const manualOscillationPreviewEl = document.getElementById("manualOscillationPreview");
-      const manualOscillationPresetBtn = document.getElementById("manualOscillationPresetBtn");
+      const manualOscillationPresetBtns = Array.from(
+        document.querySelectorAll(".oscillation-preset")
+      );
       const manualOscillationStartBtn = document.getElementById("manualOscillationStartBtn");
       const linearStepsSlider = document.getElementById("linearStepsSlider");
       const linearStepsInput = document.getElementById("linearStepsInput");
@@ -1687,6 +1800,7 @@
       let echemProtocolEditorMode = "create";
       let protocolPreviewCache = new Map();
       let manualArmRequestRunning = false;
+      let relativeArmLocked = false;
       let rotationArmConfig = {
         motor_full_steps_per_rev: 200,
         microstep: 8,
@@ -2771,17 +2885,46 @@
           startExperimentBtn.disabled = automationRunning;
           abortHomeBtn.disabled = !automationRunning;
           const manualArmDisabled = automationRunning || manualArmRequestRunning;
+          const rotationArmState = data.rotation_arm_state || {};
+          relativeArmLocked = (
+            rotationArmState.angle_confidence
+            && rotationArmState.angle_confidence !== "tracked"
+          );
+          rotationRecoveryPanelEl.hidden = !relativeArmLocked;
+          const rotationDiagnosticParts = [];
+          if (relativeArmLocked) {
+            rotationDiagnosticParts.push(
+              rotationArmState.last_relative_error
+                ? `Original failure: ${rotationArmState.last_relative_error}`
+                : "The original board response was not preserved by the previous server version."
+            );
+          }
+          if (rotationArmState.relative_firmware_supported === false) {
+            rotationDiagnosticParts.push(
+              rotationArmState.relative_firmware_error
+              || "The connected board did not advertise relative-motion support."
+            );
+          } else if (rotationArmState.relative_firmware_supported === true) {
+            rotationDiagnosticParts.push(
+              "Firmware check: REL <signed_steps> is supported."
+            );
+          }
+          rotationDiagnosticMessageEl.textContent = rotationDiagnosticParts.join(" ");
           btn.disabled = manualArmDisabled;
           sendOneBtn.disabled = manualArmDisabled;
           sendZeroBtn.disabled = manualArmDisabled;
           shortRotationAngleInput.disabled = manualArmDisabled;
-          shortRotationCcwBtn.disabled = manualArmDisabled;
-          shortRotationCwBtn.disabled = manualArmDisabled;
+          shortRotationCcwBtn.disabled = manualArmDisabled || relativeArmLocked;
+          shortRotationCwBtn.disabled = manualArmDisabled || relativeArmLocked;
           manualOscillationAmplitudeInput.disabled = manualArmDisabled;
           manualOscillationCyclesInput.disabled = manualArmDisabled;
           manualOscillationPauseInput.disabled = manualArmDisabled;
-          manualOscillationPresetBtn.disabled = manualArmDisabled;
-          manualOscillationStartBtn.disabled = manualArmDisabled;
+          manualOscillationPresetBtns.forEach((presetBtn) => {
+            presetBtn.disabled = manualArmDisabled;
+          });
+          manualOscillationStartBtn.disabled = manualArmDisabled || relativeArmLocked;
+          checkRelativeFirmwareBtn.disabled = manualArmDisabled;
+          confirmArmInspectedBtn.disabled = manualArmDisabled || !relativeArmLocked;
           linearUpBtn.disabled = manualArmDisabled;
           linearDownBtn.disabled = manualArmDisabled;
           horizontalLeftBtn.disabled = manualArmDisabled;
@@ -2928,13 +3071,17 @@
         verticalUpBtn.disabled = disabled;
         verticalDownBtn.disabled = disabled;
         shortRotationAngleInput.disabled = disabled;
-        shortRotationCcwBtn.disabled = disabled;
-        shortRotationCwBtn.disabled = disabled;
+        shortRotationCcwBtn.disabled = disabled || relativeArmLocked;
+        shortRotationCwBtn.disabled = disabled || relativeArmLocked;
         manualOscillationAmplitudeInput.disabled = disabled;
         manualOscillationCyclesInput.disabled = disabled;
         manualOscillationPauseInput.disabled = disabled;
-        manualOscillationPresetBtn.disabled = disabled;
-        manualOscillationStartBtn.disabled = disabled;
+        manualOscillationPresetBtns.forEach((presetBtn) => {
+          presetBtn.disabled = disabled;
+        });
+        manualOscillationStartBtn.disabled = disabled || relativeArmLocked;
+        checkRelativeFirmwareBtn.disabled = disabled;
+        confirmArmInspectedBtn.disabled = disabled || !relativeArmLocked;
       }
 
       function setRotationStatus(message, isError = false) {
@@ -2959,6 +3106,17 @@
           cycles
         );
         manualOscillationPreviewEl.style.whiteSpace = "pre-line";
+
+        const selectedPause = Number(manualOscillationPauseInput.value) || 0;
+        manualOscillationPresetBtns.forEach((presetBtn) => {
+          const selected = (
+            Number(presetBtn.dataset.amplitude) === amplitude
+            && Number(presetBtn.dataset.cycles) === cycles
+            && Number(presetBtn.dataset.pause) === selectedPause
+          );
+          presetBtn.classList.toggle("selected", selected);
+          presetBtn.setAttribute("aria-pressed", String(selected));
+        });
       }
 
       function validateManualArmMagnitude(magnitude, forOscillation = false) {
@@ -3016,6 +3174,7 @@
         } finally {
           manualArmRequestRunning = false;
           setManualArmControlsDisabled(automationRunning);
+          await fetchStatus();
         }
       }
 
@@ -3065,6 +3224,70 @@
         } finally {
           manualArmRequestRunning = false;
           setManualArmControlsDisabled(automationRunning);
+          await fetchStatus();
+        }
+      }
+
+      async function confirmArmInspected() {
+        if (!confirm(
+          "Confirm that you physically inspected the arm and accept its current "
+          + "angle as the new software-only tracked starting angle. No motor "
+          + "movement will be sent."
+        )) {
+          return;
+        }
+
+        confirmArmInspectedBtn.disabled = true;
+        try {
+          const res = await fetch("/api/rotation/confirm-inspected", {
+            method: "POST",
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || "Unable to reset relative tracking.");
+          }
+          setRotationStatus(data.message || "Relative tracking reset.");
+        } catch (err) {
+          setRotationStatus(
+            err instanceof Error ? err.message : String(err),
+            true
+          );
+        } finally {
+          await fetchStatus();
+        }
+      }
+
+      async function checkRelativeFirmware() {
+        checkRelativeFirmwareBtn.disabled = true;
+        setRotationStatus(
+          "Checking whether the rotation board advertises REL support. "
+          + "No motion command will be sent."
+        );
+        try {
+          const res = await fetch("/api/rotation/check-relative-firmware", {
+            method: "POST",
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || "Unable to check rotation firmware.");
+          }
+          const capability = data.capability || {};
+          setRotationStatus(
+            capability.supported
+              ? `Relative firmware is available on ${data.com_port}: ${capability.response}`
+              : (
+                `Relative firmware is not available on ${data.com_port}: `
+                + `${capability.error || capability.response || "REL was not advertised."}`
+              ),
+            !capability.supported
+          );
+        } catch (err) {
+          setRotationStatus(
+            err instanceof Error ? err.message : String(err),
+            true
+          );
+        } finally {
+          await fetchStatus();
         }
       }
 
@@ -5509,9 +5732,10 @@
         }
       });
 
-      shortRotationAngleInput.addEventListener("input", updateManualArmPreviews);
-      manualOscillationAmplitudeInput.addEventListener("input", updateManualArmPreviews);
-      manualOscillationCyclesInput.addEventListener("input", updateManualArmPreviews);
+      shortRotationAngleInput.addEventListener("change", updateManualArmPreviews);
+      manualOscillationAmplitudeInput.addEventListener("change", updateManualArmPreviews);
+      manualOscillationCyclesInput.addEventListener("change", updateManualArmPreviews);
+      manualOscillationPauseInput.addEventListener("change", updateManualArmPreviews);
 
       shortRotationCcwBtn.addEventListener("click", async () => {
         try {
@@ -5535,11 +5759,13 @@
         }
       });
 
-      manualOscillationPresetBtn.addEventListener("click", () => {
-        manualOscillationAmplitudeInput.value = "2";
-        manualOscillationCyclesInput.value = "1";
-        manualOscillationPauseInput.value = "0.2";
-        updateManualArmPreviews();
+      manualOscillationPresetBtns.forEach((presetBtn) => {
+        presetBtn.addEventListener("click", () => {
+          manualOscillationAmplitudeInput.value = presetBtn.dataset.amplitude;
+          manualOscillationCyclesInput.value = presetBtn.dataset.cycles;
+          manualOscillationPauseInput.value = presetBtn.dataset.pause;
+          updateManualArmPreviews();
+        });
       });
 
       manualOscillationStartBtn.addEventListener("click", async () => {
@@ -5552,6 +5778,9 @@
           );
         }
       });
+
+      confirmArmInspectedBtn.addEventListener("click", confirmArmInspected);
+      checkRelativeFirmwareBtn.addEventListener("click", checkRelativeFirmware);
 
       updateManualArmPreviews();
 

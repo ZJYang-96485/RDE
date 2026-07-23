@@ -254,6 +254,9 @@ def status():
             "gamry_real_runner_configured": cfg["gamry_real_runner_configured"],
         }
     )
+    payload["rotation_arm_state"] = (
+        get_rotation_controller().relative_diagnostic_state()
+    )
     return jsonify(payload)
 
 
@@ -685,6 +688,84 @@ def stop_rde_before_manual_arm_motion() -> None:
     stop_rde(None)
 
 
+def relative_tracking_locked_response(controller):
+    state = controller.relative_diagnostic_state()
+    message = (
+        "Rotation-arm angle confidence is uncertain. Inspect the arm, then use "
+        "'Arm Inspected — Reset Relative Tracking' before another relative move."
+    )
+    if state.get("last_relative_error"):
+        message += f" Original failure: {state['last_relative_error']}"
+    return (
+        jsonify(
+            {
+                "error": message,
+                "rotation_arm_state": state,
+            }
+        ),
+        409,
+    )
+
+
+@app.post("/api/rotation/confirm-inspected")
+def rotation_confirm_inspected():
+    if automation_is_running():
+        return json_error(
+            "automation is running; relative tracking cannot be reset.",
+            409,
+        )
+
+    if not manual_arm_motion_lock.acquire(blocking=False):
+        return json_error("another manual arm movement is already running.", 409)
+
+    try:
+        controller = get_rotation_controller()
+        if controller.expected_relative_state()["angle_confidence"] == "tracked":
+            return json_error("rotation-arm relative tracking is already enabled.", 409)
+
+        reset_state = controller.confirm_operator_inspection()
+        return jsonify(
+            {
+                "ok": True,
+                "message": (
+                    "Operator inspection confirmed. The current physical arm angle "
+                    "is now the software-only tracked starting angle; no motor "
+                    "command was sent."
+                ),
+                "rotation_arm_state": controller.relative_diagnostic_state(),
+                "reset": reset_state,
+            }
+        )
+    finally:
+        manual_arm_motion_lock.release()
+
+
+@app.post("/api/rotation/check-relative-firmware")
+def rotation_check_relative_firmware():
+    if automation_is_running():
+        return json_error(
+            "automation is running; rotation firmware cannot be checked.",
+            409,
+        )
+
+    if not manual_arm_motion_lock.acquire(blocking=False):
+        return json_error("another manual arm movement is already running.", 409)
+
+    try:
+        controller = get_rotation_controller()
+        capability = controller.check_relative_firmware_support()
+        return jsonify(
+            {
+                "ok": bool(capability["supported"]),
+                "com_port": get_serial_port("rotation"),
+                "capability": capability,
+                "rotation_arm_state": controller.relative_diagnostic_state(),
+            }
+        )
+    finally:
+        manual_arm_motion_lock.release()
+
+
 @app.post("/api/rotation/relative-angle")
 def rotation_relative_angle():
     if automation_is_running():
@@ -721,13 +802,7 @@ def rotation_relative_angle():
         com_port = get_serial_port("rotation")
         controller = get_rotation_controller()
         if controller.expected_relative_state()["angle_confidence"] != "tracked":
-            return json_error(
-                (
-                    "Rotation-arm angle confidence is uncertain. Inspect the arm "
-                    "and restart the web app before sending another relative move."
-                ),
-                409,
-            )
+            return relative_tracking_locked_response(controller)
         try:
             stop_rde_before_manual_arm_motion()
             result = controller.relative_steps(
@@ -753,8 +828,15 @@ def rotation_relative_angle():
                 "Manual short-angle movement failed on %s.",
                 com_port,
             )
-            return json_error(
-                f"Short-angle movement failed on {com_port}: {exc}",
+            return (
+                jsonify(
+                    {
+                        "error": f"Short-angle movement failed on {com_port}: {exc}",
+                        "rotation_arm_state": (
+                            controller.relative_diagnostic_state()
+                        ),
+                    }
+                ),
                 500,
             )
 
@@ -797,6 +879,9 @@ def rotation_oscillate():
         return json_error("another manual arm movement is already running.", 409)
     try:
         com_port = get_serial_port("rotation")
+        controller = get_rotation_controller()
+        if controller.expected_relative_state()["angle_confidence"] != "tracked":
+            return relative_tracking_locked_response(controller)
         try:
             stop_rde_before_manual_arm_motion()
             result = execute_rinse_arm_oscillation(
@@ -806,6 +891,7 @@ def rotation_oscillate():
                 amplitude_steps=int(settings["amplitude_steps"]),
                 cycles=int(settings["cycles"]),
                 pause_between_moves_s=float(settings["pause_between_moves_s"]),
+                controller=controller,
                 pause_fn=time.sleep,
                 abort_check_fn=lambda _message: None,
                 record_fn=lambda _run_dir, record: record,
@@ -816,10 +902,18 @@ def rotation_oscillate():
                 "Manual arm oscillation failed on %s.",
                 com_port,
             )
-            return json_error(
-                (
-                    f"Arm oscillation failed on {com_port}: {exc}. "
-                    "No automatic return or homing was attempted; inspect the arm."
+            return (
+                jsonify(
+                    {
+                        "error": (
+                            f"Arm oscillation failed on {com_port}: {exc}. "
+                            "No automatic return or homing was attempted; inspect "
+                            "the arm."
+                        ),
+                        "rotation_arm_state": (
+                            controller.relative_diagnostic_state()
+                        ),
+                    }
                 ),
                 500,
             )

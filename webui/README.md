@@ -460,16 +460,33 @@ home recovery, and marks angle confidence uncertain. Inspect the arm manually
 before resuming. Segment requests and acknowledgements are saved under
 `action_results` in the run manifest and summary.
 
-The same relative controls are also available in **Motor Control**:
+The same relative controls are also available in **Motor Control**, separately
+from the legacy full-travel `0` and `1` commands:
 
-- **Short Angle Movement** accepts an angle magnitude. Use **Move + CCW** or
-  **Move − CW** for one signed relative movement.
-- **Arm Rinse Oscillation** accepts amplitude, cycles, and pause. Its safe
-  first-test preset is `2 degrees / 1 cycle / 0.2 seconds`.
+- **Short Angle Movement** provides selectable `1`, `2`, `3`, `5`, and
+  `10 degree` choices, so routine operation needs no keyboard entry. Use
+  **Move + CCW** or **Move − CW** for one signed relative movement.
+- **Oscillation** provides complete **First test**, **Light rinse**, and
+  **Standard rinse** preset buttons. Amplitude, cycles, and pause also use
+  selectable choices instead of free-form typing.
 
 Both manual actions stop the RDE disk first. While either action is running,
 the UI and API reject RDE start, X/Z commands, other arm commands, and
 automation start. Emergency Stop remains available.
+
+If a relative command is interrupted or does not return an exact matching
+acknowledgement, Motor Control shows **Relative Movement Locked** and preserves
+the original command/serial failure. After physically inspecting the arm, the
+operator may use **Arm Inspected — Reset Relative Tracking**. This accepts the
+current physical angle as a new software-only tracked starting angle and resets
+the expected relative offset to zero. It does not open the serial port, send a
+motor command, home the arm, or claim that the angle was measured.
+
+The same panel provides **Check Relative Firmware — No Motion Command**. This
+sends only `HELP` to the configured rotation controller and reports whether the
+reply advertises `REL <signed_steps>`. It does not send `0`, `1`, `REL`, or a
+step pulse command. A failed capability check does not reset or further
+invalidate relative-angle confidence.
 
 ### Required manual hardware validation
 

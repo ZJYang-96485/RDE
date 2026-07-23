@@ -91,7 +91,59 @@ class RelativeRotationTests(unittest.TestCase):
                 controller.relative_steps(9)
 
         self.assertEqual(controller.expected_relative_state()["angle_confidence"], "uncertain")
+        diagnostic = controller.relative_diagnostic_state()
+        self.assertEqual(diagnostic["last_relative_command"], "REL 9")
+        self.assertEqual(diagnostic["last_relative_error"], "timeout")
         close.assert_called_once_with()
+
+    def test_operator_inspection_reset_changes_software_state_without_serial_io(self) -> None:
+        controller = RotationController()
+        controller.expected_offset_steps = 9
+        controller.mark_angle_uncertain("missing relative ACK")
+
+        with (
+            patch.object(controller.device, "connect") as connect,
+            patch.object(controller.device, "write_line") as write_line,
+        ):
+            reset = controller.confirm_operator_inspection()
+
+        self.assertEqual(reset["previous_relative_error"], "missing relative ACK")
+        self.assertEqual(reset["angle_confidence"], "tracked")
+        self.assertEqual(
+            controller.relative_diagnostic_state()["expected_offset_steps"],
+            0,
+        )
+        self.assertIsNone(
+            controller.relative_diagnostic_state()["last_relative_error"]
+        )
+        connect.assert_not_called()
+        write_line.assert_not_called()
+
+    def test_firmware_capability_check_uses_help_without_changing_confidence(self) -> None:
+        controller = RotationController()
+        controller.mark_angle_uncertain("earlier relative timeout")
+
+        with patch.object(
+            controller.device,
+            "send_line_wait_for_response",
+            return_value=(
+                "Rotation commands: 1, 0, REL <signed_steps>, STOP, PING, "
+                "STATUS, HELP"
+            ),
+        ) as send:
+            capability = controller.check_relative_firmware_support()
+
+        self.assertTrue(capability["supported"])
+        self.assertFalse(capability["motion_command_sent"])
+        self.assertEqual(send.call_args.args[0], "HELP")
+        self.assertEqual(
+            controller.expected_relative_state()["angle_confidence"],
+            "uncertain",
+        )
+        self.assertEqual(
+            controller.relative_diagnostic_state()["last_relative_error"],
+            "earlier relative timeout",
+        )
 
     def test_relative_command_is_rejected_instead_of_queued(self) -> None:
         controller = RotationController()

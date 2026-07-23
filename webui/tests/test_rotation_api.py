@@ -114,6 +114,7 @@ class RotationApiTests(unittest.TestCase):
         get_controller.assert_not_called()
 
     @patch("app.automation_is_running", return_value=False)
+    @patch("app.get_rotation_controller")
     @patch("app.get_serial_port", return_value="COM3")
     @patch("app.execute_rinse_arm_oscillation")
     @patch("app.stop_rde")
@@ -122,8 +123,13 @@ class RotationApiTests(unittest.TestCase):
         stop_rde,
         execute,
         _get_serial_port,
+        get_controller,
         _automation_is_running,
     ) -> None:
+        get_controller.return_value.expected_relative_state.return_value = {
+            "expected_offset_steps": 0,
+            "angle_confidence": "tracked",
+        }
         execute.return_value = {
             "status": "completed",
             "cycles_completed": 1,
@@ -150,6 +156,129 @@ class RotationApiTests(unittest.TestCase):
         self.assertEqual(kwargs["amplitude_steps"], 9)
         self.assertEqual(kwargs["cycles"], 1)
         self.assertEqual(kwargs["pause_between_moves_s"], 0.2)
+        self.assertIs(kwargs["controller"], get_controller.return_value)
+
+    @patch("app.automation_is_running", return_value=False)
+    @patch("app.get_rotation_controller")
+    @patch("app.stop_rde")
+    @patch("app.execute_rinse_arm_oscillation")
+    def test_locked_oscillation_preserves_original_error_and_sends_nothing(
+        self,
+        execute,
+        stop_rde,
+        get_controller,
+        _automation_is_running,
+    ) -> None:
+        controller = get_controller.return_value
+        controller.expected_relative_state.return_value = {
+            "expected_offset_steps": 0,
+            "angle_confidence": "uncertain",
+        }
+        controller.relative_diagnostic_state.return_value = {
+            "expected_offset_steps": 0,
+            "angle_confidence": "uncertain",
+            "last_relative_error": "Rotation reported error: REL is unsupported",
+            "last_relative_command": "REL 9",
+            "last_relative_response": None,
+            "operator_tracking_resets": 0,
+        }
+
+        response = self.client.post(
+            "/api/rotation/oscillate",
+            json={
+                "amplitude_deg": 2,
+                "cycles": 1,
+                "pause_between_moves_s": 0.2,
+            },
+        )
+
+        self.assertEqual(response.status_code, 409)
+        payload = response.get_json()
+        self.assertIn("Original failure", payload["error"])
+        self.assertEqual(
+            payload["rotation_arm_state"]["last_relative_command"],
+            "REL 9",
+        )
+        stop_rde.assert_not_called()
+        execute.assert_not_called()
+
+    @patch("app.automation_is_running", return_value=False)
+    @patch("app.get_rotation_controller")
+    def test_operator_confirmed_reset_sends_no_motor_command(
+        self,
+        get_controller,
+        _automation_is_running,
+    ) -> None:
+        controller = get_controller.return_value
+        controller.expected_relative_state.return_value = {
+            "expected_offset_steps": 9,
+            "angle_confidence": "uncertain",
+        }
+        controller.confirm_operator_inspection.return_value = {
+            "expected_offset_steps": 0,
+            "angle_confidence": "tracked",
+            "previous_relative_error": "timeout",
+            "operator_tracking_resets": 1,
+        }
+        controller.relative_diagnostic_state.return_value = {
+            "expected_offset_steps": 0,
+            "angle_confidence": "tracked",
+            "last_relative_error": None,
+            "last_relative_command": None,
+            "last_relative_response": None,
+            "operator_tracking_resets": 1,
+        }
+
+        response = self.client.post("/api/rotation/confirm-inspected")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertIn("no motor command was sent", payload["message"])
+        controller.confirm_operator_inspection.assert_called_once_with()
+        controller.relative_steps.assert_not_called()
+        controller.send_text.assert_not_called()
+
+    @patch("app.automation_is_running", return_value=False)
+    @patch("app.get_serial_port", return_value="COM3")
+    @patch("app.get_rotation_controller")
+    def test_firmware_check_reports_capability_without_motion(
+        self,
+        get_controller,
+        _get_serial_port,
+        _automation_is_running,
+    ) -> None:
+        controller = get_controller.return_value
+        controller.check_relative_firmware_support.return_value = {
+            "supported": True,
+            "response": (
+                "Rotation commands: 1, 0, REL <signed_steps>, STOP, PING, "
+                "STATUS, HELP"
+            ),
+            "error": None,
+            "motion_command_sent": False,
+        }
+        controller.relative_diagnostic_state.return_value = {
+            "expected_offset_steps": 0,
+            "angle_confidence": "tracked",
+            "last_relative_error": None,
+            "last_relative_command": None,
+            "last_relative_response": None,
+            "operator_tracking_resets": 0,
+            "relative_firmware_supported": True,
+            "relative_firmware_response": "Rotation commands: REL <signed_steps>",
+            "relative_firmware_error": None,
+        }
+
+        response = self.client.post("/api/rotation/check-relative-firmware")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["capability"]["motion_command_sent"])
+        controller.check_relative_firmware_support.assert_called_once_with()
+        controller.relative_steps.assert_not_called()
+        controller.send_text.assert_not_called()
 
     @patch("app.automation_is_running", return_value=True)
     @patch("app.stop_rde")
@@ -187,14 +316,24 @@ class RotationApiTests(unittest.TestCase):
             "manualOscillationAmplitude",
             "manualOscillationCycles",
             "manualOscillationPause",
-            "manualOscillationPresetBtn",
             "manualOscillationStartBtn",
+            "rotationRecoveryPanel",
+            "rotationDiagnosticMessage",
+            "checkRelativeFirmwareBtn",
+            "confirmArmInspectedBtn",
         ):
             with self.subTest(element_id=element_id):
                 self.assertIn(f'id="{element_id}"', page)
-        self.assertIn("Safe preset: 2° / 1 cycle", page)
+        self.assertIn("Arm Position — Full Travel", page)
+        self.assertIn("<h3 id=\"manualOscillationHeading\">Oscillation</h3>", page)
+        self.assertIn("First test<br />2° · 1 cycle", page)
+        self.assertIn("Light rinse<br />3° · 2 cycles", page)
+        self.assertIn("Standard rinse<br />5° · 3 cycles", page)
+        self.assertIn('class="oscillation-preset home-btn', page)
         self.assertIn("/api/rotation/relative-angle", page)
         self.assertIn("/api/rotation/oscillate", page)
+        self.assertIn("/api/rotation/confirm-inspected", page)
+        self.assertIn("/api/rotation/check-relative-firmware", page)
 
     @patch("app.automation_is_running", return_value=False)
     def test_manual_arm_lock_blocks_other_motion_and_automation(

@@ -2,10 +2,52 @@ from __future__ import annotations
 
 import unittest
 
-from workflow.run_plan_loader import RunPlanError, validate_run_plan_payload
+from workflow.run_plan_loader import (
+    RunPlanError,
+    load_run_plan,
+    validate_run_plan_payload,
+)
 
 
 class RunPlanRinseActionTest(unittest.TestCase):
+    def test_arm_only_run_plan_action_is_replaced_by_rinse(self) -> None:
+        payload = {
+            "schema_version": 2,
+            "run_name": "obsolete_arm_only_rinse",
+            "groups": [
+                {
+                    "label": "Rinse",
+                    "steps": [
+                        {
+                            "name": "Old arm-only action",
+                            "action": "rinse_arm_oscillation",
+                        }
+                    ],
+                }
+            ],
+        }
+
+        with self.assertRaisesRegex(
+            RunPlanError,
+            "unsupported action 'rinse_arm_oscillation'",
+        ):
+            validate_run_plan_payload(payload)
+
+    def test_shipped_rinse_check_uses_one_packaged_rinse_step(self) -> None:
+        plan = load_run_plan("Rinse Check")
+        rinse_group = next(
+            group for group in plan["groups"] if group["label"] == "Rinse"
+        )
+
+        self.assertEqual(len(rinse_group["steps"]), 1)
+        step = rinse_group["steps"][0]
+        self.assertEqual(step["action"], "rinse")
+        self.assertEqual(step["cycles"], 8)
+        self.assertEqual(step["disk_rotation"]["rpm"], 300)
+        self.assertTrue(
+            step["disk_rotation"]["immersed_rotation_confirmed"]
+        )
+
     def test_grouped_rinse_action_is_validated_and_restored(self) -> None:
         payload = {
             "schema_version": 2,

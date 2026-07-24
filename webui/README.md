@@ -453,22 +453,22 @@ new X/Z and arm commands, issues supported emergency stops, stops the disk,
 and marks affected tracking confidence uncertain. It never attempts an
 automatic return, homing, or legacy rotation command `0`.
 
-The separate `Rinse Arm Oscillation` action remains available for sequential,
-arm-only workflows.
+The former arm-only `Rinse Arm Oscillation` run-plan action has been replaced
+by `Packaged Concurrent Rinse`. Users select one rinse step rather than
+assembling a separate arm action, diamond path, RPM start, and RPM stop.
 
-### Packaged small-angle rinse-arm oscillation
+### Small-angle rinse-arm worker
 
-The `Rinse Arm Oscillation` atomic action performs a small relative swing about
-the operator-confirmed rinse starting angle. It is opt-in and disabled by
-default. With configured values of 200 full motor steps/revolution and
-8 microsteps, one step is:
+The arm worker inside `Packaged Concurrent Rinse` performs a small relative
+swing about the operator-confirmed rinse starting angle. With configured
+values of 200 full motor steps/revolution and 8 microsteps, one step is:
 
 ```text
 360 degrees / (200 * 8) = 0.225 degrees
 ```
 
-The action converts amplitude using the configured motor values. A 5-degree
-amplitude becomes 22 steps and one symmetric cycle is:
+The worker converts amplitude using the configured motor values. A 5-degree
+amplitude becomes 22 steps and one closed oscillation is:
 
 ```text
 +22 steps CCW
@@ -482,17 +482,16 @@ The Arduino command is `REL <signed_steps>`, limited by default to `-44` through
 `ACK REL requested=22 executed=22 direction=CCW`. The runner waits for each
 matching acknowledgement before issuing the next segment.
 
-Place this atomic action after the X/Z rinse path. The runner stops the RDE disk
-before the arm package, and X/Z and arm movement are never launched in
-parallel. The tracked starting offset is software-only: it represents
-acknowledged commands and is not a calibrated origin, physical home, or
-measured angle.
+The packaged rinse launches this worker once and keeps it active while every
+X/Z diamond cycle executes. The tracked starting offset is software-only: it
+represents acknowledged commands and is not a calibrated origin, physical
+home, or measured angle.
 
 If a move times out, disconnects, returns malformed/mismatched data, or is
-partially stopped, the package sends no later segment, performs no reverse or
-home recovery, and marks angle confidence uncertain. Inspect the arm manually
-before resuming. Segment requests and acknowledgements are saved under
-`action_results` in the run manifest and summary.
+partially stopped, shared rinse cancellation sends no later segment, performs
+no reverse or home recovery, and marks angle confidence uncertain. Inspect the
+arm manually before resuming. Segment requests and acknowledgements are saved
+under `action_results` in the run manifest and summary.
 
 The same relative controls are also available in **Motor Control**, separately
 from the legacy full-travel `0` and `1` commands:

@@ -2,7 +2,7 @@
   "schema_version": 2,
   "run_name": "Rinse Check",
   "display_name": "Rinse Check",
-  "description": "Grouped atomic-step run plan created in the web app.",
+  "description": "Example run plan using the packaged concurrent rinse as one reusable step.",
   "repetitions": 1,
   "groups": [
     {
@@ -74,69 +74,32 @@
       "enabled": true,
       "steps": [
         {
-          "name": "RDE Arm Rotation",
-          "action": "rotation",
+          "name": "Packaged Concurrent Rinse",
+          "action": "rinse",
           "enabled": true,
-          "command": "0"
-        },
-        {
-          "name": "Move Z \u2014 Relative Steps",
-          "action": "move_z",
-          "enabled": true,
-          "steps": 70000
-        },
-        {
-          "name": "Set RDE RPM",
-          "action": "set_rpm",
-          "enabled": true,
-          "rpm": 5000
-        },
-        {
-          "name": "Wait",
-          "action": "wait",
-          "enabled": true,
-          "duration_s": 60.0
-        },
-        {
-          "name": "Stop RDE",
-          "action": "stop_rpm",
-          "enabled": true
-        },
-        {
-          "name": "Move Z \u2014 Relative Steps",
-          "action": "move_z",
-          "enabled": true,
-          "steps": -35000
-        },
-        {
-          "name": "Set RDE RPM",
-          "action": "set_rpm",
-          "enabled": true,
-          "rpm": 3000
-        },
-        {
-          "name": "Wait",
-          "action": "wait",
-          "enabled": true,
-          "duration_s": 60.0
-        },
-        {
-          "name": "Stop RDE",
-          "action": "stop_rpm",
-          "enabled": true
-        },
-        {
-          "name": "Move X + Z Together",
-          "action": "move_xz_parallel",
-          "enabled": true,
-          "x_steps": -50000,
-          "z_steps": -35000
-        },
-        {
-          "name": "RDE Arm Rotation",
-          "action": "rotation",
-          "enabled": true,
-          "command": "1"
+          "cycles": 8,
+          "diamond": {
+            "x_radius_steps": 5000,
+            "z_radius_steps": 7000
+          },
+          "arm_oscillation": {
+            "enabled": true,
+            "amplitude_deg": 2.0,
+            "pause_between_moves_s": 0.1,
+            "mode": "continuous_until_diamond_complete",
+            "stop_policy": "finish_closed_cycle"
+          },
+          "disk_rotation": {
+            "enabled": true,
+            "rpm": 300,
+            "settle_s": 1.0,
+            "mode": "continuous_for_entire_rinse_step",
+            "stop_after": true,
+            "immersed_rotation_confirmed": true
+          },
+          "inter_cycle_pause_s": 0.0,
+          "cycle_timeout_s": 30.0,
+          "require_closed_paths": true
         }
       ]
     }

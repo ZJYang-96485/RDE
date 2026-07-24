@@ -34,7 +34,6 @@ from workflow.data_manager import (
 from workflow.levich_runner import run_levich_rpm_sweep_ca
 from workflow.protocol_loader import load_protocol
 from workflow.rinse import execute_rinse
-from workflow.rinse_arm_oscillation import execute_rinse_arm_oscillation
 from workflow.run_plan_loader import load_run_plan, validate_run_plan_payload
 from workflow.state import (
     AutomationAbortRequested,
@@ -554,35 +553,6 @@ def run_group(
                     position_state=position_state,
                 )
                 rde_is_running = False
-
-            elif action == "rinse_arm_oscillation":
-                if not bool(step.get("oscillation_enabled", False)):
-                    append_log(
-                        run_dir,
-                        f"{label}: rinse-arm oscillation is disabled; no arm command was sent.",
-                    )
-                else:
-                    # This packaged action is an explicit sequential step. All
-                    # prior X/Z motion has already returned its ACK before this
-                    # branch can run, and the disk is stopped before arm motion.
-                    stop_rde(None)
-                    rde_is_running = False
-                    append_log(
-                        run_dir,
-                        f"{label}: RDE stopped before rinse-arm oscillation.",
-                    )
-                    execute_rinse_arm_oscillation(
-                        run_dir=run_dir,
-                        label=f"{label}/{step_name}",
-                        amplitude_deg=float(step["amplitude_deg"]),
-                        amplitude_steps=int(step["amplitude_steps"]),
-                        cycles=int(step["cycles"]),
-                        pause_between_moves_s=float(step["pause_between_moves_s"]),
-                        pause_fn=lambda seconds: sleep_interruptible(
-                            seconds,
-                            "Abort requested during rinse-arm pause.",
-                        ),
-                    )
 
             elif action == "set_rpm":
                 rpm = int(step["rpm"])

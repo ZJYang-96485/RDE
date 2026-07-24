@@ -1550,7 +1550,6 @@
             <option value="move_xz_parallel">Move X + Z Together</option>
             <option value="rotation">RDE Arm Rotation</option>
             <option value="rinse">Packaged Concurrent Rinse</option>
-            <option value="rinse_arm_oscillation">Rinse Arm Oscillation</option>
             <option value="set_rpm">Set RDE RPM</option>
             <option value="wait">Wait</option>
             <option value="echem">EChem Measurement</option>
@@ -1586,7 +1585,6 @@
           <option value="move_xz_parallel">Move X + Z Together</option>
           <option value="rotation">RDE Arm Rotation</option>
           <option value="rinse">Packaged Concurrent Rinse</option>
-          <option value="rinse_arm_oscillation">Rinse Arm Oscillation</option>
           <option value="set_rpm">Set RDE RPM</option>
           <option value="wait">Wait</option>
           <option value="echem">EChem Measurement</option>
@@ -3433,7 +3431,6 @@
           move_xz_parallel: "Move X + Z Together",
           rotation: "RDE Arm Rotation",
           rinse: "Packaged Concurrent Rinse",
-          rinse_arm_oscillation: "Rinse Arm Oscillation",
           set_rpm: "Set RDE RPM",
           wait: "Wait",
           echem: "EChem Measurement",
@@ -3456,7 +3453,6 @@
         motionZUp: '<path d="M12 21V5M7 10l5-5 5 5M6 3h12"/>',
         motionXZ: '<path d="M4 19h15M4 19V4M4 19l5-5M19 19l-4-4M4 4l4 4"/>',
         rotation: '<path d="M18.5 7.5A8 8 0 1 0 20 14M18.5 7.5V3.5M18.5 7.5h-4"/><circle cx="12" cy="12" r="2"/>',
-        armOscillation: '<path d="M4 8c2.2-3 5-4.5 8-4.5S17.8 5 20 8M4 8l.4-4M4 8l4-.3M20 16c-2.2 3-5 4.5-8 4.5S6.2 19 4 16M20 16l-.4 4M20 16l-4 .3"/><circle cx="12" cy="12" r="2"/>',
         rde: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="1.6"/><path d="M12 10V6M13.7 13l3.5 2M10.3 13l-3.5 2"/>',
         stopRde: '<circle cx="12" cy="12" r="8"/><path d="M8.5 8.5l7 7M15.5 8.5l-7 7"/>',
         echem: '<path d="M3 18h18M4 15l3-5 3 3 3-7 3 7 4-3"/>',
@@ -3507,7 +3503,6 @@
           move_xz_parallel: { category: "parallel", categoryLabel: "Parallel motion", icon: "motionXZ" },
           rotation: { category: "motion", categoryLabel: "Arm motion", icon: "rotation" },
           rinse: { category: "parallel", categoryLabel: "Concurrent rinse", icon: "parallel" },
-          rinse_arm_oscillation: { category: "motion", categoryLabel: "Arm rinse", icon: "armOscillation" },
           set_rpm: { category: "rde", categoryLabel: "RDE", icon: "rde" },
           stop_rpm: { category: "rde", categoryLabel: "RDE", icon: "stopRde" },
           echem: { category: "echem", categoryLabel: "EChem", icon: "echem" },
@@ -3774,26 +3769,6 @@
           step.inter_cycle_pause_s = previewNumberFrom(block, ".atomic-rinse-cycle-pause", 0);
           step.cycle_timeout_s = previewNumberFrom(block, ".atomic-rinse-cycle-timeout", 30);
           step.require_closed_paths = true;
-        } else if (action === "rinse_arm_oscillation") {
-          step.oscillation_enabled =
-            block.querySelector(".atomic-rinse-arm-enabled")?.checked ?? false;
-          step.amplitude_deg = previewNumberFrom(
-            block,
-            ".atomic-rinse-arm-amplitude",
-            rotationArmConfig.rinse_oscillation?.amplitude_deg ?? 5
-          );
-          step.amplitude_steps = rinseArmDegreesToSteps(step.amplitude_deg);
-          step.cycles = previewNumberFrom(
-            block,
-            ".atomic-rinse-arm-cycles",
-            rotationArmConfig.rinse_oscillation?.cycles ?? 3
-          );
-          step.pause_between_moves_s = previewNumberFrom(
-            block,
-            ".atomic-rinse-arm-pause",
-            rotationArmConfig.rinse_oscillation?.pause_between_moves_s ?? 0.2
-          );
-          step.return_to_start = true;
         } else if (action === "set_rpm") {
           step.rpm = previewNumberFrom(block, ".atomic-rpm", 0);
           step.stabilization_s = previewNumberFrom(block, ".atomic-rpm-settle", 0);
@@ -3854,19 +3829,6 @@
             unknownReasons: [],
           };
         }
-        if (step.action === "rinse_arm_oscillation") {
-          if (!step.oscillation_enabled) {
-            return { seconds: 0, approximate: false, unknownReasons: [] };
-          }
-          const movementSeconds = Math.abs(step.amplitude_steps || 0) * 4 * 0.004;
-          const pauses = Math.max(0, (step.cycles || 0) * 3 - 1);
-          return {
-            seconds: Math.max(0, step.cycles || 0) * movementSeconds
-              + pauses * Math.max(0, step.pause_between_moves_s || 0),
-            approximate: true,
-            unknownReasons: [],
-          };
-        }
         if (step.action === "set_rpm") {
           return { seconds: Math.max(0, step.stabilization_s || 0), approximate: false, unknownReasons: [] };
         }
@@ -3911,13 +3873,6 @@
             + `${step.disk_rotation?.rpm} RPM for the entire step`
           );
         }
-        if (step.action === "rinse_arm_oscillation") {
-          if (!step.oscillation_enabled) return "Arm rinse oscillation disabled — no movement";
-          return (
-            `Arm rinse oscillation: ${step.amplitude_deg}° (${step.amplitude_steps} steps), `
-            + `${step.cycles} cycle(s), +A / −2A / +A, commanded net 0`
-          );
-        }
         if (step.action === "set_rpm") return step.rpm > 20 ? `Set RDE: ${step.rpm} RPM` : "Stop RDE";
         if (step.action === "stop_rpm") return "Stop the RDE";
         if (step.action === "wait") return `Wait ${formatRunPlanDuration(step.duration_s, false)}`;
@@ -3945,7 +3900,6 @@
         if (step.action === "set_rpm") state.rpm = step.rpm > 20 ? step.rpm : 0;
         if (step.action === "stop_rpm") state.rpm = 0;
         if (step.action === "rinse") state.rpm = 0;
-        if (step.action === "rinse_arm_oscillation" && step.oscillation_enabled) state.rpm = 0;
         if (step.action === "echem") state.cell = "off";
         if (step.action === "rpm_echem") {
           state.rpm = step.stop_rpm_after ? 0 : Math.max(0, step.rpm || 0);
@@ -4004,13 +3958,6 @@
 
           if (step.action === "wait" && step.duration_s > 300) {
             addWarning("A long wait over 5 minutes is included. Confirm that duration is intentional.");
-          }
-
-          if (step.action === "rinse_arm_oscillation" && step.oscillation_enabled) {
-            addWarning(
-              "Rinse-arm angle is commanded from configured motor steps, not measured. "
-              + "Use the 2° / 1-cycle preset for the first physical validation."
-            );
           }
 
           if (
@@ -4451,40 +4398,6 @@
           if (!Number.isFinite(values.cycle_timeout_s) || values.cycle_timeout_s <= 0) {
             throw new Error("Packaged rinse cycle timeout must be greater than 0.");
           }
-        } else if (action === "rinse_arm_oscillation") {
-          values.oscillation_enabled =
-            block.querySelector(".atomic-rinse-arm-enabled").checked;
-          values.amplitude_deg = Number(
-            block.querySelector(".atomic-rinse-arm-amplitude").value
-          );
-          values.cycles = Number(
-            block.querySelector(".atomic-rinse-arm-cycles").value
-          );
-          values.pause_between_moves_s = Number(
-            block.querySelector(".atomic-rinse-arm-pause").value
-          );
-          values.return_to_start = true;
-
-          const amplitudeSteps = rinseArmDegreesToSteps(values.amplitude_deg);
-          const maximum = Number(rotationArmConfig.max_relative_steps || 44);
-          if (!Number.isFinite(values.amplitude_deg) || values.amplitude_deg <= 0) {
-            throw new Error("Rinse-arm amplitude must be greater than 0 degrees.");
-          }
-          if (!Number.isInteger(values.cycles) || values.cycles <= 0) {
-            throw new Error("Rinse-arm cycles must be a positive integer.");
-          }
-          if (
-            !Number.isFinite(values.pause_between_moves_s)
-            || values.pause_between_moves_s < 0
-          ) {
-            throw new Error("Rinse-arm pause cannot be negative.");
-          }
-          if (amplitudeSteps < 1 || 2 * amplitudeSteps > maximum) {
-            throw new Error(
-              `Rinse-arm amplitude must convert to at least 1 step and keep the `
-              + `−2A segment within ±${maximum} steps.`
-            );
-          }
         } else if (action === "set_rpm") {
           values.rpm = Number(block.querySelector(".atomic-rpm").value);
         } else if (action === "wait") {
@@ -4723,87 +4636,6 @@
             "On failure or Emergency Abort, all workers stop immediately. "
             + "No automatic return, homing, or legacy arm command 0 is sent.";
           container.appendChild(failureNote);
-        } else if (action === "rinse_arm_oscillation") {
-          const defaults = rotationArmConfig.rinse_oscillation || {};
-
-          const enabledWrap = document.createElement("label");
-          enabledWrap.className = "check-label";
-          const enabledInput = document.createElement("input");
-          enabledInput.type = "checkbox";
-          enabledInput.className = "atomic-rinse-arm-enabled";
-          enabledInput.checked = values.oscillation_enabled ?? defaults.enabled ?? false;
-          const enabledText = document.createElement("span");
-          enabledText.textContent = "Enable rinse-arm movement for this step";
-          enabledWrap.appendChild(enabledInput);
-          enabledWrap.appendChild(enabledText);
-          container.appendChild(enabledWrap);
-
-          const amplitudeInput = document.createElement("input");
-          amplitudeInput.type = "number";
-          amplitudeInput.min = String(rotationArmConfig.degrees_per_step);
-          amplitudeInput.step = String(rotationArmConfig.degrees_per_step);
-          amplitudeInput.className = "atomic-rinse-arm-amplitude";
-          amplitudeInput.value = String(values.amplitude_deg ?? defaults.amplitude_deg ?? 5);
-          addField("Amplitude from center (degrees)", amplitudeInput);
-
-          const cyclesInput = document.createElement("input");
-          cyclesInput.type = "number";
-          cyclesInput.min = "1";
-          cyclesInput.step = "1";
-          cyclesInput.className = "atomic-rinse-arm-cycles";
-          cyclesInput.value = String(values.cycles ?? defaults.cycles ?? 3);
-          addField("Symmetric cycles", cyclesInput);
-
-          const pauseInput = document.createElement("input");
-          pauseInput.type = "number";
-          pauseInput.min = "0";
-          pauseInput.step = "0.1";
-          pauseInput.className = "atomic-rinse-arm-pause";
-          pauseInput.value = String(
-            values.pause_between_moves_s ?? defaults.pause_between_moves_s ?? 0.2
-          );
-          addField("Pause between arm moves (seconds)", pauseInput);
-
-          const firstTestBtn = document.createElement("button");
-          firstTestBtn.type = "button";
-          firstTestBtn.className = "home-btn atomic-rinse-arm-first-test";
-          firstTestBtn.textContent = "Use first-test preset: 2° / 1 cycle";
-          container.appendChild(firstTestBtn);
-
-          const preview = document.createElement("p");
-          preview.className = "hint atomic-rinse-arm-preview";
-          preview.style.whiteSpace = "pre-line";
-          container.appendChild(preview);
-
-          const warning = document.createElement("p");
-          warning.className = "error";
-          warning.textContent =
-            "Small-angle arm motion is open-loop: the app validates strict board ACKs, "
-            + "but does not measure the physical angle. The RDE disk is stopped first; "
-            + "this step never runs in parallel with X/Z.";
-          container.appendChild(warning);
-
-          const updatePreview = () => {
-            const amplitude = Number(amplitudeInput.value);
-            const cycleCount = Number(cyclesInput.value);
-            const amplitudeSteps = rinseArmDegreesToSteps(amplitude);
-            const maximum = Number(rotationArmConfig.max_relative_steps || 44);
-            preview.textContent = rinseArmPreviewText(amplitude, cycleCount);
-            preview.classList.toggle(
-              "error",
-              amplitudeSteps < 1 || 2 * amplitudeSteps > maximum
-            );
-          };
-          amplitudeInput.addEventListener("input", updatePreview);
-          cyclesInput.addEventListener("input", updatePreview);
-          firstTestBtn.addEventListener("click", () => {
-            enabledInput.checked = true;
-            amplitudeInput.value = "2";
-            cyclesInput.value = "1";
-            updatePreview();
-            scheduleRunPlanPreview();
-          });
-          updatePreview();
         } else if (action === "set_rpm") {
           const input = document.createElement("input");
           input.type = "number";

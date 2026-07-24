@@ -82,7 +82,6 @@ class RunPlanPreviewUiTest(unittest.TestCase):
             "move_xz_parallel",
             "rotation",
             "rinse",
-            "rinse_arm_oscillation",
             "set_rpm",
             "stop_rpm",
             "wait",
@@ -153,20 +152,14 @@ class RunPlanPreviewUiTest(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload["config"]["rinse_rpm_max"], 300)
 
-    def test_packaged_rinse_arm_controls_and_preview_are_present(self) -> None:
-        self.assertIn(
-            '<option value="rinse_arm_oscillation">Rinse Arm Oscillation</option>',
+    def test_arm_only_run_plan_action_is_replaced_by_rinse(self) -> None:
+        self.assertNotIn(
+            '<option value="rinse_arm_oscillation">',
             self.page,
         )
-        self.assertIn("atomic-rinse-arm-enabled", self.source)
-        self.assertIn("atomic-rinse-arm-amplitude", self.source)
-        self.assertIn("atomic-rinse-arm-cycles", self.source)
-        self.assertIn("atomic-rinse-arm-pause", self.source)
-        self.assertIn("Use first-test preset: 2° / 1 cycle", self.source)
-        self.assertIn("Cycle 1 of ${cycles}", self.source)
-        self.assertIn("Net relative displacement per cycle: 0 steps", self.source)
-        self.assertIn("this step never runs in parallel with X/Z", self.source)
-        self.assertIn("not measured", self.source)
+        self.assertNotIn("rinse_arm_oscillation: { category:", self.source)
+        self.assertNotIn("atomic-rinse-arm-enabled", self.source)
+        self.assertNotIn("atomic-rinse-arm-cycles", self.source)
 
         payload = app.test_client().get("/api/config").get_json()["config"]
         self.assertFalse(payload["rotation_arm"]["rinse_oscillation"]["enabled"])

@@ -37,6 +37,7 @@ _DEFAULT_CONFIG = {
     "rde": {
         "rpm_min": 30,
         "rpm_max": 12000,
+        "rinse_rpm_max": 300,
         "stop_rpm": 20
     },
     "motion": {
@@ -213,6 +214,7 @@ def validate_rde_config(config: dict[str, Any]) -> None:
 
     rpm_min = int(rde.get("rpm_min", 0))
     rpm_max = int(rde.get("rpm_max", 0))
+    rinse_rpm_max = int(rde.get("rinse_rpm_max", min(300, rpm_max)))
     stop_rpm = int(rde.get("stop_rpm", 0))
 
     if rpm_min <= 0:
@@ -220,6 +222,11 @@ def validate_rde_config(config: dict[str, Any]) -> None:
 
     if rpm_max <= rpm_min:
         raise ConfigError("rde.rpm_max must be greater than rde.rpm_min.")
+
+    if rinse_rpm_max < rpm_min or rinse_rpm_max > rpm_max:
+        raise ConfigError(
+            "rde.rinse_rpm_max must be within the configured RDE RPM range."
+        )
 
     if stop_rpm < 0:
         raise ConfigError("rde.stop_rpm cannot be negative.")
@@ -536,6 +543,7 @@ def get_rde_limits() -> dict[str, int]:
     return {
         "rpm_min": int(rde["rpm_min"]),
         "rpm_max": int(rde["rpm_max"]),
+        "rinse_rpm_max": int(rde.get("rinse_rpm_max", min(300, int(rde["rpm_max"])))),
         "stop_rpm": int(rde["stop_rpm"])
     }
 

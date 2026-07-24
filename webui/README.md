@@ -417,10 +417,44 @@ Do not start a full 300-second-per-step protocol until the saved protocol has be
 
 ## Rinse and cleaning sequences
 
-There is no opaque full-rinse action. Build the overall rinse and cleaning
-sequence as an explicit group of X/Z motion, packaged arm oscillation, RPM,
-stop, and wait steps in the run plan. This keeps the complete physical
-sequence visible and editable in the same saved plan.
+The `Packaged Concurrent Rinse` action is one continuous operation with three
+coordinated components:
+
+```text
+RDE RPM: starts once and remains active for the entire action
+Arm: repeats complete +A, -2A, +A oscillations continuously
+X/Z: executes the configured number of closed diamond cycles
+```
+
+After the final diamond closes, the coordinator signals the arm worker to stop
+only after its current closed oscillation. It then verifies that X, Z, and the
+tracked arm offset all equal their values at action start before stopping the
+RDE. The number of arm cycles is intentionally timing-dependent and is not
+tied to the configured diamond-cycle count.
+
+For the RDE disk, completion means commanded speed is stopped (reported as
+final RPM 0). The controller does not index disk angle, so the action makes no
+claim about returning to the same physical angular orientation.
+
+The default diamond radius is X=5000 and Z=7000 steps, giving:
+
+```text
+(+5000, -7000)
+(-10000, 0)
+(0, +14000)
+(+10000, 0)
+(-5000, -7000)
+net X=0, net Z=0
+```
+
+Immersed RPM must be explicitly confirmed in the step and cannot exceed the
+configured rinse-specific RPM limit. On failure, shared cancellation stops
+new X/Z and arm commands, issues supported emergency stops, stops the disk,
+and marks affected tracking confidence uncertain. It never attempts an
+automatic return, homing, or legacy rotation command `0`.
+
+The separate `Rinse Arm Oscillation` action remains available for sequential,
+arm-only workflows.
 
 ### Packaged small-angle rinse-arm oscillation
 

@@ -1274,7 +1274,7 @@
 
       <section class="panel automation-panel workspace-panel" data-workspace-panel="runplan">
         <h2>Sample Run Plan</h2>
-        <p class="hint">Build named groups such as Sample 1. Inside each group, add atomic steps for X, Z, simultaneous X + Z, rotation, RPM, wait, or EChem. Use Concurrent RPM + EChem when both must operate together. Build any rinse or cleaning sequence explicitly from these steps. Automatic homing is disabled during physical calibration.</p>
+        <p class="hint">Build named groups such as Sample 1. Inside each group, add atomic steps for X, Z, simultaneous X + Z, rotation, RPM, wait, or EChem. Use Packaged Concurrent Rinse when diamond motion, closed arm oscillation, and one continuous RPM session must run together. Automatic homing is disabled during physical calibration.</p>
 
         <label for="gamryModeSelect">Gamry Backend</label>
         <div class="inline-control-row">
@@ -1549,6 +1549,7 @@
             <option value="move_z">Move Z — Relative Steps</option>
             <option value="move_xz_parallel">Move X + Z Together</option>
             <option value="rotation">RDE Arm Rotation</option>
+            <option value="rinse">Packaged Concurrent Rinse</option>
             <option value="rinse_arm_oscillation">Rinse Arm Oscillation</option>
             <option value="set_rpm">Set RDE RPM</option>
             <option value="wait">Wait</option>
@@ -1584,6 +1585,7 @@
           <option value="move_z">Move Z — Relative Steps</option>
           <option value="move_xz_parallel">Move X + Z Together</option>
           <option value="rotation">RDE Arm Rotation</option>
+          <option value="rinse">Packaged Concurrent Rinse</option>
           <option value="rinse_arm_oscillation">Rinse Arm Oscillation</option>
           <option value="set_rpm">Set RDE RPM</option>
           <option value="wait">Wait</option>
@@ -3430,6 +3432,7 @@
           move_z: "Move Z — Relative Steps",
           move_xz_parallel: "Move X + Z Together",
           rotation: "RDE Arm Rotation",
+          rinse: "Packaged Concurrent Rinse",
           rinse_arm_oscillation: "Rinse Arm Oscillation",
           set_rpm: "Set RDE RPM",
           wait: "Wait",
@@ -3503,6 +3506,7 @@
           move_z: { category: "motion", categoryLabel: "Motion", icon: "motionZ" },
           move_xz_parallel: { category: "parallel", categoryLabel: "Parallel motion", icon: "motionXZ" },
           rotation: { category: "motion", categoryLabel: "Arm motion", icon: "rotation" },
+          rinse: { category: "parallel", categoryLabel: "Concurrent rinse", icon: "parallel" },
           rinse_arm_oscillation: { category: "motion", categoryLabel: "Arm rinse", icon: "armOscillation" },
           set_rpm: { category: "rde", categoryLabel: "RDE", icon: "rde" },
           stop_rpm: { category: "rde", categoryLabel: "RDE", icon: "stopRde" },
@@ -3742,6 +3746,34 @@
           step.z_steps = previewNumberFrom(block, ".atomic-z-steps", 0);
         } else if (action === "rotation") {
           step.command = block.querySelector(".atomic-command")?.value.trim() || "not set";
+        } else if (action === "rinse") {
+          step.cycles = previewNumberFrom(block, ".atomic-rinse-cycles", 8);
+          step.diamond = {
+            x_radius_steps: previewNumberFrom(block, ".atomic-rinse-x-radius", 5000),
+            z_radius_steps: previewNumberFrom(block, ".atomic-rinse-z-radius", 7000),
+          };
+          step.arm_oscillation = {
+            enabled: block.querySelector(".atomic-rinse-arm-worker-enabled")?.checked ?? true,
+            amplitude_deg: previewNumberFrom(block, ".atomic-rinse-arm-worker-amplitude", 2),
+            amplitude_steps: rinseArmDegreesToSteps(
+              previewNumberFrom(block, ".atomic-rinse-arm-worker-amplitude", 2)
+            ),
+            pause_between_moves_s: previewNumberFrom(block, ".atomic-rinse-arm-worker-pause", 0.1),
+            mode: "continuous_until_diamond_complete",
+            stop_policy: "finish_closed_cycle",
+          };
+          step.disk_rotation = {
+            enabled: block.querySelector(".atomic-rinse-disk-enabled")?.checked ?? true,
+            rpm: previewNumberFrom(block, ".atomic-rinse-rpm", 300),
+            settle_s: previewNumberFrom(block, ".atomic-rinse-rpm-settle", 1),
+            mode: "continuous_for_entire_rinse_step",
+            stop_after: true,
+            immersed_rotation_confirmed:
+              block.querySelector(".atomic-rinse-immersed-confirmed")?.checked ?? false,
+          };
+          step.inter_cycle_pause_s = previewNumberFrom(block, ".atomic-rinse-cycle-pause", 0);
+          step.cycle_timeout_s = previewNumberFrom(block, ".atomic-rinse-cycle-timeout", 30);
+          step.require_closed_paths = true;
         } else if (action === "rinse_arm_oscillation") {
           step.oscillation_enabled =
             block.querySelector(".atomic-rinse-arm-enabled")?.checked ?? false;
@@ -3806,6 +3838,22 @@
         if (step.action === "rotation") {
           return { seconds: 2.5, approximate: true, unknownReasons: [] };
         }
+        if (step.action === "rinse") {
+          const xRadius = Math.abs(step.diamond?.x_radius_steps || 0);
+          const zRadius = Math.abs(step.diamond?.z_radius_steps || 0);
+          const firstLeg = Math.max(xRadius / 4000, zRadius / 8000);
+          const horizontalCrossing = (2 * xRadius) / 4000;
+          const verticalCrossing = (2 * zRadius) / 8000;
+          const diamondSeconds = 2 * firstLeg + 2 * horizontalCrossing + verticalCrossing;
+          return {
+            seconds: Math.max(0, step.disk_rotation?.settle_s || 0)
+              + Math.max(0, step.cycles || 0) * diamondSeconds
+              + Math.max(0, (step.cycles || 0) - 1)
+                * Math.max(0, step.inter_cycle_pause_s || 0),
+            approximate: true,
+            unknownReasons: [],
+          };
+        }
         if (step.action === "rinse_arm_oscillation") {
           if (!step.oscillation_enabled) {
             return { seconds: 0, approximate: false, unknownReasons: [] };
@@ -3855,6 +3903,14 @@
           return `Move X ${formatSignedPreviewNumber(step.x_steps)} (${xDirectionLabel(step.x_steps)}) and Z ${formatSignedPreviewNumber(step.z_steps)} (${zDirectionLabel(step.z_steps)}) together`;
         }
         if (step.action === "rotation") return `Arm command: ${step.command}`;
+        if (step.action === "rinse") {
+          return (
+            `Packaged rinse: ${step.cycles} closed diamond cycle(s), `
+            + `X radius ${step.diamond?.x_radius_steps} / Z radius ${step.diamond?.z_radius_steps} steps, `
+            + `continuous ${step.arm_oscillation?.amplitude_deg}Â° arm oscillation, `
+            + `${step.disk_rotation?.rpm} RPM for the entire step`
+          );
+        }
         if (step.action === "rinse_arm_oscillation") {
           if (!step.oscillation_enabled) return "Arm rinse oscillation disabled — no movement";
           return (
@@ -3888,6 +3944,7 @@
         }
         if (step.action === "set_rpm") state.rpm = step.rpm > 20 ? step.rpm : 0;
         if (step.action === "stop_rpm") state.rpm = 0;
+        if (step.action === "rinse") state.rpm = 0;
         if (step.action === "rinse_arm_oscillation" && step.oscillation_enabled) state.rpm = 0;
         if (step.action === "echem") state.cell = "off";
         if (step.action === "rpm_echem") {
@@ -3953,6 +4010,17 @@
             addWarning(
               "Rinse-arm angle is commanded from configured motor steps, not measured. "
               + "Use the 2° / 1-cycle preset for the first physical validation."
+            );
+          }
+
+          if (
+            step.action === "rinse"
+            && step.disk_rotation?.enabled
+            && !step.disk_rotation?.immersed_rotation_confirmed
+          ) {
+            addWarning(
+              "Packaged rinse RPM is immersed and has not been explicitly confirmed; "
+              + "the run plan will be rejected until it is confirmed."
             );
           }
 
@@ -4280,6 +4348,109 @@
           );
         } else if (action === "rotation") {
           values.command = block.querySelector(".atomic-command").value;
+        } else if (action === "rinse") {
+          values.cycles = Number(
+            block.querySelector(".atomic-rinse-cycles").value
+          );
+          values.diamond = {
+            x_radius_steps: Number(
+              block.querySelector(".atomic-rinse-x-radius").value
+            ),
+            z_radius_steps: Number(
+              block.querySelector(".atomic-rinse-z-radius").value
+            ),
+          };
+          values.arm_oscillation = {
+            enabled:
+              block.querySelector(".atomic-rinse-arm-worker-enabled").checked,
+            amplitude_deg: Number(
+              block.querySelector(".atomic-rinse-arm-worker-amplitude").value
+            ),
+            pause_between_moves_s: Number(
+              block.querySelector(".atomic-rinse-arm-worker-pause").value
+            ),
+            mode: "continuous_until_diamond_complete",
+            stop_policy: "finish_closed_cycle",
+          };
+          values.disk_rotation = {
+            enabled: block.querySelector(".atomic-rinse-disk-enabled").checked,
+            rpm: Number(block.querySelector(".atomic-rinse-rpm").value),
+            settle_s: Number(
+              block.querySelector(".atomic-rinse-rpm-settle").value
+            ),
+            mode: "continuous_for_entire_rinse_step",
+            stop_after: true,
+            immersed_rotation_confirmed:
+              block.querySelector(".atomic-rinse-immersed-confirmed").checked,
+          };
+          values.inter_cycle_pause_s = Number(
+            block.querySelector(".atomic-rinse-cycle-pause").value
+          );
+          values.cycle_timeout_s = Number(
+            block.querySelector(".atomic-rinse-cycle-timeout").value
+          );
+          values.require_closed_paths = true;
+
+          const amplitudeSteps = rinseArmDegreesToSteps(
+            values.arm_oscillation.amplitude_deg
+          );
+          const maximum = Number(rotationArmConfig.max_relative_steps || 44);
+          if (!Number.isInteger(values.cycles) || values.cycles < 1 || values.cycles > 20) {
+            throw new Error("Packaged rinse cycles must be an integer from 1 to 20.");
+          }
+          if (
+            !Number.isInteger(values.diamond.x_radius_steps)
+            || values.diamond.x_radius_steps <= 0
+            || !Number.isInteger(values.diamond.z_radius_steps)
+            || values.diamond.z_radius_steps <= 0
+          ) {
+            throw new Error("Packaged rinse diamond radii must be positive whole steps.");
+          }
+          if (
+            values.arm_oscillation.enabled
+            && (
+              !Number.isFinite(values.arm_oscillation.amplitude_deg)
+              || amplitudeSteps < 1
+              || 2 * amplitudeSteps > maximum
+            )
+          ) {
+            throw new Error(
+              "Packaged rinse arm amplitude does not form a safe closed +A/âˆ’2A/+A path."
+            );
+          }
+          if (
+            values.disk_rotation.enabled
+            && (
+              !Number.isInteger(values.disk_rotation.rpm)
+              || values.disk_rotation.rpm < {{ rpm_min }}
+              || values.disk_rotation.rpm > {{ rinse_rpm_max }}
+            )
+          ) {
+            throw new Error(
+              "Packaged rinse RPM must be a whole number between "
+              + "{{ rpm_min }} and {{ rinse_rpm_max }}."
+            );
+          }
+          if (
+            values.disk_rotation.enabled
+            && !values.disk_rotation.immersed_rotation_confirmed
+          ) {
+            throw new Error(
+              "Confirm immersed disk rotation before saving the packaged rinse."
+            );
+          }
+          for (const [name, value] of [
+            ["arm pause", values.arm_oscillation.pause_between_moves_s],
+            ["RPM settle", values.disk_rotation.settle_s],
+            ["inter-cycle pause", values.inter_cycle_pause_s],
+          ]) {
+            if (!Number.isFinite(value) || value < 0) {
+              throw new Error(`Packaged rinse ${name} cannot be negative.`);
+            }
+          }
+          if (!Number.isFinite(values.cycle_timeout_s) || values.cycle_timeout_s <= 0) {
+            throw new Error("Packaged rinse cycle timeout must be greater than 0.");
+          }
         } else if (action === "rinse_arm_oscillation") {
           values.oscillation_enabled =
             block.querySelector(".atomic-rinse-arm-enabled").checked;
@@ -4415,6 +4586,143 @@
           input.value = values.command ?? "";
           input.placeholder = "0 or 1";
           addField("Rotation command", input);
+        } else if (action === "rinse") {
+          const diamond = values.diamond || {};
+          const arm = values.arm_oscillation || {};
+          const disk = values.disk_rotation || {};
+
+          const numberField = (
+            labelText,
+            className,
+            value,
+            { min = null, max = null, step = "1" } = {}
+          ) => {
+            const input = document.createElement("input");
+            input.type = "number";
+            input.className = className;
+            input.value = String(value);
+            input.step = String(step);
+            if (min !== null) input.min = String(min);
+            if (max !== null) input.max = String(max);
+            addField(labelText, input);
+            return input;
+          };
+
+          numberField(
+            "Closed X/Z diamond cycles (1â€“20)",
+            "atomic-rinse-cycles",
+            values.cycles ?? 8,
+            { min: 1, max: 20 }
+          );
+          numberField(
+            "Diamond X radius (steps)",
+            "atomic-rinse-x-radius",
+            diamond.x_radius_steps ?? 5000,
+            { min: 1 }
+          );
+          numberField(
+            "Diamond Z radius (steps)",
+            "atomic-rinse-z-radius",
+            diamond.z_radius_steps ?? 7000,
+            { min: 1 }
+          );
+
+          const armEnabledWrap = document.createElement("label");
+          armEnabledWrap.className = "check-label";
+          const armEnabled = document.createElement("input");
+          armEnabled.type = "checkbox";
+          armEnabled.className = "atomic-rinse-arm-worker-enabled";
+          armEnabled.checked = arm.enabled ?? true;
+          const armEnabledText = document.createElement("span");
+          armEnabledText.textContent =
+            "Run one continuous arm worker for the entire diamond sequence";
+          armEnabledWrap.appendChild(armEnabled);
+          armEnabledWrap.appendChild(armEnabledText);
+          container.appendChild(armEnabledWrap);
+
+          numberField(
+            "Arm amplitude from center (degrees)",
+            "atomic-rinse-arm-worker-amplitude",
+            arm.amplitude_deg ?? 2,
+            {
+              min: rotationArmConfig.degrees_per_step,
+              step: rotationArmConfig.degrees_per_step,
+            }
+          );
+          numberField(
+            "Pause between arm moves (seconds)",
+            "atomic-rinse-arm-worker-pause",
+            arm.pause_between_moves_s ?? 0.1,
+            { min: 0, step: 0.1 }
+          );
+
+          const diskEnabledWrap = document.createElement("label");
+          diskEnabledWrap.className = "check-label";
+          const diskEnabled = document.createElement("input");
+          diskEnabled.type = "checkbox";
+          diskEnabled.className = "atomic-rinse-disk-enabled";
+          diskEnabled.checked = disk.enabled ?? true;
+          const diskEnabledText = document.createElement("span");
+          diskEnabledText.textContent =
+            "Run one continuous RDE RPM session for the entire rinse step";
+          diskEnabledWrap.appendChild(diskEnabled);
+          diskEnabledWrap.appendChild(diskEnabledText);
+          container.appendChild(diskEnabledWrap);
+
+          numberField(
+            "Immersed rinse RPM",
+            "atomic-rinse-rpm",
+            disk.rpm ?? 300,
+            { min: "{{ rpm_min }}", max: "{{ rinse_rpm_max }}" }
+          );
+          numberField(
+            "RPM settle before concurrent motion (seconds)",
+            "atomic-rinse-rpm-settle",
+            disk.settle_s ?? 1,
+            { min: 0, step: 0.1 }
+          );
+
+          const confirmWrap = document.createElement("label");
+          confirmWrap.className = "check-label";
+          const confirmInput = document.createElement("input");
+          confirmInput.type = "checkbox";
+          confirmInput.className = "atomic-rinse-immersed-confirmed";
+          confirmInput.checked = disk.immersed_rotation_confirmed ?? false;
+          const confirmText = document.createElement("span");
+          confirmText.textContent =
+            "I confirm immersed rotation is safe for this setup";
+          confirmWrap.appendChild(confirmInput);
+          confirmWrap.appendChild(confirmText);
+          container.appendChild(confirmWrap);
+
+          numberField(
+            "Pause between closed diamond cycles (seconds)",
+            "atomic-rinse-cycle-pause",
+            values.inter_cycle_pause_s ?? 0,
+            { min: 0, step: 0.1 }
+          );
+          numberField(
+            "Timeout per diamond cycle (seconds)",
+            "atomic-rinse-cycle-timeout",
+            values.cycle_timeout_s ?? 30,
+            { min: 0.1, step: 0.1 }
+          );
+
+          const concurrencyNote = document.createElement("p");
+          concurrencyNote.className = "hint";
+          concurrencyNote.textContent =
+            "RPM starts once. The arm worker then runs complete +A/âˆ’2A/+A "
+            + "cycles continuously while all configured X/Z diamonds run. "
+            + "After the final diamond, the arm finishes its current closed "
+            + "cycle, all tracked offsets are checked, and RPM stops.";
+          container.appendChild(concurrencyNote);
+
+          const failureNote = document.createElement("p");
+          failureNote.className = "error";
+          failureNote.textContent =
+            "On failure or Emergency Abort, all workers stop immediately. "
+            + "No automatic return, homing, or legacy arm command 0 is sent.";
+          container.appendChild(failureNote);
         } else if (action === "rinse_arm_oscillation") {
           const defaults = rotationArmConfig.rinse_oscillation || {};
 

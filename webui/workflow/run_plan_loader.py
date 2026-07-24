@@ -9,6 +9,7 @@ from typing import Any
 
 from workflow.config_loader import get_path, get_rotation_config, load_config
 from workflow.rinse_arm_paths import validate_rinse_arm_settings
+from workflow.rinse_paths import validate_rinse_settings
 from workflow.safety import validate_axis_command, validate_rpm
 
 MAX_RUN_NAME_LENGTH = 80
@@ -18,6 +19,7 @@ ATOMIC_ACTIONS = {
     "move_z",
     "move_xz_parallel",
     "rotation",
+    "rinse",
     "rinse_arm_oscillation",
     "set_rpm",
     "wait",
@@ -196,6 +198,52 @@ def validate_atomic_step(raw_step: dict[str, Any], group_label: str, index: int)
 
         step["oscillation_enabled"] = oscillation_enabled
         step.update(settings)
+
+    elif action == "rinse":
+        try:
+            rinse_settings = validate_rinse_settings(
+                cycles=raw_step.get("cycles", 8),
+                diamond=raw_step.get(
+                    "diamond",
+                    {
+                        "x_radius_steps": 5000,
+                        "z_radius_steps": 7000,
+                    },
+                ),
+                arm_oscillation=raw_step.get(
+                    "arm_oscillation",
+                    {
+                        "enabled": True,
+                        "amplitude_deg": 2.0,
+                        "pause_between_moves_s": 0.1,
+                        "mode": "continuous_until_diamond_complete",
+                        "stop_policy": "finish_closed_cycle",
+                    },
+                ),
+                disk_rotation=raw_step.get(
+                    "disk_rotation",
+                    {
+                        "enabled": True,
+                        "rpm": 300,
+                        "settle_s": 1.0,
+                        "mode": "continuous_for_entire_rinse_step",
+                        "stop_after": True,
+                        "immersed_rotation_confirmed": False,
+                    },
+                ),
+                inter_cycle_pause_s=raw_step.get(
+                    "inter_cycle_pause_s",
+                    0.0,
+                ),
+                cycle_timeout_s=raw_step.get("cycle_timeout_s", 30.0),
+                require_closed_paths=raw_step.get(
+                    "require_closed_paths",
+                    True,
+                ),
+            )
+        except (TypeError, ValueError) as exc:
+            raise RunPlanError(f"{group_label}/{name}: {exc}") from exc
+        step.update(rinse_settings)
 
     elif action == "set_rpm":
         rpm = parse_int(raw_step.get("rpm", 0), f"{group_label}/{name}: rpm")

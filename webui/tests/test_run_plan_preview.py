@@ -81,6 +81,7 @@ class RunPlanPreviewUiTest(unittest.TestCase):
             "move_z",
             "move_xz_parallel",
             "rotation",
+            "rinse",
             "rinse_arm_oscillation",
             "set_rpm",
             "stop_rpm",
@@ -132,14 +133,25 @@ class RunPlanPreviewUiTest(unittest.TestCase):
         self.assertIn("await refreshProtocolPreviewCache()", self.source)
         self.assertIn('automationRepetitionsInput.addEventListener("input"', self.source)
 
-    def test_dedicated_rinse_action_is_removed(self) -> None:
-        self.assertNotIn('<option value="rinse">', self.page)
-        self.assertNotIn('rinse: { category:', self.source)
+    def test_packaged_concurrent_rinse_action_is_present(self) -> None:
+        self.assertIn(
+            '<option value="rinse">Packaged Concurrent Rinse</option>',
+            self.page,
+        )
+        self.assertIn('rinse: { category:', self.source)
+        self.assertIn("atomic-rinse-cycles", self.source)
+        self.assertIn("atomic-rinse-x-radius", self.source)
+        self.assertIn("atomic-rinse-z-radius", self.source)
+        self.assertIn("atomic-rinse-arm-worker-amplitude", self.source)
+        self.assertIn("atomic-rinse-rpm", self.source)
+        self.assertIn("atomic-rinse-immersed-confirmed", self.source)
+        self.assertIn("continuous arm worker", self.source)
+        self.assertIn("RPM starts once", self.source)
 
         response = app.test_client().get("/api/config")
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
-        self.assertNotIn("rinse_duration_s", payload["config"])
+        self.assertEqual(payload["config"]["rinse_rpm_max"], 300)
 
     def test_packaged_rinse_arm_controls_and_preview_are_present(self) -> None:
         self.assertIn(

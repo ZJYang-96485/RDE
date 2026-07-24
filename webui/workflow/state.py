@@ -31,6 +31,12 @@ axis_positions = {
     "vertical": 0
 }
 
+axis_position_confidence = {
+    "linear": "tracked",
+    "horizontal": "tracked",
+    "vertical": "tracked",
+}
+
 automation_state = {
     "running": False,
     "step": "Idle",
@@ -103,6 +109,30 @@ def get_axis_position(axis: str) -> int:
         return int(axis_positions[axis])
 
 
+def get_axis_position_confidence(axis: str) -> str:
+    axis = str(axis).strip().lower()
+
+    with axis_position_lock:
+        if axis not in axis_position_confidence:
+            raise ValueError(f"unknown axis: {axis}")
+
+        return str(axis_position_confidence[axis])
+
+
+def get_axis_position_confidences() -> dict[str, str]:
+    with axis_position_lock:
+        return copy.deepcopy(axis_position_confidence)
+
+
+def mark_axis_positions_uncertain(axes: list[str] | tuple[str, ...]) -> None:
+    with axis_position_lock:
+        for raw_axis in axes:
+            axis = str(raw_axis).strip().lower()
+            if axis not in axis_position_confidence:
+                raise ValueError(f"unknown axis: {axis}")
+            axis_position_confidence[axis] = "uncertain"
+
+
 def set_axis_position(axis: str, position: int) -> None:
     axis = str(axis).strip().lower()
 
@@ -111,6 +141,7 @@ def set_axis_position(axis: str, position: int) -> None:
             raise ValueError(f"unknown axis: {axis}")
 
         axis_positions[axis] = int(position)
+        axis_position_confidence[axis] = "tracked"
 
 
 def add_axis_delta(axis: str, delta: int) -> int:
@@ -129,6 +160,9 @@ def reset_axis_positions() -> None:
         axis_positions["linear"] = 0
         axis_positions["horizontal"] = 0
         axis_positions["vertical"] = 0
+        axis_position_confidence["linear"] = "tracked"
+        axis_position_confidence["horizontal"] = "tracked"
+        axis_position_confidence["vertical"] = "tracked"
 
 
 def set_axis_positions(positions: dict[str, Any]) -> None:
@@ -136,6 +170,7 @@ def set_axis_positions(positions: dict[str, Any]) -> None:
         for axis in ["linear", "horizontal", "vertical"]:
             if axis in positions:
                 axis_positions[axis] = int(positions[axis])
+                axis_position_confidence[axis] = "tracked"
 
 
 def start_automation(run_dir: str | None = None) -> None:
@@ -227,6 +262,7 @@ def check_abort(message: str = "Automation abort requested.") -> None:
 def get_status_payload(extra: dict[str, Any] | None = None) -> dict[str, Any]:
     rde = get_rde_state()
     axes = get_axis_positions()
+    axis_confidence = get_axis_position_confidences()
     automation = get_automation_state()
 
     payload = {
@@ -239,6 +275,9 @@ def get_status_payload(extra: dict[str, Any] | None = None) -> dict[str, Any]:
         "linear_position": axes["linear"],
         "horizontal_position": axes["horizontal"],
         "vertical_position": axes["vertical"],
+        "linear_position_confidence": axis_confidence["linear"],
+        "horizontal_position_confidence": axis_confidence["horizontal"],
+        "vertical_position_confidence": axis_confidence["vertical"],
         "automation_running": automation["running"],
         "automation_step": automation["step"],
         "automation_error": automation["error"],

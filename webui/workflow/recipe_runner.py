@@ -18,6 +18,7 @@ from hardware.motion_controller import move_horizontal_steps, move_linear_steps,
 from hardware.rde_controller import send_rpm, stop_rde
 from hardware.rotation_controller import send_rotation_text
 from gamry_worker.live_writer import fail_live_stream
+from workflow.config_loader import user_axis_to_internal_axis
 from workflow.data_manager import (
     append_log,
     create_run_workspace,
@@ -30,8 +31,9 @@ from workflow.data_manager import (
     register_trial_result,
     save_protocol_snapshot,
 )
-from workflow.protocol_loader import load_protocol
 from workflow.levich_runner import run_levich_rpm_sweep_ca
+from workflow.protocol_loader import load_protocol
+from workflow.rinse import execute_rinse
 from workflow.rinse_arm_oscillation import execute_rinse_arm_oscillation
 from workflow.run_plan_loader import load_run_plan, validate_run_plan_payload
 from workflow.state import (
@@ -42,6 +44,7 @@ from workflow.state import (
     fail_automation,
     finish_automation,
     get_abort_event,
+    get_axis_position,
     request_abort,
     reserve_automation,
     start_automation,
@@ -533,6 +536,25 @@ def run_group(
                 ack = send_rotation_text(str(step["command"]))
                 append_log(run_dir, f"{label}: rotation ack={ack}.")
 
+            elif action == "rinse":
+                if rde_is_running:
+                    stop_rde(None)
+                    rde_is_running = False
+                    append_log(
+                        run_dir,
+                        (
+                            f"{label}: stopped the prior RDE session before "
+                            "the packaged rinse took ownership."
+                        ),
+                    )
+                execute_rinse(
+                    run_dir=run_dir,
+                    label=f"{label}/{step_name}",
+                    settings=step,
+                    position_state=position_state,
+                )
+                rde_is_running = False
+
             elif action == "rinse_arm_oscillation":
                 if not bool(step.get("oscillation_enabled", False)):
                     append_log(
@@ -685,7 +707,10 @@ def execute_plan_body(run_plan: dict[str, Any], run_dir: Path) -> None:
             run_dir,
             "Automatic homing is disabled. Grouped X/Z commands are signed relative steps, identical to Motor Control.",
         )
-        position_state = {"x": 0, "z": 0}
+        position_state = {
+            "x": get_axis_position(user_axis_to_internal_axis("x")),
+            "z": get_axis_position(user_axis_to_internal_axis("z")),
+        }
 
         for repetition in range(1, repetitions + 1):
             append_log(run_dir, f"Starting repetition {repetition}/{repetitions}.")

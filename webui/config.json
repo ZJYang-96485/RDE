@@ -22,6 +22,7 @@
   "rde": {
     "rpm_min": 30,
     "rpm_max": 12000,
+    "rinse_rpm_max": 300,
     "stop_rpm": 20
   },
   "motion": {

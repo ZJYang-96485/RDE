@@ -94,7 +94,9 @@ from workflow.safety import (
     validate_rpm,
 )
 from workflow.state import (
+    AxisPositionStateError,
     automation_is_running,
+    enable_axis_position_persistence,
     get_rde_state,
     get_status_payload,
     get_automation_state,
@@ -1681,7 +1683,8 @@ if __name__ == "__main__":
     try:
         reject_existing_webui_listener(port)
         acquire_webui_instance_lock()
-    except SingleInstanceError as exc:
+        enable_axis_position_persistence()
+    except (SingleInstanceError, AxisPositionStateError) as exc:
         raise SystemExit(str(exc)) from exc
 
     app.run(host="127.0.0.1", port=port, debug=False)

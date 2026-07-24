@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import copy
+import json
 import threading
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 
 class AutomationAbortRequested(RuntimeError):
+    pass
+
+
+class AxisPositionStateError(RuntimeError):
     pass
 
 
@@ -36,6 +42,14 @@ axis_position_confidence = {
     "horizontal": "tracked",
     "vertical": "tracked",
 }
+
+WEBUI_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_AXIS_POSITION_STATE_PATH = (
+    WEBUI_ROOT / "output" / "axis_position_state.json"
+)
+_AXES = ("linear", "horizontal", "vertical")
+_POSITION_CONFIDENCE_VALUES = {"tracked", "uncertain"}
+_axis_position_state_path: Path | None = None
 
 automation_state = {
     "running": False,
@@ -124,6 +138,135 @@ def get_axis_position_confidences() -> dict[str, str]:
         return copy.deepcopy(axis_position_confidence)
 
 
+def _axis_position_payload_locked() -> dict[str, Any]:
+    return {
+        "version": 1,
+        "positions": {
+            axis: int(axis_positions[axis])
+            for axis in _AXES
+        },
+        "confidence": {
+            axis: str(axis_position_confidence[axis])
+            for axis in _AXES
+        },
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _write_axis_position_state_locked() -> None:
+    if _axis_position_state_path is None:
+        return
+
+    state_path = _axis_position_state_path
+    temp_path = state_path.with_suffix(".json.tmp")
+
+    try:
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path.write_text(
+            json.dumps(
+                _axis_position_payload_locked(),
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        temp_path.replace(state_path)
+    except OSError as exc:
+        raise AxisPositionStateError(
+            f"Unable to persist tracked axis positions to {state_path}: {exc}"
+        ) from exc
+
+
+def _read_axis_position_state(
+    state_path: Path,
+) -> tuple[dict[str, int], dict[str, str]] | None:
+    if not state_path.is_file():
+        return None
+
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise AxisPositionStateError(
+            f"Unable to read tracked axis positions from {state_path}: {exc}"
+        ) from exc
+
+    if not isinstance(payload, dict):
+        raise AxisPositionStateError(
+            f"Tracked axis-position state in {state_path} must be a JSON object."
+        )
+
+    raw_positions = payload.get("positions")
+    raw_confidence = payload.get("confidence")
+    if not isinstance(raw_positions, dict) or not isinstance(
+        raw_confidence,
+        dict,
+    ):
+        raise AxisPositionStateError(
+            f"Tracked axis-position state in {state_path} is incomplete."
+        )
+
+    positions: dict[str, int] = {}
+    confidence: dict[str, str] = {}
+    for axis in _AXES:
+        try:
+            positions[axis] = int(raw_positions[axis])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise AxisPositionStateError(
+                f"Tracked axis-position state in {state_path} has an invalid "
+                f"{axis} position."
+            ) from exc
+
+        axis_confidence = str(raw_confidence.get(axis, "")).strip().lower()
+        if axis_confidence not in _POSITION_CONFIDENCE_VALUES:
+            raise AxisPositionStateError(
+                f"Tracked axis-position state in {state_path} has an invalid "
+                f"{axis} confidence value."
+            )
+        confidence[axis] = axis_confidence
+
+    return positions, confidence
+
+
+def enable_axis_position_persistence(
+    state_path: str | Path | None = None,
+) -> Path:
+    """
+    Load tracked coordinates from disk and persist every later change.
+
+    The production launchers call this explicitly. Importing the module alone
+    does not touch disk, which keeps unit tests and one-off scripts isolated
+    from the live station's coordinate record.
+    """
+    global _axis_position_state_path
+
+    resolved_path = Path(
+        state_path or DEFAULT_AXIS_POSITION_STATE_PATH
+    ).resolve()
+    saved_state = _read_axis_position_state(resolved_path)
+
+    with axis_position_lock:
+        _axis_position_state_path = resolved_path
+        if saved_state is None:
+            _write_axis_position_state_locked()
+        else:
+            saved_positions, saved_confidence = saved_state
+            axis_positions.update(saved_positions)
+            axis_position_confidence.update(saved_confidence)
+
+    return resolved_path
+
+
+def disable_axis_position_persistence() -> Path | None:
+    """Disable disk persistence and return the previously configured path."""
+    global _axis_position_state_path
+
+    with axis_position_lock:
+        previous_path = _axis_position_state_path
+        _axis_position_state_path = None
+        return previous_path
+
+
 def mark_axis_positions_uncertain(axes: list[str] | tuple[str, ...]) -> None:
     with axis_position_lock:
         for raw_axis in axes:
@@ -131,6 +274,7 @@ def mark_axis_positions_uncertain(axes: list[str] | tuple[str, ...]) -> None:
             if axis not in axis_position_confidence:
                 raise ValueError(f"unknown axis: {axis}")
             axis_position_confidence[axis] = "uncertain"
+        _write_axis_position_state_locked()
 
 
 def set_axis_position(axis: str, position: int) -> None:
@@ -142,6 +286,7 @@ def set_axis_position(axis: str, position: int) -> None:
 
         axis_positions[axis] = int(position)
         axis_position_confidence[axis] = "tracked"
+        _write_axis_position_state_locked()
 
 
 def add_axis_delta(axis: str, delta: int) -> int:
@@ -152,6 +297,7 @@ def add_axis_delta(axis: str, delta: int) -> int:
             raise ValueError(f"unknown axis: {axis}")
 
         axis_positions[axis] = int(axis_positions[axis]) + int(delta)
+        _write_axis_position_state_locked()
         return int(axis_positions[axis])
 
 
@@ -163,6 +309,7 @@ def reset_axis_positions() -> None:
         axis_position_confidence["linear"] = "tracked"
         axis_position_confidence["horizontal"] = "tracked"
         axis_position_confidence["vertical"] = "tracked"
+        _write_axis_position_state_locked()
 
 
 def set_axis_positions(positions: dict[str, Any]) -> None:
@@ -171,6 +318,7 @@ def set_axis_positions(positions: dict[str, Any]) -> None:
             if axis in positions:
                 axis_positions[axis] = int(positions[axis])
                 axis_position_confidence[axis] = "tracked"
+        _write_axis_position_state_locked()
 
 
 def start_automation(run_dir: str | None = None) -> None:

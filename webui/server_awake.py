@@ -11,6 +11,10 @@ from workflow.single_instance import (
     acquire_webui_instance_lock,
     reject_existing_webui_listener,
 )
+from workflow.state import (
+    AxisPositionStateError,
+    enable_axis_position_persistence,
+)
 
 
 # Windows SetThreadExecutionState flags
@@ -35,7 +39,8 @@ if __name__ == "__main__":
     try:
         reject_existing_webui_listener(5055)
         acquire_webui_instance_lock()
-    except SingleInstanceError as exc:
+        enable_axis_position_persistence()
+    except (SingleInstanceError, AxisPositionStateError) as exc:
         raise SystemExit(str(exc)) from exc
 
     from app import app

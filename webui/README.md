@@ -457,6 +457,11 @@ The former arm-only `Rinse Arm Oscillation` run-plan action has been replaced
 by `Packaged Concurrent Rinse`. Users select one rinse step rather than
 assembling a separate arm action, diamond path, RPM start, and RPM stop.
 
+Software-tracked X/Z positions and their confidence flags are persisted in
+`output/axis_position_state.json`. Normal server restarts restore that record
+instead of resetting the displayed coordinates to zero. The file records
+software state only and never commands physical movement.
+
 ### Small-angle rinse-arm worker
 
 The arm worker inside `Packaged Concurrent Rinse` performs a small relative

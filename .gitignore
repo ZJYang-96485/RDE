@@ -11,6 +11,10 @@ webui/output/runs/*
 !webui/output/runs/.gitkeep
 webui/output/gamry_cell_state.json
 webui/output/gamry_cell_state.json.tmp
+webui/output/axis_position_state.json
+webui/output/axis_position_state.json.tmp
+webui/output/.test-axis-position-state.json
+webui/output/.test-axis-position-state.json.tmp
 
 .env
 .venv/

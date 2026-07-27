@@ -1467,6 +1467,7 @@
         <h2>EChem Protocol Builder</h2>
         <p class="hint">Start from a blank EChem recipe. Add, remove, reorder, and edit individual EChem steps or compact CA voltage ranges. Saved protocols appear in each sample's EChem Protocol dropdown.</p>
         <p class="hint"><strong>Potential reference:</strong> All applied and recorded potentials are versus the physical reference electrode connected to the Gamry (V vs. Ref.). This builder does not convert potentials to SHE or RHE.</p>
+        <p class="hint"><strong>Input units:</strong> The builder uses common wet-lab units (mV/s, mV, mA, and mAh where appropriate). Saved protocols and Gamry workers are converted automatically to V/s, V, A, and Ah.</p>
 
         <label for="echemSavedProtocolSelect">Saved EChem Protocols</label>
         <select id="echemSavedProtocolSelect"></select>
@@ -5261,8 +5262,8 @@
           fields: [
             { key: "start_voltage_v", label: "Start voltage (V)", type: "number", value: 0, step: "0.001" },
             { key: "end_voltage_v", label: "End voltage (V)", type: "number", value: 0.05, step: "0.001" },
-            { key: "scan_rate_v_s", label: "Scan rate (V/s)", type: "number", value: 0.05, positive: true, step: "0.001" },
-            { key: "step_size_v", label: "Step size (V)", type: "number", value: 0.002, positive: true, step: "0.0001" },
+            { key: "scan_rate_v_s", label: "Scan rate (mV/s)", type: "number", value: 0.05, displayScale: 1000, positive: true, step: "1" },
+            { key: "step_size_v", label: "Potential step (mV)", type: "number", value: 0.002, displayScale: 1000, positive: true, step: "0.1" },
             { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
           ]
         },
@@ -5275,8 +5276,8 @@
             { key: "apex1_voltage_v", label: "Apex 1 voltage (V)", type: "number", value: 0.05, step: "0.001" },
             { key: "apex2_voltage_v", label: "Apex 2 voltage (V)", type: "number", value: 0, step: "0.001" },
             { key: "final_voltage_v", label: "Final voltage (V)", type: "number", value: 0, step: "0.001" },
-            { key: "scan_rate_v_s", label: "Scan rate (V/s)", type: "number", value: 0.05, positive: true, step: "0.001" },
-            { key: "step_size_v", label: "Step size (V)", type: "number", value: 0.002, positive: true, step: "0.0001" },
+            { key: "scan_rate_v_s", label: "Scan rate (mV/s)", type: "number", value: 0.05, displayScale: 1000, positive: true, step: "1" },
+            { key: "step_size_v", label: "Potential step (mV)", type: "number", value: 0.002, displayScale: 1000, positive: true, step: "0.1" },
             { key: "cycles", label: "Cycles", type: "integer", value: 1, positive: true, step: "1" },
             { key: "precharge_s", label: "Precharge time (s)", type: "number", value: 1, min: 0, step: "0.1" },
             { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
@@ -5302,12 +5303,12 @@
           defaultName: "cp",
           defaultOutput: "CP.DTA",
           fields: [
-            { key: "current_a", label: "Applied current (A, signed; + is anodic)", type: "number", value: 0.00001, step: "0.000001" },
+            { key: "current_a", label: "Applied current (mA, signed; + is anodic)", type: "number", value: 0.00001, displayScale: 1000, step: "0.001" },
             { key: "duration_s", label: "Duration (s)", type: "number", value: 60, positive: true, step: "0.1" },
             { key: "sample_period_s", label: "Sample period (s)", type: "number", value: 0.5, positive: true, step: "0.01" },
             { key: "voltage_limit_low_v", label: "Lower voltage limit (V)", type: "number", value: -1, step: "0.001" },
             { key: "voltage_limit_high_v", label: "Upper voltage limit (V)", type: "number", value: 1, step: "0.001" },
-            { key: "expected_max_current_a", label: "Expected maximum |current| (A)", type: "number", value: 0.00001, positive: true, step: "0.000001" },
+            { key: "expected_max_current_a", label: "Expected maximum |current| (mA)", type: "number", value: 0.00001, displayScale: 1000, positive: true, step: "0.001" },
             { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
           ]
         },
@@ -5316,12 +5317,12 @@
           defaultName: "cc_charge",
           defaultOutput: "CC_CHARGE.DTA",
           fields: [
-            { key: "current_a", label: "Current magnitude (A, positive)", type: "number", value: 0.00001, positive: true, step: "0.000001" },
-            { key: "expected_max_current_a", label: "Expected maximum |current| (A)", type: "number", value: 0.00001, positive: true, step: "0.000001" },
+            { key: "current_a", label: "Current magnitude (mA, positive)", type: "number", value: 0.00001, displayScale: 1000, positive: true, step: "0.001" },
+            { key: "expected_max_current_a", label: "Expected maximum |current| (mA)", type: "number", value: 0.00001, displayScale: 1000, positive: true, step: "0.001" },
             { key: "duration_s", label: "Maximum duration (s)", type: "number", value: 60, positive: true, step: "0.1" },
             { key: "sample_period_s", label: "Sample period (s)", type: "number", value: 1, positive: true, step: "0.01" },
             { key: "voltage_cutoff_v", label: "Upper |voltage| cutoff (V)", type: "number", value: 4.2, positive: true, step: "0.001" },
-            { key: "capacity_cutoff_ah", label: "Capacity cutoff (Ah, optional)", type: "number", value: "", optional: true, positive: true, step: "0.000001" },
+            { key: "capacity_cutoff_ah", label: "Capacity cutoff (mAh, optional)", type: "number", value: "", displayScale: 1000, optional: true, positive: true, step: "0.001" },
             { key: "working_positive", label: "Working lead is positive electrode", type: "checkbox", value: true },
             { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
           ]
@@ -5331,12 +5332,12 @@
           defaultName: "cc_discharge",
           defaultOutput: "CC_DISCHARGE.DTA",
           fields: [
-            { key: "current_a", label: "Current magnitude (A, positive)", type: "number", value: 0.00001, positive: true, step: "0.000001" },
-            { key: "expected_max_current_a", label: "Expected maximum |current| (A)", type: "number", value: 0.00001, positive: true, step: "0.000001" },
+            { key: "current_a", label: "Current magnitude (mA, positive)", type: "number", value: 0.00001, displayScale: 1000, positive: true, step: "0.001" },
+            { key: "expected_max_current_a", label: "Expected maximum |current| (mA)", type: "number", value: 0.00001, displayScale: 1000, positive: true, step: "0.001" },
             { key: "duration_s", label: "Maximum duration (s)", type: "number", value: 60, positive: true, step: "0.1" },
             { key: "sample_period_s", label: "Sample period (s)", type: "number", value: 1, positive: true, step: "0.01" },
             { key: "voltage_cutoff_v", label: "Lower |voltage| cutoff (V)", type: "number", value: 3.0, positive: true, step: "0.001" },
-            { key: "capacity_cutoff_ah", label: "Capacity cutoff (Ah, optional)", type: "number", value: "", optional: true, positive: true, step: "0.000001" },
+            { key: "capacity_cutoff_ah", label: "Capacity cutoff (mAh, optional)", type: "number", value: "", displayScale: 1000, optional: true, positive: true, step: "0.001" },
             { key: "working_positive", label: "Working lead is positive electrode", type: "checkbox", value: true },
             { key: "area_cm2", label: "Area (cm²)", type: "number", value: 1, positive: true, step: "0.001" }
           ]
@@ -5349,8 +5350,8 @@
             { key: "initial_freq_hz", label: "Initial frequency (Hz)", type: "number", value: 100000, positive: true, step: "0.1" },
             { key: "final_freq_hz", label: "Final frequency (Hz)", type: "number", value: 1, positive: true, step: "0.1" },
             { key: "points_per_decade", label: "Points per decade", type: "integer", value: 10, positive: true, step: "1" },
-            { key: "ac_current_a", label: "AC current amplitude (A RMS)", type: "number", value: 0.0001, positive: true, step: "0.000001" },
-            { key: "dc_current_a", label: "DC current (A, signed)", type: "number", value: 0, step: "0.000001" },
+            { key: "ac_current_a", label: "AC current amplitude (mA RMS)", type: "number", value: 0.0001, displayScale: 1000, positive: true, step: "0.001" },
+            { key: "dc_current_a", label: "DC current (mA, signed)", type: "number", value: 0, displayScale: 1000, step: "0.001" },
             { key: "estimated_z_ohm", label: "Estimated Z (Ω)", type: "number", value: 100, positive: true, step: "0.1" },
             { key: "settle_s", label: "Settle time (s)", type: "number", value: 0, min: 0, step: "0.1" },
             { key: "speed", label: "Speed", type: "text", value: "normal" },
@@ -5368,8 +5369,31 @@
         return Array.from(echemStepListEl.querySelectorAll(".echem-step"));
       }
 
+      function echemFieldDisplayValue(spec, internalValue) {
+        if (internalValue === undefined || internalValue === null || internalValue === "") {
+          return "";
+        }
+        if (!spec.displayScale) {
+          return internalValue;
+        }
+        const numeric = Number(internalValue);
+        return Number.isFinite(numeric)
+          ? Number((numeric * spec.displayScale).toPrecision(12))
+          : internalValue;
+      }
+
+      function echemFieldInternalValue(spec, displayValue) {
+        if (!spec.displayScale) {
+          return displayValue;
+        }
+        return Number((displayValue / spec.displayScale).toPrecision(15));
+      }
+
       function getEchemFieldValues(block) {
         const values = {};
+        const kind = block.querySelector(".echem-step-kind")?.value || "ocp";
+        const definition = echemStepDefinitions[kind] || echemStepDefinitions.ocp;
+        const specsByKey = new Map(definition.fields.map((spec) => [spec.key, spec]));
         for (const field of block.querySelectorAll(".echem-field")) {
           const key = field.dataset.key;
           const type = field.dataset.type;
@@ -5379,7 +5403,17 @@
           if (type === "checkbox") {
             values[key] = field.checked;
           } else {
-            values[key] = field.value;
+            const spec = specsByKey.get(key);
+            const displayValue = field.value;
+            const numeric = Number(displayValue);
+            values[key] = (
+              spec
+              && type !== "text"
+              && displayValue !== ""
+              && Number.isFinite(numeric)
+            )
+              ? echemFieldInternalValue(spec, numeric)
+              : displayValue;
           }
         }
         const chargeAnalysis = block.querySelector(".echem-analysis-charge");
@@ -5432,7 +5466,7 @@
           }
 
           input.type = spec.type === "text" ? "text" : "number";
-          input.value = values[spec.key] ?? spec.value;
+          input.value = echemFieldDisplayValue(spec, values[spec.key] ?? spec.value);
           if (spec.step) input.step = spec.step;
           if (spec.min !== undefined) input.min = spec.min;
           if (spec.positive) input.min = "0.000000001";
@@ -5619,7 +5653,8 @@
             payload[spec.key] = numberValueFromInput(input, `${name}: ${spec.label}`, Boolean(spec.positive), true);
           } else {
             if (spec.optional && input.value.trim() === "") continue;
-            payload[spec.key] = numberValueFromInput(input, `${name}: ${spec.label}`, Boolean(spec.positive), false);
+            const displayValue = numberValueFromInput(input, `${name}: ${spec.label}`, Boolean(spec.positive), false);
+            payload[spec.key] = echemFieldInternalValue(spec, displayValue);
           }
         }
 

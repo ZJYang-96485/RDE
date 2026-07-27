@@ -1,0 +1,28 @@
+{
+  "protocol_name": "CV Single",
+  "display_name": "CV Single",
+  "description": "",
+  "source": {
+    "type": "ui_flexible_builder",
+    "created_by": "RDE EChem Automation"
+  },
+  "steps": [
+    {
+      "name": "cv",
+      "enabled": true,
+      "technique": "cv",
+      "output": "CV.DTA",
+      "initial_voltage_v": -0.2,
+      "apex1_voltage_v": 0.2,
+      "apex2_voltage_v": -0.2,
+      "final_voltage_v": -0.2,
+      "scan_rate_v_s": 0.1,
+      "step_size_v": 0.002,
+      "cycles": 5,
+      "precharge_s": 1,
+      "area_cm2": 0.2826
+    }
+  ],
+  "editor_mode": "edit",
+  "saved_at": "2026-07-27T13:45:44.044430+00:00"
+}

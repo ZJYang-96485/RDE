@@ -1,0 +1,23 @@
+{
+  "protocol_name": "OCP Single",
+  "display_name": "OCP Single",
+  "description": "",
+  "source": {
+    "type": "ui_flexible_builder",
+    "created_by": "RDE EChem Automation"
+  },
+  "steps": [
+    {
+      "name": "ocp",
+      "enabled": true,
+      "technique": "ocp",
+      "output": "OCP.DTA",
+      "duration_s": 300,
+      "sample_period_s": 0.5,
+      "stability_mv_s": 0,
+      "area_cm2": 0.2826
+    }
+  ],
+  "editor_mode": "edit",
+  "saved_at": "2026-07-27T13:33:13.458003+00:00"
+}

@@ -196,6 +196,21 @@ class SerialDevice:
             self.conn = MockSerialConnection(self.name, self.port)
             return
 
+        if self.port_key:
+            try:
+                from workflow.config_loader import get_serial_device_status
+
+                device_status = get_serial_device_status(self.port_key)
+            except Exception:
+                device_status = None
+
+            if device_status and device_status.get("mode") == "bootloader":
+                raise SerialConnectionError(
+                    f"{self.name} on {device_status.get('port', self.port)} is in "
+                    "Nano 33 BLE bootloader mode; the station control firmware "
+                    "is not running. Re-upload the correct controller sketch."
+                )
+
         self.ensure_available()
 
         try:

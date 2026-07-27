@@ -1093,6 +1093,7 @@
       <main class="panel workspace-panel active" data-workspace-panel="motor">
         <h1>Motor Control</h1>
         <p class="meta">RPM: {{ com_port }} | Rotation: {{ rotation_com_port }} | Z / Original Linear: {{ linear_com_port }} | X / New Linear: {{ horizontal_com_port }}</p>
+        <p id="motorHardwareReadiness" class="hint">Checking controller firmware readiness…</p>
 
         <label for="rpm">RPM ({{ rpm_min }} to {{ rpm_max }})</label>
         <input id="rpm" type="number" min="{{ rpm_min }}" max="{{ rpm_max }}" value="1000" />
@@ -1609,6 +1610,7 @@
       const countdownEl = document.getElementById("countdown");
       const errorEl = document.getElementById("error");
       const positionStatusEl = document.getElementById("positionStatus");
+      const motorHardwareReadinessEl = document.getElementById("motorHardwareReadiness");
       const sendOneBtn = document.getElementById("sendOneBtn");
       const sendZeroBtn = document.getElementById("sendZeroBtn");
       const rotationStatusEl = document.getElementById("rotationStatus");
@@ -2885,6 +2887,18 @@
           startExperimentBtn.disabled = automationRunning;
           abortHomeBtn.disabled = !automationRunning;
           const manualArmDisabled = automationRunning || manualArmRequestRunning;
+          const serialDevices = data.serial_devices || {};
+          const rotationFirmwareReady = serialDevices.rotation?.firmware_ready !== false;
+          const linearFirmwareReady = serialDevices.linear?.firmware_ready !== false;
+          const horizontalFirmwareReady = serialDevices.horizontal?.firmware_ready !== false;
+          const unavailableControllers = ["rotation", "linear", "horizontal"]
+            .map((name) => serialDevices[name])
+            .filter((device) => device && !device.firmware_ready);
+          motorHardwareReadinessEl.classList.toggle("error", unavailableControllers.length > 0);
+          motorHardwareReadinessEl.classList.toggle("hint", unavailableControllers.length === 0);
+          motorHardwareReadinessEl.textContent = unavailableControllers.length > 0
+            ? unavailableControllers.map((device) => device.message).join(" ")
+            : "RPM, rotation arm, Z, and X controller application firmware detected.";
           const rotationArmState = data.rotation_arm_state || {};
           relativeArmLocked = (
             rotationArmState.angle_confidence
@@ -2911,32 +2925,32 @@
           }
           rotationDiagnosticMessageEl.textContent = rotationDiagnosticParts.join(" ");
           btn.disabled = manualArmDisabled;
-          sendOneBtn.disabled = manualArmDisabled;
-          sendZeroBtn.disabled = manualArmDisabled;
-          shortRotationAngleInput.disabled = manualArmDisabled;
-          shortRotationCcwBtn.disabled = manualArmDisabled || relativeArmLocked;
-          shortRotationCwBtn.disabled = manualArmDisabled || relativeArmLocked;
-          manualOscillationAmplitudeInput.disabled = manualArmDisabled;
-          manualOscillationCyclesInput.disabled = manualArmDisabled;
-          manualOscillationPauseInput.disabled = manualArmDisabled;
+          sendOneBtn.disabled = manualArmDisabled || !rotationFirmwareReady;
+          sendZeroBtn.disabled = manualArmDisabled || !rotationFirmwareReady;
+          shortRotationAngleInput.disabled = manualArmDisabled || !rotationFirmwareReady;
+          shortRotationCcwBtn.disabled = manualArmDisabled || relativeArmLocked || !rotationFirmwareReady;
+          shortRotationCwBtn.disabled = manualArmDisabled || relativeArmLocked || !rotationFirmwareReady;
+          manualOscillationAmplitudeInput.disabled = manualArmDisabled || !rotationFirmwareReady;
+          manualOscillationCyclesInput.disabled = manualArmDisabled || !rotationFirmwareReady;
+          manualOscillationPauseInput.disabled = manualArmDisabled || !rotationFirmwareReady;
           manualOscillationPresetBtns.forEach((presetBtn) => {
-            presetBtn.disabled = manualArmDisabled;
+            presetBtn.disabled = manualArmDisabled || !rotationFirmwareReady;
           });
-          manualOscillationStartBtn.disabled = manualArmDisabled || relativeArmLocked;
+          manualOscillationStartBtn.disabled = manualArmDisabled || relativeArmLocked || !rotationFirmwareReady;
           checkRelativeFirmwareBtn.disabled = manualArmDisabled;
           confirmArmInspectedBtn.disabled = manualArmDisabled || !relativeArmLocked;
-          linearUpBtn.disabled = manualArmDisabled;
-          linearDownBtn.disabled = manualArmDisabled;
-          horizontalLeftBtn.disabled = manualArmDisabled;
-          horizontalRightBtn.disabled = manualArmDisabled;
+          linearUpBtn.disabled = manualArmDisabled || !linearFirmwareReady;
+          linearDownBtn.disabled = manualArmDisabled || !linearFirmwareReady;
+          horizontalLeftBtn.disabled = manualArmDisabled || !horizontalFirmwareReady;
+          horizontalRightBtn.disabled = manualArmDisabled || !horizontalFirmwareReady;
           verticalUpBtn.disabled = manualArmDisabled;
           verticalDownBtn.disabled = manualArmDisabled;
           rpmInput.disabled = manualArmDisabled;
           secondsInput.disabled = manualArmDisabled;
-          linearStepsSlider.disabled = manualArmDisabled;
-          linearStepsInput.disabled = manualArmDisabled;
-          horizontalStepsSlider.disabled = manualArmDisabled;
-          horizontalStepsInput.disabled = manualArmDisabled;
+          linearStepsSlider.disabled = manualArmDisabled || !linearFirmwareReady;
+          linearStepsInput.disabled = manualArmDisabled || !linearFirmwareReady;
+          horizontalStepsSlider.disabled = manualArmDisabled || !horizontalFirmwareReady;
+          horizontalStepsInput.disabled = manualArmDisabled || !horizontalFirmwareReady;
           verticalStepsSlider.disabled = manualArmDisabled;
           verticalStepsInput.disabled = manualArmDisabled;
           automationRepetitionsInput.disabled = automationRunning;
@@ -3274,7 +3288,11 @@
           const capability = data.capability || {};
           setRotationStatus(
             capability.supported
-              ? `Relative firmware is available on ${data.com_port}: ${capability.response}`
+              ? (
+                `Relative firmware communication verified on ${data.com_port}: `
+                + `${capability.response}. This no-motion check does not verify `
+                + "motor-driver power or physical arm movement."
+              )
               : (
                 `Relative firmware is not available on ${data.com_port}: `
                 + `${capability.error || capability.response || "REL was not advertised."}`

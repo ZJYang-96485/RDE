@@ -4,8 +4,8 @@
     "ports": {
       "rde": "COM6",
       "rotation": "COM3",
-      "linear": "COM10",
-      "horizontal": "COM9",
+      "linear": "COM4",
+      "horizontal": "COM8",
       "vertical": "UNAVAILABLE"
     },
     "device_serials": {

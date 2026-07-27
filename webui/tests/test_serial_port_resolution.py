@@ -4,7 +4,11 @@ import unittest
 from unittest.mock import patch
 
 from hardware.serial_base import SerialDevice
-from workflow.config_loader import get_serial_port, normalize_device_serial
+from workflow.config_loader import (
+    get_serial_device_status,
+    get_serial_port,
+    normalize_device_serial,
+)
 
 
 def station_config() -> dict:
@@ -55,6 +59,52 @@ class SerialPortResolutionTests(unittest.TestCase):
     ) -> None:
         self.assertEqual(get_serial_port("rotation"), "COM3")
 
+    @patch(
+        "workflow.config_loader.connected_serial_devices",
+        return_value=[
+            {
+                "port": "COM7",
+                "serial_number": "00000000000000006333736D33BBB9C4",
+                "vid": 0x2341,
+                "pid": 0x005A,
+            }
+        ],
+    )
+    @patch("workflow.config_loader.load_config", side_effect=station_config)
+    def test_reports_nano_bootloader_as_firmware_not_ready(
+        self,
+        _load_config,
+        _connected_devices,
+    ) -> None:
+        status = get_serial_device_status("rotation")
+
+        self.assertTrue(status["connected"])
+        self.assertFalse(status["firmware_ready"])
+        self.assertEqual(status["mode"], "bootloader")
+        self.assertEqual(status["port"], "COM7")
+
+    @patch(
+        "workflow.config_loader.connected_serial_devices",
+        return_value=[
+            {
+                "port": "COM3",
+                "serial_number": "6333736D33BBB9C4",
+                "vid": 0x2341,
+                "pid": 0x805A,
+            }
+        ],
+    )
+    @patch("workflow.config_loader.load_config", side_effect=station_config)
+    def test_reports_application_usb_device_as_firmware_ready(
+        self,
+        _load_config,
+        _connected_devices,
+    ) -> None:
+        status = get_serial_device_status("rotation")
+
+        self.assertTrue(status["firmware_ready"])
+        self.assertEqual(status["mode"], "application")
+
     @patch("workflow.config_loader.get_serial_port", return_value="COM7")
     def test_existing_serial_device_refreshes_port_before_connect(
         self,
@@ -70,6 +120,32 @@ class SerialPortResolutionTests(unittest.TestCase):
         device.refresh_configured_port()
 
         self.assertEqual(device.port, "COM7")
+
+    @patch(
+        "workflow.config_loader.get_serial_device_status",
+        return_value={
+            "mode": "bootloader",
+            "port": "COM7",
+        },
+    )
+    @patch("workflow.config_loader.get_serial_port", return_value="COM7")
+    def test_connect_rejects_bootloader_before_opening_serial(
+        self,
+        _get_serial_port,
+        _get_device_status,
+    ) -> None:
+        device = SerialDevice(
+            name="Rotation",
+            port="COM3",
+            port_key="rotation",
+            baud_rate=115200,
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "bootloader mode",
+        ):
+            device.connect()
 
 
 if __name__ == "__main__":

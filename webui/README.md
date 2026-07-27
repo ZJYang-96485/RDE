@@ -128,8 +128,8 @@ Default configuration:
 |---|---|
 | RDE RPM controller | `COM6` |
 | Rotation controller | `COM3` |
-| Linear / Z axis | `COM10` |
-| Horizontal / X axis | `COM9` |
+| Linear / Z axis | `COM4` |
+| Horizontal / X axis | `COM8` |
 | Vertical / Y axis | `UNAVAILABLE` (not attached) |
 
 Serial baud rate:

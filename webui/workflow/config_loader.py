@@ -18,8 +18,8 @@ _DEFAULT_CONFIG = {
             # silently redirect a controller to an older port assignment.
             "rde": "COM6",
             "rotation": "COM3",
-            "linear": "COM10",
-            "horizontal": "COM9",
+            "linear": "COM4",
+            "horizontal": "COM8",
             "vertical": "UNAVAILABLE"
         },
         "device_serials": {
@@ -545,14 +545,14 @@ def normalize_device_serial(value: Any) -> str:
     return normalized.lstrip("0") or normalized
 
 
-def connected_serial_devices() -> list[dict[str, str]]:
-    """Return current port/USB-serial pairs without failing config loading."""
+def connected_serial_devices() -> list[dict[str, Any]]:
+    """Return current USB serial metadata without failing config loading."""
     try:
         from serial.tools import list_ports
     except (ImportError, ModuleNotFoundError):
         return []
 
-    devices: list[dict[str, str]] = []
+    devices: list[dict[str, Any]] = []
     try:
         for info in list_ports.comports():
             devices.append(
@@ -561,12 +561,121 @@ def connected_serial_devices() -> list[dict[str, str]]:
                     "serial_number": str(
                         getattr(info, "serial_number", "") or ""
                     ).strip(),
+                    "description": str(
+                        getattr(info, "description", "") or ""
+                    ).strip(),
+                    "vid": getattr(info, "vid", None),
+                    "pid": getattr(info, "pid", None),
                 }
             )
     except Exception:
         return []
 
     return devices
+
+
+def get_serial_device_status(name: str) -> dict[str, Any]:
+    """
+    Describe the USB state of one configured controller.
+
+    Nano 33 BLE bootloader ports use Arduino VID/PID 2341:005A. They are valid
+    USB serial devices, but the station control sketch is not running and no
+    motion command can be acknowledged.
+    """
+    serial_config = load_config()["serial"]
+    ports = serial_config["ports"]
+    key = str(name).strip()
+
+    if key not in ports:
+        raise ConfigError(f"unknown serial port name: {name}")
+
+    configured_port = str(ports[key]).strip()
+    expected_serial = normalize_device_serial(
+        serial_config.get("device_serials", {}).get(key, "")
+    )
+
+    hardware_config = serial_config.get("hardware", {})
+    if isinstance(hardware_config, dict) and hardware_config.get("mock_serial", False):
+        return {
+            "controller": key,
+            "connected": True,
+            "firmware_ready": True,
+            "mode": "mock",
+            "port": configured_port,
+            "configured_port": configured_port,
+            "expected_serial": expected_serial,
+            "message": f"{key} controller is using mock serial mode.",
+        }
+
+    devices = connected_serial_devices()
+
+    if expected_serial:
+        matches = [
+            device
+            for device in devices
+            if normalize_device_serial(device.get("serial_number", ""))
+            == expected_serial
+        ]
+    else:
+        matches = [
+            device
+            for device in devices
+            if str(device.get("port", "")).strip().casefold()
+            == configured_port.casefold()
+        ]
+
+    if len(matches) == 0:
+        return {
+            "controller": key,
+            "connected": False,
+            "firmware_ready": False,
+            "mode": "missing",
+            "port": configured_port,
+            "configured_port": configured_port,
+            "expected_serial": expected_serial,
+            "message": f"{key} controller is not connected.",
+        }
+
+    if len(matches) > 1:
+        return {
+            "controller": key,
+            "connected": True,
+            "firmware_ready": False,
+            "mode": "ambiguous",
+            "port": configured_port,
+            "configured_port": configured_port,
+            "expected_serial": expected_serial,
+            "message": (
+                f"Multiple USB devices match the configured {key} hardware identity."
+            ),
+        }
+
+    device = matches[0]
+    port = str(device.get("port", "") or configured_port).strip()
+    vid = device.get("vid")
+    pid = device.get("pid")
+    bootloader = vid == 0x2341 and pid == 0x005A
+    mode = "bootloader" if bootloader else "application"
+
+    return {
+        "controller": key,
+        "connected": True,
+        "firmware_ready": not bootloader,
+        "mode": mode,
+        "port": port,
+        "configured_port": configured_port,
+        "expected_serial": expected_serial,
+        "serial_number": str(device.get("serial_number", "") or "").strip(),
+        "description": str(device.get("description", "") or "").strip(),
+        "vid": vid,
+        "pid": pid,
+        "message": (
+            f"{key} controller is in Nano 33 BLE bootloader mode on {port}; "
+            "the station control firmware is not running."
+            if bootloader
+            else f"{key} controller application USB device is present on {port}."
+        ),
+    }
 
 
 def get_serial_port(name: str) -> str:

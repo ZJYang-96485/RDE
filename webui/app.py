@@ -45,6 +45,7 @@ from workflow.config_loader import (
     get_rde_limits,
     get_rotation_config,
     get_safe_z,
+    get_serial_device_status,
     get_serial_port,
     load_config,
     set_gamry_mode,
@@ -261,6 +262,10 @@ def status():
     payload["rotation_arm_state"] = (
         get_rotation_controller().relative_diagnostic_state()
     )
+    payload["serial_devices"] = {
+        name: get_serial_device_status(name)
+        for name in ("rde", "rotation", "linear", "horizontal", "vertical")
+    }
     return jsonify(payload)
 
 

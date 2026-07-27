@@ -18,9 +18,19 @@ _DEFAULT_CONFIG = {
             # silently redirect a controller to an older port assignment.
             "rde": "COM6",
             "rotation": "COM3",
-            "linear": "COM4",
-            "horizontal": "COM8",
-            "vertical": "COM5"
+            "linear": "COM10",
+            "horizontal": "COM9",
+            "vertical": "UNAVAILABLE"
+        },
+        "device_serials": {
+            # These USB serial numbers identify the physical station hardware.
+            # COM labels are Windows-assigned and can change after reconnects,
+            # driver changes, or firmware uploads.
+            "rde": "85MTYM7MQIR6NV61IOIO",
+            "rotation": "6333736D33BBB9C4",
+            "linear": "25E22DB5FC3E377D",
+            "horizontal": "F3F659216D5CA277",
+            "vertical": ""
         },
         "hardware": {
             "mock_serial": False
@@ -185,6 +195,16 @@ def validate_serial_config(config: dict[str, Any]) -> None:
 
         if not port:
             raise ConfigError(f"serial.ports.{name} cannot be empty.")
+
+    device_serials = serial.get("device_serials", {})
+    if not isinstance(device_serials, dict):
+        raise ConfigError("serial.device_serials must be an object.")
+
+    for name, value in device_serials.items():
+        if name not in ports:
+            raise ConfigError(f"serial.device_serials contains unknown controller: {name}")
+        if not isinstance(value, str):
+            raise ConfigError(f"serial.device_serials.{name} must be a string.")
 
     baud_rate = int(serial.get("baud_rate", 0))
 
@@ -517,14 +537,67 @@ def get_baud_rate() -> int:
     return int(load_config()["serial"]["baud_rate"])
 
 
+def normalize_device_serial(value: Any) -> str:
+    """Normalize USB serials across normal and bootloader enumerations."""
+    normalized = "".join(
+        character for character in str(value or "").upper() if character.isalnum()
+    )
+    return normalized.lstrip("0") or normalized
+
+
+def connected_serial_devices() -> list[dict[str, str]]:
+    """Return current port/USB-serial pairs without failing config loading."""
+    try:
+        from serial.tools import list_ports
+    except (ImportError, ModuleNotFoundError):
+        return []
+
+    devices: list[dict[str, str]] = []
+    try:
+        for info in list_ports.comports():
+            devices.append(
+                {
+                    "port": str(getattr(info, "device", "") or "").strip(),
+                    "serial_number": str(
+                        getattr(info, "serial_number", "") or ""
+                    ).strip(),
+                }
+            )
+    except Exception:
+        return []
+
+    return devices
+
+
 def get_serial_port(name: str) -> str:
-    ports = load_config()["serial"]["ports"]
+    serial_config = load_config()["serial"]
+    ports = serial_config["ports"]
     key = str(name).strip()
 
     if key not in ports:
         raise ConfigError(f"unknown serial port name: {name}")
 
-    return str(ports[key]).strip()
+    configured_port = str(ports[key]).strip()
+    expected_serial = normalize_device_serial(
+        serial_config.get("device_serials", {}).get(key, "")
+    )
+
+    if not expected_serial:
+        return configured_port
+
+    matches = [
+        device["port"]
+        for device in connected_serial_devices()
+        if device["port"]
+        and normalize_device_serial(device["serial_number"]) == expected_serial
+    ]
+
+    # A unique hardware identity is safe to follow. If discovery is missing or
+    # ambiguous, retain the explicit configured fallback rather than guessing.
+    if len(matches) == 1:
+        return matches[0]
+
+    return configured_port
 
 
 def get_timeout(name: str) -> float:

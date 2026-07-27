@@ -4,8 +4,16 @@
     "ports": {
       "rde": "COM6",
       "rotation": "COM3",
-      "linear": "COM4",
-      "horizontal": "COM8"
+      "linear": "COM10",
+      "horizontal": "COM9",
+      "vertical": "UNAVAILABLE"
+    },
+    "device_serials": {
+      "rde": "85MTYM7MQIR6NV61IOIO",
+      "rotation": "6333736D33BBB9C4",
+      "linear": "25E22DB5FC3E377D",
+      "horizontal": "F3F659216D5CA277",
+      "vertical": ""
     },
     "hardware": {
       "mock_serial": false

@@ -25,6 +25,7 @@ class RDEController:
             timeout_s=float(timeouts.get("rde_s", 1.0)),
             write_timeout_s=float(timeouts.get("write_s", 1.0)),
             startup_delay_s=float(timeouts.get("startup_delay_s", 2.0)),
+            port_key="rde",
         )
 
     def limits(self) -> dict[str, int]:

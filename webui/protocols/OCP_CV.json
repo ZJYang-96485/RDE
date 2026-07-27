@@ -1,0 +1,38 @@
+{
+  "protocol_name": "OCP_CV",
+  "display_name": "OCP+CV",
+  "description": "",
+  "source": {
+    "type": "ui_flexible_builder",
+    "created_by": "RDE EChem Automation"
+  },
+  "steps": [
+    {
+      "name": "ocp",
+      "enabled": true,
+      "technique": "ocp",
+      "output": "OCP.DTA",
+      "duration_s": 300,
+      "sample_period_s": 0.5,
+      "stability_mv_s": 0,
+      "area_cm2": 0.2826
+    },
+    {
+      "name": "cv",
+      "enabled": true,
+      "technique": "cv",
+      "output": "CV.DTA",
+      "initial_voltage_v": -0.2,
+      "apex1_voltage_v": 0.2,
+      "apex2_voltage_v": -0.2,
+      "final_voltage_v": -0.2,
+      "scan_rate_v_s": 100,
+      "step_size_v": 0.002,
+      "cycles": 5,
+      "precharge_s": 1,
+      "area_cm2": 0.2826
+    }
+  ],
+  "editor_mode": "create",
+  "saved_at": "2026-07-24T13:13:16.551578+00:00"
+}

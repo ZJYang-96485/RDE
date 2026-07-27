@@ -155,6 +155,7 @@ class RotationController:
             timeout_s=float(timeouts.get("rotation_s", 0.4)),
             write_timeout_s=float(timeouts.get("write_s", 1.0)),
             startup_delay_s=float(timeouts.get("startup_delay_s", 2.0)),
+            port_key="rotation",
         )
         self.completion_timeout_s = float(timeouts.get("rotation_ack_s", 10.0))
         # Reject concurrent callers instead of letting Flask threads queue

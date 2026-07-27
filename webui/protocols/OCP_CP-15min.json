@@ -1,0 +1,36 @@
+{
+  "protocol_name": "OCP_CP-15min",
+  "display_name": "OCP+CP 15 mins",
+  "description": "",
+  "source": {
+    "type": "ui_flexible_builder",
+    "created_by": "RDE EChem Automation"
+  },
+  "steps": [
+    {
+      "name": "ocp",
+      "enabled": true,
+      "technique": "ocp",
+      "output": "OCP.DTA",
+      "duration_s": 300,
+      "sample_period_s": 0.5,
+      "stability_mv_s": 0,
+      "area_cm2": 0.2826
+    },
+    {
+      "name": "cp",
+      "enabled": true,
+      "technique": "cp",
+      "output": "CP.DTA",
+      "current_a": -0.0002826,
+      "duration_s": 600,
+      "sample_period_s": 0.5,
+      "voltage_limit_low_v": -1,
+      "voltage_limit_high_v": 1,
+      "expected_max_current_a": 10,
+      "area_cm2": 0.2826
+    }
+  ],
+  "editor_mode": "create",
+  "saved_at": "2026-07-24T13:10:17.116567+00:00"
+}

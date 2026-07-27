@@ -115,17 +115,22 @@ acquisition sequence unless that is a separate, explicitly validated feature.
 
 ## Current hardware mapping
 
-The COM ports are configured in `webui/config.json`, not hardcoded in `app.py`.
+The physical controllers are identified by their USB serial numbers from
+`serial.device_serials` in `webui/config.json`. Windows may change a controller's
+COM number after a reconnect, driver update, or firmware upload; the app resolves
+the current COM port from that stable hardware identity before every connection.
+The values in `serial.ports` are fallbacks only when USB discovery is unavailable
+or ambiguous.
 
 Default configuration:
 
 | Device | Port |
 |---|---|
-| RDE RPM controller | `COM_` |
-| Rotation controller | `COM_` |
-| Linear / Z axis | `COM_` |
-| Horizontal / X axis | `COM_` |
-| Vertical / Y axis | `COM_` |
+| RDE RPM controller | `COM6` |
+| Rotation controller | `COM3` |
+| Linear / Z axis | `COM10` |
+| Horizontal / X axis | `COM9` |
+| Vertical / Y axis | `UNAVAILABLE` (not attached) |
 
 Serial baud rate:
 

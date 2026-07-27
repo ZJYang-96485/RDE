@@ -62,6 +62,7 @@ class MotionController:
                 timeout_s=float(timeouts.get("axis_s", 0.4)),
                 write_timeout_s=float(timeouts.get("write_s", 1.0)),
                 startup_delay_s=float(timeouts.get("startup_delay_s", 2.0)),
+                port_key="linear",
             ),
             "horizontal": SerialDevice(
                 name="Horizontal/X",
@@ -70,6 +71,7 @@ class MotionController:
                 timeout_s=float(timeouts.get("axis_s", 0.4)),
                 write_timeout_s=float(timeouts.get("write_s", 1.0)),
                 startup_delay_s=float(timeouts.get("startup_delay_s", 2.0)),
+                port_key="horizontal",
             ),
             "vertical": SerialDevice(
                 name="Vertical/Y",
@@ -78,6 +80,7 @@ class MotionController:
                 timeout_s=float(timeouts.get("axis_s", 0.4)),
                 write_timeout_s=float(timeouts.get("write_s", 1.0)),
                 startup_delay_s=float(timeouts.get("startup_delay_s", 2.0)),
+                port_key="vertical",
             ),
         }
 

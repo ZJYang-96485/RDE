@@ -121,9 +121,11 @@ class SerialDevice:
         timeout_s: float = 0.4,
         write_timeout_s: float = 1.0,
         startup_delay_s: float = 2.0,
+        port_key: str | None = None,
     ) -> None:
         self.name = name
         self.port = port
+        self.port_key = str(port_key or "").strip()
         self.baud_rate = int(baud_rate)
         self.timeout_s = float(timeout_s)
         self.write_timeout_s = float(write_timeout_s)
@@ -165,7 +167,28 @@ class SerialDevice:
     def is_open(self) -> bool:
         return bool(self.conn and self.conn.is_open)
 
+    def refresh_configured_port(self) -> None:
+        """Follow the configured hardware identity if Windows renumbered it."""
+        if not self.port_key:
+            return
+
+        try:
+            from workflow.config_loader import get_serial_port
+
+            resolved_port = str(get_serial_port(self.port_key)).strip()
+        except Exception:
+            return
+
+        if not resolved_port or resolved_port.casefold() == self.port.casefold():
+            return
+
+        if self.is_open():
+            self.close()
+        self.port = resolved_port
+
     def connect(self) -> None:
+        self.refresh_configured_port()
+
         if self.is_open():
             return
 
@@ -459,6 +482,7 @@ def make_serial_device(
     timeout_s: float = 0.4,
     write_timeout_s: float = 1.0,
     startup_delay_s: float = 2.0,
+    port_key: str | None = None,
 ) -> SerialDevice:
     return SerialDevice(
         name=name,
@@ -467,4 +491,5 @@ def make_serial_device(
         timeout_s=timeout_s,
         write_timeout_s=write_timeout_s,
         startup_delay_s=startup_delay_s,
+        port_key=port_key,
     )

@@ -14,6 +14,8 @@ const int PWM_RESOLUTION_BITS = 8;
 const int PWM_MAX_VALUE = 255;
 const int MIN_DUTY_VALUE = 25;
 const int MAX_DUTY_VALUE = 229;
+const unsigned long PWM_BEFORE_ENABLE_SETTLE_MS = 250;
+const unsigned long ENABLE_SETTLE_MS = 25;
 
 long commandedRpm = 0;
 int commandedDuty = MIN_DUTY_VALUE;
@@ -61,6 +63,26 @@ void applyRpm(long rpm) {
 }
 
 
+void disableDriveAtRpm(long rpm) {
+  digitalWrite(ENABLE_PIN, LOW);
+  digitalWrite(STOP_PIN, LOW);
+  applyRpm(rpm);
+}
+
+
+void startDriveAtRpm(long rpm) {
+  // ESCON requires a valid 10-90% PWM signal before its drive-enable input
+  // becomes active. The calibrated 25/255 stop duty is slightly below 10%,
+  // so establish the requested running PWM while disabled, then enable.
+  digitalWrite(ENABLE_PIN, LOW);
+  digitalWrite(STOP_PIN, LOW);
+  applyRpm(rpm);
+  delay(PWM_BEFORE_ENABLE_SETTLE_MS);
+  digitalWrite(ENABLE_PIN, HIGH);
+  delay(ENABLE_SETTLE_MS);
+}
+
+
 void printStatus(const char *prefix) {
   Serial.print(prefix);
   Serial.print(" RPM ");
@@ -68,7 +90,11 @@ void printStatus(const char *prefix) {
   Serial.print(" DUTY ");
   Serial.print(commandedDuty);
   Serial.print("/");
-  Serial.println(PWM_MAX_VALUE);
+  Serial.print(PWM_MAX_VALUE);
+  Serial.print(" ENABLE ");
+  Serial.print(digitalRead(ENABLE_PIN));
+  Serial.print(" STOP ");
+  Serial.println(digitalRead(STOP_PIN));
 }
 
 
@@ -77,17 +103,18 @@ void setup() {
   pinMode(ENABLE_PIN, OUTPUT);
   pinMode(STOP_PIN, OUTPUT);
 
+  // Keep the ESCON disabled until its PWM set-value input is valid. Enabling
+  // it first can leave the controller unable to run after a power/reset cycle.
+  digitalWrite(ENABLE_PIN, LOW);
   digitalWrite(STOP_PIN, LOW);
-  digitalWrite(ENABLE_PIN, HIGH);
-
   analogWriteResolution(PWM_RESOLUTION_BITS);
-  applyRpm(0);
+  disableDriveAtRpm(0);
 
   Serial.begin(115200);
   Serial.setTimeout(100);
   delay(2000);
   Serial.println("RDE RPM controller ready");
-  Serial.println("Commands: 0-12000, PING, STATUS");
+  Serial.println("Commands: 0-12000, START <rpm>, PING, STATUS");
 }
 
 
@@ -114,7 +141,15 @@ void loop() {
   }
 
   long rpm = 0;
-  if (!parseIntegerLine(line, rpm)) {
+  bool startCommand = false;
+  String rpmText = line;
+  if (line.length() > 6 && line.substring(0, 6).equalsIgnoreCase("START ")) {
+    startCommand = true;
+    rpmText = line.substring(6);
+    rpmText.trim();
+  }
+
+  if (!parseIntegerLine(rpmText, rpm)) {
     Serial.println("ERR RPM command must be an integer from 0 to 12000");
     return;
   }
@@ -124,6 +159,24 @@ void loop() {
     return;
   }
 
-  applyRpm(rpm);
+  if (startCommand) {
+    if (rpm <= STOP_RPM_MAX) {
+      Serial.println("ERR START rpm must be greater than 20");
+      return;
+    }
+    startDriveAtRpm(rpm);
+    printStatus("ACK STARTED");
+    return;
+  }
+
+  if (rpm <= STOP_RPM_MAX) {
+    // A software stop also disables the ESCON power stage. The next run must
+    // pass through START's valid-PWM-before-enable sequence.
+    disableDriveAtRpm(rpm);
+  } else if (digitalRead(ENABLE_PIN) == LOW) {
+    startDriveAtRpm(rpm);
+  } else {
+    applyRpm(rpm);
+  }
   printStatus("ACK");
 }

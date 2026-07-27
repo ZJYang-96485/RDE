@@ -27,6 +27,7 @@ class RDEController:
             startup_delay_s=float(timeouts.get("startup_delay_s", 2.0)),
             port_key="rde",
         )
+        self._drive_armed = False
 
     def limits(self) -> dict[str, int]:
         return get_rde_limits()
@@ -46,15 +47,32 @@ class RDEController:
             ),
         )
 
+    def start_drive(self, rpm: int) -> str:
+        rpm = int(rpm)
+        response = self.device.send_line_wait_for_response(
+            f"START {rpm}",
+            timeout_s=float(load_config()["serial"]["timeouts"].get("rde_s", 1.0)),
+            expected_prefixes=(
+                f"ACK STARTED RPM {rpm}",
+                f"ACK MOCK RDE START {rpm}",
+            ),
+        )
+        self._drive_armed = True
+        return response
+
     def set_rpm(self, rpm: int) -> str:
-        validate_rpm(int(rpm))
-        return self.send_raw_rpm(int(rpm))
+        rpm = validate_rpm(int(rpm))
+        if rpm > self.stop_rpm() and not self._drive_armed:
+            return self.start_drive(rpm)
+        return self.send_raw_rpm(rpm)
 
     def stop(self, error: str | None = None) -> None:
         try:
             self.send_raw_rpm(self.stop_rpm())
+            self._drive_armed = False
             stop_rde_run(error)
         except Exception as exc:
+            self._drive_armed = False
             stop_rde_run(str(exc))
             raise RDEControllerError(f"Unable to stop RDE: {exc}") from exc
 
@@ -101,6 +119,7 @@ class RDEController:
 
     def close(self) -> None:
         self.device.close()
+        self._drive_armed = False
 
 
 _default_rde_controller: RDEController | None = None

@@ -38,8 +38,8 @@
     "max_axis_command": 300000,
     "axis_limits": {
         "linear": [
-          -110000,
-          110000
+          -300000,
+          300000
         ],
       "horizontal": [
         -300000,

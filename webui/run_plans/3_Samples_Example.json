@@ -25,7 +25,7 @@
           "name": "Move Z \u2014 Relative Steps",
           "action": "move_z",
           "enabled": true,
-          "steps": 70000
+          "steps": 110000
         },
         {
           "name": "Gamry Cell ON",
@@ -48,7 +48,7 @@
           "name": "Move Z \u2014 Relative Steps",
           "action": "move_z",
           "enabled": true,
-          "steps": -35000
+          "steps": -25000
         },
         {
           "name": "Set RDE RPM",
@@ -71,7 +71,7 @@
           "name": "Move Z \u2014 Relative Steps",
           "action": "move_z",
           "enabled": true,
-          "steps": -35000
+          "steps": -85000
         },
         {
           "name": "RDE Arm Rotation",
@@ -95,7 +95,7 @@
           "name": "Move Z \u2014 Relative Steps",
           "action": "move_z",
           "enabled": true,
-          "steps": 70000
+          "steps": 110000
         },
         {
           "name": "Packaged Concurrent Rinse",
@@ -159,13 +159,13 @@
           "name": "Move Z \u2014 Relative Steps",
           "action": "move_z",
           "enabled": true,
-          "steps": -35000
+          "steps": -30000
         },
         {
           "name": "Set RDE RPM",
           "action": "set_rpm",
           "enabled": true,
-          "rpm": 2000
+          "rpm": 5000
         },
         {
           "name": "Wait",
@@ -182,7 +182,7 @@
           "name": "Move Z \u2014 Relative Steps",
           "action": "move_z",
           "enabled": true,
-          "steps": -35000
+          "steps": -80000
         },
         {
           "name": "RDE Arm Rotation",
@@ -218,7 +218,7 @@
           "name": "Move Z \u2014 Relative Steps",
           "action": "move_z",
           "enabled": true,
-          "steps": 70000
+          "steps": 110000
         },
         {
           "name": "Gamry Cell ON",
@@ -241,7 +241,7 @@
           "name": "Move Z \u2014 Relative Steps",
           "action": "move_z",
           "enabled": true,
-          "steps": -35000
+          "steps": -25000
         },
         {
           "name": "Set RDE RPM",
@@ -264,7 +264,7 @@
           "name": "Move Z \u2014 Relative Steps",
           "action": "move_z",
           "enabled": true,
-          "steps": -35000
+          "steps": -85000
         },
         {
           "name": "RDE Arm Rotation",
@@ -288,7 +288,7 @@
           "name": "Move Z \u2014 Relative Steps",
           "action": "move_z",
           "enabled": true,
-          "steps": 70000
+          "steps": 110000
         },
         {
           "name": "Packaged Concurrent Rinse",
@@ -352,13 +352,13 @@
           "name": "Move Z \u2014 Relative Steps",
           "action": "move_z",
           "enabled": true,
-          "steps": -35000
+          "steps": -30000
         },
         {
           "name": "Set RDE RPM",
           "action": "set_rpm",
           "enabled": true,
-          "rpm": 2000
+          "rpm": 5000
         },
         {
           "name": "Wait",
@@ -375,7 +375,7 @@
           "name": "Move Z \u2014 Relative Steps",
           "action": "move_z",
           "enabled": true,
-          "steps": -35000
+          "steps": -80000
         },
         {
           "name": "RDE Arm Rotation",
@@ -411,7 +411,7 @@
           "name": "Move Z \u2014 Relative Steps",
           "action": "move_z",
           "enabled": true,
-          "steps": 70000
+          "steps": 110000
         },
         {
           "name": "Gamry Cell ON",
@@ -434,7 +434,7 @@
           "name": "Move Z \u2014 Relative Steps",
           "action": "move_z",
           "enabled": true,
-          "steps": -35000
+          "steps": -25000
         },
         {
           "name": "Set RDE RPM",
@@ -457,7 +457,7 @@
           "name": "Move Z \u2014 Relative Steps",
           "action": "move_z",
           "enabled": true,
-          "steps": -35000
+          "steps": -85000
         },
         {
           "name": "RDE Arm Rotation",
@@ -481,7 +481,7 @@
           "name": "Move Z \u2014 Relative Steps",
           "action": "move_z",
           "enabled": true,
-          "steps": 70000
+          "steps": 110000
         },
         {
           "name": "Packaged Concurrent Rinse",
@@ -545,13 +545,13 @@
           "name": "Move Z \u2014 Relative Steps",
           "action": "move_z",
           "enabled": true,
-          "steps": -35000
+          "steps": -30000
         },
         {
           "name": "Set RDE RPM",
           "action": "set_rpm",
           "enabled": true,
-          "rpm": 2000
+          "rpm": 5000
         },
         {
           "name": "Wait",
@@ -568,7 +568,7 @@
           "name": "Move Z \u2014 Relative Steps",
           "action": "move_z",
           "enabled": true,
-          "steps": -35000
+          "steps": -80000
         },
         {
           "name": "RDE Arm Rotation",
@@ -585,5 +585,5 @@
       ]
     }
   ],
-  "saved_at": "2026-07-27T17:47:07.581066+00:00"
+  "saved_at": "2026-07-28T13:58:16.781619+00:00"
 }

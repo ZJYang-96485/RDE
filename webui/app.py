@@ -844,8 +844,8 @@ def rotation_confirm_inspected():
                 "ok": True,
                 "message": (
                     "Operator inspection confirmed. The current physical arm angle "
-                    "is now the software-only tracked starting angle; no motor "
-                    "command was sent."
+                    "is now logical HOME and the rotation driver is enabled. "
+                    "No step pulse or physical movement command was sent."
                 ),
                 "rotation_arm_state": controller.relative_diagnostic_state(),
                 "reset": reset_state,

@@ -6,6 +6,9 @@ const uint8_t ENA_PIN = 4;  // TB6600 ENA
 
 const bool CW_LEVEL = HIGH;
 const bool CCW_LEVEL = LOW;
+const bool DRIVER_ENABLE_LEVEL = LOW;
+const bool DRIVER_DISABLE_LEVEL = HIGH;
+const unsigned long DRIVER_POWER_SETTLE_MS = 500UL;
 
 // Preserve the previous speed at launch, then accelerate moderately.
 const unsigned int START_STEP_PULSE_US = 2000;
@@ -18,6 +21,7 @@ const unsigned int HALF_TURN_STEPS = (MOTOR_FULL_STEPS_PER_REV * MICROSTEP) / 2;
 const unsigned int MAX_RELATIVE_STEPS = 44;  // 44 microsteps is approximately 10 degrees.
 
 unsigned int positionStepsFromHome = 0;
+bool positionKnown = false;
 String emergencyBuffer;
 
 
@@ -174,6 +178,11 @@ void printRelativeResult(
 
 
 void runRelative(long signedSteps) {
+  if (!positionKnown) {
+    Serial.println("ERR POSITION UNKNOWN; inspect arm and send CONFIRM HOME");
+    return;
+  }
+
   if (signedSteps == 0) {
     Serial.println("ERR REL zero steps are not allowed");
     return;
@@ -212,6 +221,9 @@ void runRelative(long signedSteps) {
 
 
 const char *positionLabel() {
+  if (!positionKnown) {
+    return "UNKNOWN";
+  }
   if (positionStepsFromHome == 0U) {
     return "HOME";
   }
@@ -226,13 +238,24 @@ void printStatus() {
   Serial.print("STATUS ");
   Serial.print(positionLabel());
   Serial.print(" POSITION ");
-  Serial.print(positionStepsFromHome);
+  if (positionKnown) {
+    Serial.print(positionStepsFromHome);
+  } else {
+    Serial.print("?");
+  }
   Serial.print("/");
-  Serial.println(HALF_TURN_STEPS);
+  Serial.print(HALF_TURN_STEPS);
+  Serial.print(" DRIVER ");
+  Serial.println(positionKnown ? "ENABLED" : "DISABLED");
 }
 
 
 void runToCcw() {
+  if (!positionKnown) {
+    Serial.println("ERR POSITION UNKNOWN; inspect arm and send CONFIRM HOME");
+    return;
+  }
+
   if (positionStepsFromHome >= HALF_TURN_STEPS) {
     Serial.println("Already at 180 deg CCW position");
     return;
@@ -263,6 +286,11 @@ void runToCcw() {
 
 
 void runToHome() {
+  if (!positionKnown) {
+    Serial.println("ERR POSITION UNKNOWN; inspect arm and send CONFIRM HOME");
+    return;
+  }
+
   if (positionStepsFromHome == 0U) {
     Serial.println("Already at home");
     return;
@@ -293,19 +321,29 @@ void runToHome() {
 
 
 void setup() {
-  pinMode(PUL_PIN, OUTPUT);
-  pinMode(DIR_PIN, OUTPUT);
+  // Keep the motor driver disabled while the sketch takes ownership of pins.
+  // Writing the output latch before pinMode avoids a brief active-low ENA
+  // glitch when the pin changes from bootloader input to application output.
+  digitalWrite(ENA_PIN, DRIVER_DISABLE_LEVEL);
   pinMode(ENA_PIN, OUTPUT);
-
   digitalWrite(PUL_PIN, LOW);
+  pinMode(PUL_PIN, OUTPUT);
   digitalWrite(DIR_PIN, CW_LEVEL);
-  digitalWrite(ENA_PIN, LOW);  // TB6600 enable is commonly active LOW.
+  pinMode(DIR_PIN, OUTPUT);
+
+  delay(DRIVER_POWER_SETTLE_MS);
+  // Do not enable after a reset. The firmware cannot know the physical arm
+  // angle without a home sensor, so operator inspection is mandatory.
+  digitalWrite(ENA_PIN, DRIVER_DISABLE_LEVEL);
 
   Serial.begin(115200);
   Serial.setTimeout(100);
   delay(500);
   Serial.println("rotation ready");
-  Serial.println("Commands: 1, 0, REL <signed_steps>, STOP, PING, STATUS, HELP");
+  Serial.println(
+    "Commands: 1, 0, REL <signed_steps>, CONFIRM HOME, STOP, PING, STATUS, HELP"
+  );
+  Serial.println("Driver disabled; inspect arm and send CONFIRM HOME.");
   Serial.print("Configured HALF_TURN_STEPS: ");
   Serial.println(HALF_TURN_STEPS);
   Serial.print("Configured MAX_RELATIVE_STEPS: ");
@@ -325,8 +363,19 @@ void loop() {
     Serial.println("ACK PONG Rotation");
   } else if (line.equalsIgnoreCase("STATUS")) {
     printStatus();
+  } else if (line.equalsIgnoreCase("CONFIRM HOME")) {
+    // This command never emits a step pulse. It defines the inspected current
+    // angle as logical HOME, then enables holding/motion.
+    digitalWrite(PUL_PIN, LOW);
+    digitalWrite(DIR_PIN, CW_LEVEL);
+    positionStepsFromHome = 0U;
+    positionKnown = true;
+    digitalWrite(ENA_PIN, DRIVER_ENABLE_LEVEL);
+    Serial.println("ACK CONFIRM HOME");
   } else if (line.equalsIgnoreCase("HELP") || line == "?") {
-    Serial.println("Rotation commands: 1, 0, REL <signed_steps>, STOP, PING, STATUS, HELP");
+    Serial.println(
+      "Rotation commands: 1, 0, REL <signed_steps>, CONFIRM HOME, STOP, PING, STATUS, HELP"
+    );
   } else if (isStopCommand(line)) {
     Serial.println("ACK STOP IDLE");
   } else if (line == "REL" || line.startsWith("REL ")) {

@@ -242,7 +242,7 @@ class RotationApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertTrue(payload["ok"])
-        self.assertIn("no motor command was sent", payload["message"])
+        self.assertIn("No step pulse", payload["message"])
         controller.confirm_operator_inspection.assert_called_once_with()
         controller.relative_steps.assert_not_called()
         controller.send_text.assert_not_called()

@@ -41,6 +41,7 @@ class RelativeRotationTests(unittest.TestCase):
 
     def test_controller_sends_exact_signed_relative_commands(self) -> None:
         controller = RotationController()
+        controller.angle_confidence = "tracked"
         responses = (
             "ACK REL requested=9 executed=9 direction=CCW",
             "ACK REL requested=-18 executed=-18 direction=CW",
@@ -59,6 +60,7 @@ class RelativeRotationTests(unittest.TestCase):
 
     def test_partial_stop_marks_angle_uncertain_and_is_not_counted_complete(self) -> None:
         controller = RotationController()
+        controller.angle_confidence = "tracked"
         with (
             patch.object(
                 controller.device,
@@ -79,6 +81,7 @@ class RelativeRotationTests(unittest.TestCase):
 
     def test_timeout_closes_connection_and_marks_angle_uncertain(self) -> None:
         controller = RotationController()
+        controller.angle_confidence = "tracked"
         with (
             patch.object(
                 controller.device,
@@ -96,15 +99,16 @@ class RelativeRotationTests(unittest.TestCase):
         self.assertEqual(diagnostic["last_relative_error"], "timeout")
         close.assert_called_once_with()
 
-    def test_operator_inspection_reset_changes_software_state_without_serial_io(self) -> None:
+    def test_operator_inspection_confirms_home_without_step_pulses(self) -> None:
         controller = RotationController()
         controller.expected_offset_steps = 9
         controller.mark_angle_uncertain("missing relative ACK")
 
-        with (
-            patch.object(controller.device, "connect") as connect,
-            patch.object(controller.device, "write_line") as write_line,
-        ):
+        with patch.object(
+            controller.device,
+            "send_line_wait_for_response",
+            return_value="ACK CONFIRM HOME",
+        ) as send:
             reset = controller.confirm_operator_inspection()
 
         self.assertEqual(reset["previous_relative_error"], "missing relative ACK")
@@ -116,8 +120,17 @@ class RelativeRotationTests(unittest.TestCase):
         self.assertIsNone(
             controller.relative_diagnostic_state()["last_relative_error"]
         )
-        connect.assert_not_called()
-        write_line.assert_not_called()
+        self.assertFalse(reset["movement_command_sent"])
+        self.assertTrue(reset["driver_enabled"])
+        self.assertEqual(send.call_args.args[0], "CONFIRM HOME")
+
+    def test_startup_requires_operator_inspection(self) -> None:
+        controller = RotationController()
+        state = controller.relative_diagnostic_state()
+        self.assertEqual(state["angle_confidence"], "uncertain")
+        self.assertIn("startup", state["last_relative_error"])
+        with self.assertRaisesRegex(RotationControllerError, "not verified"):
+            controller.relative_steps(9)
 
     def test_firmware_capability_check_uses_help_without_changing_confidence(self) -> None:
         controller = RotationController()
@@ -147,6 +160,7 @@ class RelativeRotationTests(unittest.TestCase):
 
     def test_relative_command_is_rejected_instead_of_queued(self) -> None:
         controller = RotationController()
+        controller.angle_confidence = "tracked"
         controller.command_lock.acquire()
         try:
             with self.assertRaisesRegex(RotationControllerError, "rejected and was not queued"):

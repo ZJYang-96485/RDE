@@ -19,6 +19,12 @@ class RotationControllerError(RuntimeError):
     pass
 
 
+_STARTUP_INSPECTION_ERROR = (
+    "Rotation controller/app startup requires operator inspection before "
+    "the driver is enabled."
+)
+
+
 @dataclass(frozen=True)
 class RotationMoveResult:
     requested_steps: int
@@ -163,8 +169,8 @@ class RotationController:
         self.command_lock = threading.Lock()
         self.relative_state_lock = threading.Lock()
         self.expected_offset_steps = 0
-        self.angle_confidence = "tracked"
-        self.last_relative_error: str | None = None
+        self.angle_confidence = "uncertain"
+        self.last_relative_error: str | None = _STARTUP_INSPECTION_ERROR
         self.last_relative_command: str | None = None
         self.last_relative_response: str | None = None
         self.operator_tracking_resets = 0
@@ -226,7 +232,10 @@ class RotationController:
     ) -> None:
         with self.relative_state_lock:
             self.angle_confidence = "uncertain"
-            if error and not self.last_relative_error:
+            if error and (
+                not self.last_relative_error
+                or self.last_relative_error == _STARTUP_INSPECTION_ERROR
+            ):
                 self.last_relative_error = str(error)
             if command:
                 self.last_relative_command = str(command)
@@ -240,9 +249,10 @@ class RotationController:
 
     def confirm_operator_inspection(self) -> dict[str, int | str | None]:
         """
-        Accept the current physical angle as a new software-only starting angle.
+        Accept the current physical angle as HOME without emitting step pulses.
 
-        This method never opens the serial port or sends a motor command.
+        Safe-start firmware keeps the driver disabled after every controller
+        reset. CONFIRM HOME records the inspected angle and enables the driver.
         """
 
         if not self.command_lock.acquire(blocking=False):
@@ -251,6 +261,22 @@ class RotationController:
             )
 
         try:
+            try:
+                firmware_response = self.device.send_line_wait_for_response(
+                    "CONFIRM HOME",
+                    timeout_s=min(self.completion_timeout_s, 3.0),
+                    expected_prefixes=("ACK CONFIRM HOME",),
+                )
+            except Exception as exc:
+                self._mark_angle_uncertain(
+                    error=f"Unable to confirm inspected arm with firmware: {exc}",
+                    command="CONFIRM HOME",
+                )
+                self.device.close()
+                raise RotationControllerError(
+                    f"Unable to confirm inspected arm with firmware: {exc}"
+                ) from exc
+
             with self.relative_state_lock:
                 previous_error = self.last_relative_error
                 previous_command = self.last_relative_command
@@ -268,6 +294,9 @@ class RotationController:
                     "previous_relative_command": previous_command,
                     "previous_relative_response": previous_response,
                     "operator_tracking_resets": int(self.operator_tracking_resets),
+                    "firmware_response": firmware_response,
+                    "movement_command_sent": False,
+                    "driver_enabled": True,
                 }
         finally:
             self.command_lock.release()
@@ -348,6 +377,11 @@ class RotationController:
     ) -> RotationMoveResult:
         requested = self._validate_relative_steps(steps)
         step_angle = self.degrees_per_step()
+        if self.expected_relative_state()["angle_confidence"] != "tracked":
+            raise RotationControllerError(
+                "rotation angle is not verified; inspect the arm and confirm "
+                "the current position before a relative move."
+            )
 
         if not self.command_lock.acquire(blocking=False):
             raise RotationControllerError(

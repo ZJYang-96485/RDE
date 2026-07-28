@@ -66,17 +66,21 @@ def validate_axis_position(internal_axis: str, position: int) -> int:
 
 
 def validate_axis_move(internal_axis: str, steps: int) -> int:
-    # X/Z motion commands are signed relative pulse counts. While physical
-    # homing is disabled, the accumulated software position is only an
-    # estimate and can be stale after a power interruption or manual move.
-    # It must not turn a valid relative command into a false absolute-limit
-    # error (for example, tracked Z 32000 plus relative +70000).
-    #
-    # Absolute-position workflows still call validate_axis_position() or
-    # validate_xyz_position() before calculating their relative delta.
     axis = str(internal_axis).strip().lower()
-    get_internal_axis_limit(axis)  # Keep unknown-axis/config validation.
-    return validate_axis_command(steps)
+    steps = validate_axis_command(steps)
+    current = get_axis_position(axis)
+    target = int(current) + int(steps)
+
+    try:
+        validate_axis_position(axis, target)
+    except SafetyError as exc:
+        raise SafetyError(
+            f"{axis} move of {steps:+d} steps from tracked position {current} "
+            f"would end at {target}: {exc} Correct the tracked position only "
+            "after physically verifying the axis."
+        ) from exc
+
+    return steps
 
 
 def validate_user_axis_position(user_axis: str, position: int) -> int:

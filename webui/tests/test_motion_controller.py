@@ -76,14 +76,16 @@ class MotionControllerParallelTest(unittest.TestCase):
         self.assertEqual(devices["horizontal"].command, "1000")
         self.assertEqual(devices["linear"].command, "700")
 
-    def test_relative_z_move_is_not_blocked_by_estimated_position(self) -> None:
+    def test_relative_z_move_must_end_inside_configured_position_limit(self) -> None:
         set_axis_position("linear", 32000)
 
-        self.assertEqual(validate_axis_move("linear", 70000), 70000)
+        self.assertEqual(validate_axis_move("linear", 68000), 68000)
 
-        # Absolute targets retain the configured Z position limit.
-        with self.assertRaisesRegex(SafetyError, "linear position must be between"):
-            validate_axis_position("linear", 102000)
+        with self.assertRaisesRegex(
+            SafetyError,
+            "would end at 102000",
+        ):
+            validate_axis_move("linear", 70000)
 
 
 if __name__ == "__main__":

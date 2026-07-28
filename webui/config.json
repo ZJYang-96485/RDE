@@ -37,10 +37,10 @@
     "safe_z": 0,
     "max_axis_command": 300000,
     "axis_limits": {
-      "linear": [
-        -100000,
-        100000
-      ],
+        "linear": [
+          -110000,
+          110000
+        ],
       "horizontal": [
         -300000,
         300000

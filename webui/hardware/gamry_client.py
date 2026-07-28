@@ -4,6 +4,7 @@ import json
 import shutil
 import subprocess
 import sys
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -72,6 +73,88 @@ def normalize_output_paths(outputs: list[str | Path]) -> list[str]:
 class GamryClient:
     def __init__(self) -> None:
         self.root = webui_root()
+        self._process_lock = threading.RLock()
+        self._active_process: subprocess.Popen[str] | None = None
+        self._active_job_id: str | None = None
+        self._emergency_disconnect_generation = 0
+        self._emergency_disconnect_active = False
+
+    def active_worker_status(self) -> dict[str, Any]:
+        with self._process_lock:
+            process = self._active_process
+            active = bool(process is not None and process.poll() is None)
+            return {
+                "active": active,
+                "pid": process.pid if active and process is not None else None,
+                "job_id": self._active_job_id if active else None,
+                "emergency_disconnect_active": self._emergency_disconnect_active,
+            }
+
+    @staticmethod
+    def _terminate_process(
+        process: subprocess.Popen[str],
+        timeout_s: float = 2.0,
+    ) -> tuple[bool, bool]:
+        """Terminate one worker and force-kill it only if it will not exit."""
+        if process.poll() is not None:
+            return False, False
+
+        process.terminate()
+        try:
+            process.wait(timeout=max(0.1, float(timeout_s)))
+            return True, False
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=max(0.1, float(timeout_s)))
+            return True, True
+
+    def disconnect_active_worker(self) -> dict[str, Any]:
+        """
+        Disconnect the active acquisition worker during an emergency stop.
+
+        The returned generation token prevents an older recovery thread from
+        clearing the disconnect state for a newer emergency stop.
+        """
+        with self._process_lock:
+            self._emergency_disconnect_generation += 1
+            generation = self._emergency_disconnect_generation
+            self._emergency_disconnect_active = True
+            process = self._active_process
+            job_id = self._active_job_id
+
+            if process is None or process.poll() is not None:
+                return {
+                    "ok": True,
+                    "generation": generation,
+                    "worker_was_active": False,
+                    "worker_terminated": False,
+                    "worker_force_killed": False,
+                    "pid": None,
+                    "job_id": job_id,
+                }
+
+            pid = process.pid
+            terminated, force_killed = self._terminate_process(process)
+            return {
+                "ok": True,
+                "generation": generation,
+                "worker_was_active": True,
+                "worker_terminated": terminated,
+                "worker_force_killed": force_killed,
+                "pid": pid,
+                "job_id": job_id,
+            }
+
+    def finish_emergency_disconnect(self, generation: int) -> bool:
+        with self._process_lock:
+            if int(generation) != self._emergency_disconnect_generation:
+                return False
+            self._emergency_disconnect_active = False
+            return True
+
+    def emergency_disconnect_in_progress(self) -> bool:
+        with self._process_lock:
+            return bool(self._emergency_disconnect_active)
 
     def config(self) -> dict[str, Any]:
         return get_gamry_config()
@@ -200,23 +283,54 @@ class GamryClient:
             str(result_path),
         ]
 
+        process: subprocess.Popen[str] | None = None
+        stdout = ""
+        stderr = ""
         try:
-            completed = subprocess.run(
-                command,
-                cwd=str(self.root),
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=float(self.config().get("real_timeout_s", 7200)),
+            # Hold the registration lock across process creation so an
+            # emergency disconnect cannot miss a worker that is just starting.
+            with self._process_lock:
+                active = self._active_process
+                if active is not None and active.poll() is None:
+                    raise GamryClientError(
+                        "another Gamry acquisition worker is already active."
+                    )
+                process = subprocess.Popen(
+                    command,
+                    cwd=str(self.root),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                self._active_process = process
+                self._active_job_id = str(job.get("job_id") or "")
+
+            stdout, stderr = process.communicate(
+                timeout=float(self.config().get("real_timeout_s", 7200))
             )
         except subprocess.TimeoutExpired as exc:
+            if process is not None:
+                self._terminate_process(process)
+                stdout, stderr = process.communicate()
             message = f"Gamry worker timed out after {exc.timeout} seconds."
             best_effort_live_failure(job, message)
             raise GamryClientError(message) from exc
+        except GamryClientError:
+            raise
         except Exception as exc:
             message = f"unable to start Gamry worker: {exc}"
             best_effort_live_failure(job, message)
             raise GamryClientError(message) from exc
+        finally:
+            if process is not None:
+                with self._process_lock:
+                    if self._active_process is process:
+                        self._active_process = None
+                        self._active_job_id = None
+
+        returncode = process.returncode
+        if returncode is None:
+            returncode = process.wait()
 
         if result_path.exists():
             result = read_json(result_path)
@@ -224,9 +338,9 @@ class GamryClient:
             result = {
                 "ok": False,
                 "error": "Gamry worker did not create a result file.",
-                "stdout": completed.stdout,
-                "stderr": completed.stderr,
-                "returncode": completed.returncode,
+                "stdout": stdout,
+                "stderr": stderr,
+                "returncode": returncode,
             }
 
         result["client"] = {
@@ -234,18 +348,18 @@ class GamryClient:
             "result_path": str(result_path),
             "worker_script": str(self.worker_script()),
             "worker_python": self.worker_python(),
-            "returncode": completed.returncode,
-            "stdout": completed.stdout,
-            "stderr": completed.stderr,
+            "returncode": returncode,
+            "stdout": stdout,
+            "stderr": stderr,
         }
 
-        if completed.returncode != 0 or not bool(result.get("ok", False)):
-            error = result.get("error") or completed.stderr or "Gamry worker failed."
+        if returncode != 0 or not bool(result.get("ok", False)):
+            error = result.get("error") or stderr or "Gamry worker failed."
             details = [str(error)]
-            if completed.stdout.strip():
-                details.append("Worker stdout:\n" + completed.stdout.strip())
-            if completed.stderr.strip() and completed.stderr.strip() != str(error).strip():
-                details.append("Worker stderr:\n" + completed.stderr.strip())
+            if stdout.strip():
+                details.append("Worker stdout:\n" + stdout.strip())
+            if stderr.strip() and stderr.strip() != str(error).strip():
+                details.append("Worker stderr:\n" + stderr.strip())
             message = "\n".join(details)
             best_effort_live_failure(job, message)
             raise GamryClientError(message, result=result)

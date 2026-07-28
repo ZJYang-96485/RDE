@@ -15,10 +15,12 @@ from flask import Flask, jsonify, render_template, request, send_file
 from analysis.ca_charge import CaChargeAnalysisError
 from analysis.registry import load_analysis_plot
 from hardware.motion_controller import (
+    diagnose_linear_firmware,
     emergency_stop_motion,
     move_horizontal_steps,
     move_linear_steps,
     move_vertical_steps,
+    wait_for_motion_idle,
 )
 from hardware.gamry_client import GamryClientError, get_gamry_client
 from hardware.gamry_cell_client import (
@@ -62,7 +64,7 @@ from workflow.protocol_loader import (
     save_protocol,
     validate_protocol_payload,
 )
-from workflow.recipe_runner import RecipeRunnerError, abort_automation, run_plan_payload_background
+from workflow.recipe_runner import RecipeRunnerError, run_plan_payload_background
 from workflow.rinse_arm_oscillation import execute_rinse_arm_oscillation
 from workflow.rinse_arm_paths import validate_rinse_arm_settings
 from gamry_worker.live_writer import clear_live_stream, read_live_events, read_live_points, read_live_status
@@ -97,12 +99,21 @@ from workflow.safety import (
 from workflow.state import (
     AxisPositionStateError,
     automation_is_running,
+    begin_emergency_stop_recovery,
+    clear_abort,
+    clear_automation_error,
+    emergency_stop_generation_is_current,
+    emergency_stop_is_recovering,
     enable_axis_position_persistence,
+    finish_emergency_stop_recovery,
     get_rde_state,
     get_status_payload,
     get_automation_state,
+    request_abort,
+    set_rde_error,
     set_axis_position,
     start_rde_run,
+    update_emergency_stop_recovery,
 )
 
 # IMPORTANT: hardware ports remain configuration-driven through webui/config.json.
@@ -114,6 +125,87 @@ app = Flask(__name__)
 
 stop_timer: threading.Timer | None = None
 manual_arm_motion_lock = threading.Lock()
+
+
+def emergency_recovery_error():
+    return json_error(
+        "Emergency-stop recovery is still finishing. No new motion command was "
+        "sent; wait for the recovery status to become ready, then retry.",
+        409,
+    )
+
+
+def manual_arm_is_idle() -> bool:
+    acquired = manual_arm_motion_lock.acquire(blocking=False)
+    if acquired:
+        manual_arm_motion_lock.release()
+    return acquired
+
+
+def complete_emergency_stop_recovery(
+    generation: int,
+    gamry_disconnect_generation: int,
+) -> None:
+    """
+    Finish slower cleanup outside the emergency HTTP request.
+
+    The abort latch remains set until every interrupted operation has released
+    its lock. This prevents a new command from being mistaken for part of the
+    old command, while the generation checks prevent an older cleanup thread
+    from releasing a newer emergency stop.
+    """
+    gamry_cell_off_error = None
+    recovery_error = None
+
+    try:
+        gamry_cell_off()
+    except Exception as exc:
+        gamry_cell_off_error = str(exc)
+        update_emergency_stop_recovery(
+            generation,
+            gamry_cell_off_error=gamry_cell_off_error,
+        )
+
+    try:
+        while emergency_stop_generation_is_current(generation):
+            automation_idle = not automation_is_running()
+            axes_idle = wait_for_motion_idle(0.1)
+            rotation_idle = get_rotation_controller().wait_until_idle(0.1)
+            arm_idle = manual_arm_is_idle()
+            if automation_idle and axes_idle and rotation_idle and arm_idle:
+                break
+            time.sleep(0.05)
+    except Exception as exc:
+        recovery_error = str(exc)
+        update_emergency_stop_recovery(
+            generation,
+            recovery_error=recovery_error,
+        )
+
+    client = get_gamry_client()
+    client.finish_emergency_disconnect(gamry_disconnect_generation)
+
+    if not emergency_stop_generation_is_current(generation):
+        return
+
+    clear_abort()
+    if gamry_cell_off_error:
+        message = (
+            "Emergency stop is released and motor controls are ready. The active "
+            "Gamry worker was disconnected, but Cell OFF confirmation failed: "
+            f"{gamry_cell_off_error}"
+        )
+    elif recovery_error:
+        message = (
+            "Emergency stop is released and controls are ready, with a recovery "
+            f"warning: {recovery_error}"
+        )
+    else:
+        message = (
+            "Emergency stop complete: Gamry disconnected/Cell OFF, interrupted "
+            "commands ended, and manual controls are ready again."
+        )
+    finish_emergency_stop_recovery(generation, message)
 
 
 def config_payload() -> dict[str, Any]:
@@ -238,6 +330,12 @@ def api_gamry_probe():
     except Exception as exc:
         return json_error(f"Unable to check the Gamry device: {exc}", 500)
 
+    if bool(probe.get("connected", False)):
+        # The failed run remains recorded on disk. Only the resolved live
+        # banner and the RDE slot that older code contaminated are cleared.
+        clear_automation_error("Idle — Gamry connection verified")
+        set_rde_error(None)
+
     return jsonify({"ok": True, "probe": probe})
 
 
@@ -350,6 +448,8 @@ def api_gamry_cell_status():
 def api_gamry_cell_on():
     if automation_is_running():
         return json_error("automation is running; manual Gamry Cell ON is disabled.", 409)
+    if emergency_stop_is_recovering():
+        return emergency_recovery_error()
     if echem_measurement_is_active():
         return json_error("an EChem measurement is active; manual Gamry Cell ON is disabled.", 409)
 
@@ -589,6 +689,8 @@ def start():
 
     if automation_is_running():
         return json_error("automation is running; manual RDE control is disabled.", 409)
+    if emergency_stop_is_recovering():
+        return emergency_recovery_error()
     if manual_arm_motion_lock.locked():
         return json_error(
             "manual arm movement is running; RDE start is disabled until it finishes.",
@@ -646,6 +748,8 @@ def stop():
 def rotation_send():
     if automation_is_running():
         return json_error("automation is running; manual rotation commands are disabled.", 409)
+    if emergency_stop_is_recovering():
+        return emergency_recovery_error()
     if manual_arm_motion_lock.locked():
         return json_error("another manual arm movement is already running.", 409)
 
@@ -723,6 +827,8 @@ def rotation_confirm_inspected():
             "automation is running; relative tracking cannot be reset.",
             409,
         )
+    if emergency_stop_is_recovering():
+        return emergency_recovery_error()
 
     if not manual_arm_motion_lock.acquire(blocking=False):
         return json_error("another manual arm movement is already running.", 409)
@@ -756,6 +862,8 @@ def rotation_check_relative_firmware():
             "automation is running; rotation firmware cannot be checked.",
             409,
         )
+    if emergency_stop_is_recovering():
+        return emergency_recovery_error()
 
     if not manual_arm_motion_lock.acquire(blocking=False):
         return json_error("another manual arm movement is already running.", 409)
@@ -782,6 +890,8 @@ def rotation_relative_angle():
             "automation is running; manual short-angle movement is disabled.",
             409,
         )
+    if emergency_stop_is_recovering():
+        return emergency_recovery_error()
 
     payload = request.get_json(silent=True) or {}
     rotation = get_rotation_config()
@@ -868,6 +978,8 @@ def rotation_oscillate():
             "automation is running; manual arm oscillation is disabled.",
             409,
         )
+    if emergency_stop_is_recovering():
+        return emergency_recovery_error()
 
     payload = request.get_json(silent=True) or {}
     rotation = get_rotation_config()
@@ -952,6 +1064,8 @@ def rotation_home_route():
 def rotation_send_with_command(command: str):
     if automation_is_running():
         return json_error("automation is running; manual rotation commands are disabled.", 409)
+    if emergency_stop_is_recovering():
+        return emergency_recovery_error()
     if manual_arm_motion_lock.locked():
         return json_error("another manual arm movement is already running.", 409)
 
@@ -1011,6 +1125,8 @@ def parse_axis_command_request(axis_name: str) -> int | tuple[Any, int]:
 def linear_send():
     if automation_is_running():
         return json_error("automation is running; manual linear commands are disabled.", 409)
+    if emergency_stop_is_recovering():
+        return emergency_recovery_error()
     if manual_arm_motion_lock.locked():
         return json_error("manual arm movement is running; X/Z commands are disabled.", 409)
 
@@ -1038,6 +1154,8 @@ def linear_send():
 def horizontal_send():
     if automation_is_running():
         return json_error("automation is running; manual horizontal commands are disabled.", 409)
+    if emergency_stop_is_recovering():
+        return emergency_recovery_error()
     if manual_arm_motion_lock.locked():
         return json_error("manual arm movement is running; X/Z commands are disabled.", 409)
 
@@ -1065,6 +1183,8 @@ def horizontal_send():
 def vertical_send():
     if automation_is_running():
         return json_error("automation is running; manual vertical commands are disabled.", 409)
+    if emergency_stop_is_recovering():
+        return emergency_recovery_error()
     if manual_arm_motion_lock.locked():
         return json_error("manual arm movement is running; X/Z commands are disabled.", 409)
 
@@ -1140,6 +1260,38 @@ def axes_tracked_position():
                 f"Tracked {user_axis.upper()} was corrected to {position}. "
                 "No physical movement or serial command was performed."
             ),
+        }
+    )
+
+
+@app.post("/api/linear/diagnose")
+def linear_diagnose():
+    """No-motion Z firmware and Arduino output-level check."""
+    if automation_is_running():
+        return json_error(
+            "automation is running; Z diagnostics are disabled.",
+            409,
+        )
+    if emergency_stop_is_recovering():
+        return emergency_recovery_error()
+    if manual_arm_motion_lock.locked():
+        return json_error(
+            "manual arm movement is running; Z diagnostics are disabled.",
+            409,
+        )
+
+    try:
+        diagnostic = diagnose_linear_firmware()
+    except Exception as exc:
+        return json_error(f"Unable to diagnose Z on {get_serial_port('linear')}: {exc}", 500)
+
+    return jsonify(
+        {
+            "ok": True,
+            "com_port": get_serial_port("linear"),
+            "hardware_command_sent": False,
+            "movement_command_sent": False,
+            **diagnostic,
         }
     )
 
@@ -1555,6 +1707,8 @@ def automation_status():
 def automation_start():
     if automation_is_running():
         return json_error("automation is already running.", 409)
+    if emergency_stop_is_recovering():
+        return emergency_recovery_error()
     if manual_arm_motion_lock.locked():
         return json_error(
             "manual arm movement is running; wait for it to finish before automation.",
@@ -1609,14 +1763,20 @@ def automation_start():
 
 
 def perform_emergency_stop(reason: str) -> dict[str, Any]:
-    """Stop every motor immediately, during either manual or automated use."""
+    """
+    Stop hardware immediately, then recover asynchronously.
+
+    The slower Gamry Cell OFF and lock-drain work must not delay the physical
+    motor STOP writes or cause the browser's emergency request to time out.
+    """
     global stop_timer
 
     automation_was_running = automation_is_running()
+    generation = begin_emergency_stop_recovery(reason)
 
-    if automation_was_running:
-        # Set the shared abort flag first so automation wait/motion loops exit.
-        abort_automation()
+    # Latch abort before any STOP write. Manual and automated in-flight axis
+    # calls share this event and cannot enqueue another move while recovering.
+    request_abort()
 
     if stop_timer is not None:
         stop_timer.cancel()
@@ -1630,35 +1790,57 @@ def perform_emergency_stop(reason: str) -> dict[str, Any]:
     # Stop RDE immediately instead of waiting for recipe-runner cleanup.
     rde_stop_error = None
     try:
-        stop_rde(reason)
+        # The emergency state preserves the reason. Do not place it in the RDE
+        # error slot, where it would later look like a current motor failure.
+        stop_rde(None)
     except Exception as exc:
         rde_stop_error = str(exc)
 
-    # Attempt cell OFF only after the immediate motor STOP commands have been
-    # issued. A ToolkitPy failure must never hide the motor/RDE abort result.
-    gamry_cell_off_error = None
+    # Terminate the active ToolkitPy acquisition worker now. Cell OFF and final
+    # ToolkitPy close are attempted by the recovery thread immediately after.
     try:
-        gamry_cell_off()
+        gamry_disconnect = get_gamry_client().disconnect_active_worker()
     except Exception as exc:
-        gamry_cell_off_error = str(exc)
+        gamry_disconnect = {
+            "ok": False,
+            "generation": 0,
+            "worker_was_active": False,
+            "worker_terminated": False,
+            "worker_force_killed": False,
+            "error": str(exc),
+        }
+
+    update_emergency_stop_recovery(
+        generation,
+        gamry_disconnect=gamry_disconnect,
+    )
+
+    recovery_thread = threading.Thread(
+        target=complete_emergency_stop_recovery,
+        args=(generation, int(gamry_disconnect.get("generation", 0))),
+        name=f"emergency-stop-recovery-{generation}",
+        daemon=True,
+    )
+    recovery_thread.start()
 
     payload = {
         "ok": True,
         "message": (
-            "Emergency stop sent: RDE stop and X/Z/rotation STOP commands "
-            "were issued immediately, then Gamry Cell OFF was attempted. "
-            "Motion remains in place."
+            "Emergency STOP was sent immediately to RDE, X/Z, and rotation. "
+            "The active Gamry measurement was disconnected. Cell OFF and "
+            "command cleanup are finishing in the background; controls will "
+            "be released automatically when recovery is safe."
         ),
         "automation_was_running": automation_was_running,
         "motion_stop_sent": motion_stop_result,
         "rotation_stop_sent": rotation_stop_sent,
+        "gamry_disconnect": gamry_disconnect,
+        "recovery_pending": True,
+        "emergency_stop_generation": generation,
     }
 
     if rde_stop_error:
         payload["rde_stop_error"] = rde_stop_error
-
-    if gamry_cell_off_error:
-        payload["gamry_cell_off_error"] = gamry_cell_off_error
 
     return payload
 

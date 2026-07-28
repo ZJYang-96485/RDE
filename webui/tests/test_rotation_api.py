@@ -1,16 +1,24 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from app import app, manual_arm_motion_lock
 from hardware.rotation_controller import RotationMoveResult
+from workflow.state import (
+    begin_emergency_stop_recovery,
+    clear_abort,
+    finish_emergency_stop_recovery,
+)
 
 
 class RotationApiTests(unittest.TestCase):
     def setUp(self) -> None:
         app.config.update(TESTING=True)
         self.client = app.test_client()
+        generation = begin_emergency_stop_recovery("test reset")
+        finish_emergency_stop_recovery(generation, "Emergency stop is ready.")
+        clear_abort()
 
     @patch("app.automation_is_running", return_value=False)
     @patch("app.get_serial_port", return_value="COM3")
@@ -367,24 +375,33 @@ class RotationApiTests(unittest.TestCase):
             with self.subTest(request_index=index):
                 self.assertEqual(response.status_code, 409)
 
-    @patch("app.gamry_cell_off")
+    @patch("app.threading.Thread")
+    @patch("app.get_gamry_client")
+    @patch("app.request_abort")
     @patch("app.stop_rde")
     @patch("app.emergency_stop_rotation", return_value=True)
     @patch(
         "app.emergency_stop_motion",
         return_value={"linear": True, "horizontal": True, "vertical": False},
     )
-    @patch("app.abort_automation")
     @patch("app.automation_is_running", return_value=True)
     def test_automation_abort_stops_rotation_and_axes(
         self,
         _automation_is_running,
-        abort_automation,
         _emergency_stop_motion,
         emergency_stop_rotation,
         _stop_rde,
-        gamry_cell_off,
+        request_abort,
+        get_gamry_client,
+        recovery_thread,
     ) -> None:
+        get_gamry_client.return_value.disconnect_active_worker.return_value = {
+            "ok": True,
+            "generation": 7,
+            "worker_was_active": True,
+            "worker_terminated": True,
+            "worker_force_killed": False,
+        }
         response = self.client.post("/api/automation/abort")
 
         self.assertEqual(response.status_code, 200)
@@ -394,28 +411,38 @@ class RotationApiTests(unittest.TestCase):
             payload["motion_stop_sent"],
             {"linear": True, "horizontal": True, "vertical": False},
         )
-        abort_automation.assert_called_once_with()
+        request_abort.assert_called_once_with()
         emergency_stop_rotation.assert_called_once_with()
-        gamry_cell_off.assert_called_once_with()
+        get_gamry_client.return_value.disconnect_active_worker.assert_called_once_with()
+        recovery_thread.return_value.start.assert_called_once_with()
 
-    @patch("app.gamry_cell_off")
+    @patch("app.threading.Thread")
+    @patch("app.get_gamry_client")
+    @patch("app.request_abort")
     @patch("app.stop_rde")
     @patch("app.emergency_stop_rotation", return_value=True)
     @patch(
         "app.emergency_stop_motion",
         return_value={"linear": True, "horizontal": True, "vertical": False},
     )
-    @patch("app.abort_automation")
     @patch("app.automation_is_running", return_value=False)
     def test_manual_motor_emergency_stop_works_without_automation(
         self,
         _automation_is_running,
-        abort_automation,
         emergency_stop_motion,
         emergency_stop_rotation,
         stop_rde,
-        gamry_cell_off,
+        request_abort,
+        get_gamry_client,
+        recovery_thread,
     ) -> None:
+        get_gamry_client.return_value.disconnect_active_worker.return_value = {
+            "ok": True,
+            "generation": 8,
+            "worker_was_active": False,
+            "worker_terminated": False,
+            "worker_force_killed": False,
+        }
         response = self.client.post("/api/motors/emergency-stop")
 
         self.assertEqual(response.status_code, 200)
@@ -426,33 +453,45 @@ class RotationApiTests(unittest.TestCase):
             payload["motion_stop_sent"],
             {"linear": True, "horizontal": True, "vertical": False},
         )
-        abort_automation.assert_not_called()
+        request_abort.assert_called_once_with()
         emergency_stop_motion.assert_called_once_with()
         emergency_stop_rotation.assert_called_once_with()
-        stop_rde.assert_called_once_with("Manual motor emergency stop requested.")
-        gamry_cell_off.assert_called_once_with()
+        stop_rde.assert_called_once_with(None)
+        get_gamry_client.return_value.disconnect_active_worker.assert_called_once_with()
+        recovery_thread.return_value.start.assert_called_once_with()
 
-    @patch("app.gamry_cell_off", side_effect=RuntimeError("cell relay unavailable"))
+    @patch("app.threading.Thread")
+    @patch("app.get_gamry_client")
+    @patch("app.request_abort")
     @patch("app.stop_rde")
     @patch("app.emergency_stop_rotation", return_value=True)
     @patch("app.emergency_stop_motion", return_value={"linear": True, "horizontal": True})
     @patch("app.automation_is_running", return_value=False)
-    def test_emergency_stop_reports_cell_off_failure_without_masking_motors(
+    def test_emergency_stop_reports_disconnect_failure_without_masking_motors(
         self,
         _automation_is_running,
         emergency_stop_motion,
         _emergency_stop_rotation,
         stop_rde,
-        _gamry_cell_off,
+        _request_abort,
+        get_gamry_client,
+        _recovery_thread,
     ) -> None:
+        get_gamry_client.return_value.disconnect_active_worker.side_effect = (
+            RuntimeError("worker termination unavailable")
+        )
         response = self.client.post("/api/motors/emergency-stop")
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertTrue(payload["ok"])
-        self.assertEqual(payload["gamry_cell_off_error"], "cell relay unavailable")
+        self.assertFalse(payload["gamry_disconnect"]["ok"])
+        self.assertEqual(
+            payload["gamry_disconnect"]["error"],
+            "worker termination unavailable",
+        )
         emergency_stop_motion.assert_called_once_with()
-        stop_rde.assert_called_once_with("Manual motor emergency stop requested.")
+        stop_rde.assert_called_once_with(None)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import threading
+import time
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 
 from hardware.rotation_controller import rotation_home
@@ -101,6 +102,31 @@ class MotionController:
             axis: device.send_emergency_line_if_open("STOP")
             for axis, device in self.devices.items()
         }
+
+    def wait_until_idle(self, timeout_s: float = 0.25) -> bool:
+        """Return only after all in-flight axis transactions release their locks."""
+        deadline = time.monotonic() + max(0.0, float(timeout_s))
+        for device in self.devices.values():
+            remaining = max(0.0, deadline - time.monotonic())
+            if not device.lock.acquire(timeout=remaining):
+                return False
+            device.lock.release()
+        return True
+
+    def diagnose_linear_firmware(self) -> dict[str, str]:
+        """Read Z-controller firmware/output state without emitting step pulses."""
+        device = self.device_for_axis("linear")
+        ping = device.send_line_wait_for_response(
+            "PING",
+            timeout_s=2.0,
+            expected_prefixes=("ACK PONG Z",),
+        )
+        status = device.send_line_wait_for_response(
+            "STATUS",
+            timeout_s=2.0,
+            expected_prefixes=("ACK STATUS AXIS Z ",),
+        )
+        return {"ping": ping, "status": status}
 
     def move_axis_steps(
         self,
@@ -463,6 +489,14 @@ def get_motion_controller() -> MotionController:
 
 def emergency_stop_motion() -> dict[str, bool]:
     return get_motion_controller().emergency_stop_all()
+
+
+def wait_for_motion_idle(timeout_s: float = 0.25) -> bool:
+    return get_motion_controller().wait_until_idle(timeout_s)
+
+
+def diagnose_linear_firmware() -> dict[str, str]:
+    return get_motion_controller().diagnose_linear_firmware()
 
 
 def move_linear_steps(

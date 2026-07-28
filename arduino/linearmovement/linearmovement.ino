@@ -33,8 +33,10 @@ const uint8_t STEP_IDLE_LEVEL = LOW;
 const uint8_t CW_LEVEL = HIGH;
 const uint8_t CCW_LEVEL = LOW;
 
-// Most TB6600 modules use active-low enable.
-const uint8_t ENABLE_LEVEL = LOW;
+// Preserve the previously proven default, but allow the operator to test the
+// opposite TB6600 enable polarity without reflashing or moving the axis.
+const uint8_t DEFAULT_ENABLE_LEVEL = LOW;
+uint8_t driverEnableLevel = DEFAULT_ENABLE_LEVEL;
 
 // Start each move at the previously proven Z-axis speed, then ramp to a
 // moderately faster cruise speed. Each value is the HIGH or LOW half-period;
@@ -45,6 +47,52 @@ const unsigned int MIN_STEP_PULSE_US = 50;
 const unsigned long ACCELERATION_STEPS = 1000UL;
 
 String emergencyBuffer;
+
+
+const char *levelName(uint8_t level) {
+  return level == HIGH ? "HIGH" : "LOW";
+}
+
+
+void printStatus(const char *prefix) {
+  Serial.print(prefix);
+  Serial.print(" STATUS AXIS Z ENA ");
+  Serial.print(levelName((uint8_t)digitalRead(ENA_PIN)));
+  Serial.print(" PUL ");
+  Serial.print(levelName((uint8_t)digitalRead(PUL_PIN)));
+  Serial.print(" DIR ");
+  Serial.println(levelName((uint8_t)digitalRead(DIR_PIN)));
+}
+
+
+bool handleEnableCommand(String command) {
+  command.trim();
+  command.toUpperCase();
+
+  if (command == "ENABLE LOW" || command == "ENA LOW" || command == "ENA 0") {
+    driverEnableLevel = LOW;
+  } else if (
+    command == "ENABLE HIGH"
+    || command == "ENA HIGH"
+    || command == "ENA 1"
+  ) {
+    driverEnableLevel = HIGH;
+  } else if (command == "ENABLE DEFAULT" || command == "ENA DEFAULT") {
+    driverEnableLevel = DEFAULT_ENABLE_LEVEL;
+  } else if (command.startsWith("ENABLE") || command.startsWith("ENA")) {
+    Serial.println("ERR ENABLE expects LOW, HIGH, or DEFAULT");
+    return true;
+  } else {
+    return false;
+  }
+
+  digitalWrite(ENA_PIN, driverEnableLevel);
+  delay(10);
+
+  Serial.print("ACK ENABLE ");
+  Serial.println(levelName(driverEnableLevel));
+  return true;
+}
 
 
 uint8_t speedMultiplierFor(unsigned long stepsAbs) {
@@ -233,6 +281,9 @@ void printHelp() {
   Serial.println("  0      -> no movement");
   Serial.println("  STOP   -> interrupt active movement");
   Serial.println("  ABORT  -> interrupt active movement");
+  Serial.println("  PING   -> verify Z firmware without movement");
+  Serial.println("  STATUS -> read ENA/PUL/DIR output levels");
+  Serial.println("  ENABLE LOW|HIGH|DEFAULT -> set TB6600 ENA output");
   Serial.println("  help   -> show this message");
 }
 
@@ -242,6 +293,11 @@ void runMovement(long signedSteps) {
     Serial.println("ACK 0");
     return;
   }
+
+  // Re-assert the selected enable state before every pulse train. This also
+  // recovers the intended level after a controller brownout or reset.
+  digitalWrite(ENA_PIN, driverEnableLevel);
+  delay(10);
 
   // Avoid overflow when converting LONG_MIN to an absolute value.
   if (signedSteps == LONG_MIN) {
@@ -292,7 +348,7 @@ void setup() {
 
   digitalWrite(PUL_PIN, STEP_IDLE_LEVEL);
   digitalWrite(DIR_PIN, CW_LEVEL);
-  digitalWrite(ENA_PIN, ENABLE_LEVEL);
+  digitalWrite(ENA_PIN, driverEnableLevel);
 
   Serial.begin(115200);
   Serial.setTimeout(100);
@@ -316,6 +372,20 @@ void loop() {
 
   if (line.equalsIgnoreCase("help") || line == "?") {
     printHelp();
+    return;
+  }
+
+  if (line.equalsIgnoreCase("PING")) {
+    Serial.println("ACK PONG Z");
+    return;
+  }
+
+  if (line.equalsIgnoreCase("STATUS")) {
+    printStatus("ACK");
+    return;
+  }
+
+  if (handleEnableCommand(line)) {
     return;
   }
 

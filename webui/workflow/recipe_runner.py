@@ -12,7 +12,7 @@ from analysis.ca_charge import (
     cumulative_charge_enabled,
     run_ca_charge_analysis,
 )
-from hardware.gamry_client import run_gamry_step
+from hardware.gamry_client import get_gamry_client, run_gamry_step
 from hardware.gamry_cell_client import gamry_cell_off, gamry_cell_on
 from hardware.motion_controller import move_horizontal_steps, move_linear_steps, move_to_xyz, move_xz_steps_parallel
 from hardware.rde_controller import send_rpm, stop_rde
@@ -260,6 +260,7 @@ def run_protocol_for_sample(
             from gamry_worker.trial_preparation import default_trial_metadata, utc_now
             from workflow.config_loader import get_gamry_config
 
+            aborting = get_abort_event().is_set()
             error_result = getattr(exc, "result", None)
             saved_metadata = error_result.get("trial_metadata") if isinstance(error_result, dict) else None
             metadata = (
@@ -269,12 +270,27 @@ def run_protocol_for_sample(
             )
             metadata.update(
                 {
-                    "trial_status": "failed",
-                    "skip_reason": str(exc),
+                    "trial_status": "aborted" if aborting else "failed",
+                    "skip_reason": (
+                        "Emergency stop disconnected the active Gamry measurement."
+                        if aborting
+                        else str(exc)
+                    ),
                     "completed_at": utc_now(),
                 }
             )
             register_trial_result(run_dir, output_record, metadata)
+            if aborting:
+                live_dir = Path(run_dir) / "_system" / "live"
+                if (live_dir / "status.json").exists():
+                    fail_live_stream(
+                        live_dir,
+                        "Emergency stop disconnected the active Gamry measurement.",
+                        status="aborted",
+                    )
+                raise AutomationAbortRequested(
+                    "Emergency stop disconnected the active Gamry measurement."
+                ) from exc
             raise
 
         trial_metadata = worker_result.get("trial_metadata", {}) if isinstance(worker_result, dict) else {}
@@ -760,11 +776,17 @@ def run_plan_payload(run_plan: dict[str, Any]) -> dict[str, Any]:
         except Exception as exc:
             append_log(run_dir, f"RDE stop during abort failed: {exc}.")
 
-        force_gamry_cell_off_for_cleanup(run_dir, "automation abort")
+        if get_gamry_client().emergency_disconnect_in_progress():
+            append_log(
+                run_dir,
+                "Gamry Cell OFF/disconnect cleanup is owned by the emergency-stop coordinator.",
+            )
+        else:
+            force_gamry_cell_off_for_cleanup(run_dir, "automation abort")
 
-        clear_abort()
         mark_run_aborted(run_dir)
         finish_automation("Automation aborted; axes left in place")
+        clear_abort()
         append_log(
             run_dir,
             "Automation aborted. RDE stopped; automatic homing is disabled and axes were left in place.",
@@ -780,15 +802,17 @@ def run_plan_payload(run_plan: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         append_log(run_dir, f"Automation failed: {exc}.")
         try:
-            stop_rde(str(exc))
+            # The automation state/run artifact owns this error. Do not copy a
+            # Gamry or recipe failure into the live manual-RDE error slot.
+            stop_rde(None)
         except Exception as stop_exc:
             append_log(run_dir, f"RDE stop after failure failed: {stop_exc}.")
 
         force_gamry_cell_off_for_cleanup(run_dir, "automation failure")
 
-        clear_abort()
         mark_run_failed(run_dir, str(exc))
         fail_automation(str(exc), "Automation failed")
+        clear_abort()
         raise
 
 

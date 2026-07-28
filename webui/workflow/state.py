@@ -19,6 +19,7 @@ class AxisPositionStateError(RuntimeError):
 state_lock = threading.RLock()
 axis_position_lock = threading.RLock()
 automation_lock = threading.RLock()
+emergency_stop_lock = threading.RLock()
 
 abort_event = threading.Event()
 
@@ -58,6 +59,18 @@ automation_state = {
     "run_dir": None,
     "started_at": None,
     "finished_at": None
+}
+
+emergency_stop_state = {
+    "generation": 0,
+    "recovering": False,
+    "reason": None,
+    "message": "Emergency stop is ready.",
+    "started_at": None,
+    "finished_at": None,
+    "gamry_disconnect": None,
+    "gamry_cell_off_error": None,
+    "recovery_error": None,
 }
 
 
@@ -376,9 +389,91 @@ def fail_automation(error: str, step: str = "Automation failed") -> None:
         automation_state["finished_at"] = iso_utc()
 
 
+def clear_automation_error(step: str | None = None) -> None:
+    """Clear a resolved live banner without modifying saved run artifacts."""
+    with automation_lock:
+        if bool(automation_state["running"]):
+            return
+        automation_state["error"] = None
+        if step is not None:
+            automation_state["step"] = str(step)
+
+
 def get_automation_state() -> dict[str, Any]:
     with automation_lock:
         return copy.deepcopy(automation_state)
+
+
+def begin_emergency_stop_recovery(reason: str) -> int:
+    with emergency_stop_lock:
+        emergency_stop_state["generation"] = (
+            int(emergency_stop_state["generation"]) + 1
+        )
+        emergency_stop_state["recovering"] = True
+        emergency_stop_state["reason"] = str(reason)
+        emergency_stop_state["message"] = (
+            "Emergency commands sent; waiting for interrupted operations to stop."
+        )
+        emergency_stop_state["started_at"] = iso_utc()
+        emergency_stop_state["finished_at"] = None
+        emergency_stop_state["gamry_disconnect"] = None
+        emergency_stop_state["gamry_cell_off_error"] = None
+        emergency_stop_state["recovery_error"] = None
+        return int(emergency_stop_state["generation"])
+
+
+def update_emergency_stop_recovery(
+    generation: int,
+    *,
+    message: str | None = None,
+    gamry_disconnect: dict[str, Any] | None = None,
+    gamry_cell_off_error: str | None = None,
+    recovery_error: str | None = None,
+) -> bool:
+    with emergency_stop_lock:
+        if int(generation) != int(emergency_stop_state["generation"]):
+            return False
+        if message is not None:
+            emergency_stop_state["message"] = str(message)
+        if gamry_disconnect is not None:
+            emergency_stop_state["gamry_disconnect"] = copy.deepcopy(
+                gamry_disconnect
+            )
+        if gamry_cell_off_error is not None:
+            emergency_stop_state["gamry_cell_off_error"] = str(
+                gamry_cell_off_error
+            )
+        if recovery_error is not None:
+            emergency_stop_state["recovery_error"] = str(recovery_error)
+        return True
+
+
+def finish_emergency_stop_recovery(
+    generation: int,
+    message: str,
+) -> bool:
+    with emergency_stop_lock:
+        if int(generation) != int(emergency_stop_state["generation"]):
+            return False
+        emergency_stop_state["recovering"] = False
+        emergency_stop_state["message"] = str(message)
+        emergency_stop_state["finished_at"] = iso_utc()
+        return True
+
+
+def get_emergency_stop_state() -> dict[str, Any]:
+    with emergency_stop_lock:
+        return copy.deepcopy(emergency_stop_state)
+
+
+def emergency_stop_generation_is_current(generation: int) -> bool:
+    with emergency_stop_lock:
+        return int(generation) == int(emergency_stop_state["generation"])
+
+
+def emergency_stop_is_recovering() -> bool:
+    with emergency_stop_lock:
+        return bool(emergency_stop_state["recovering"])
 
 
 def automation_is_running() -> bool:
@@ -412,6 +507,7 @@ def get_status_payload(extra: dict[str, Any] | None = None) -> dict[str, Any]:
     axes = get_axis_positions()
     axis_confidence = get_axis_position_confidences()
     automation = get_automation_state()
+    emergency_stop = get_emergency_stop_state()
 
     payload = {
         "running": rde["running"],
@@ -432,7 +528,10 @@ def get_status_payload(extra: dict[str, Any] | None = None) -> dict[str, Any]:
         "automation_run_dir": automation["run_dir"],
         "automation_started_at": automation["started_at"],
         "automation_finished_at": automation["finished_at"],
-        "abort_requested": abort_requested()
+        "abort_requested": abort_requested(),
+        "emergency_stop_recovering": emergency_stop["recovering"],
+        "emergency_stop_message": emergency_stop["message"],
+        "emergency_stop_state": emergency_stop,
     }
 
     if extra:

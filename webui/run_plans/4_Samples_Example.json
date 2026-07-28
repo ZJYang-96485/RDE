@@ -1,0 +1,782 @@
+{
+  "schema_version": 2,
+  "run_name": "4 Samples Example",
+  "display_name": "4 Samples Example",
+  "description": "Grouped atomic-step run plan created in the web app.",
+  "repetitions": 1,
+  "groups": [
+    {
+      "group_id": "group_001",
+      "label": "Sample 1",
+      "enabled": true,
+      "steps": [
+        {
+          "name": "Gamry Cell OFF",
+          "action": "gamry_cell_off",
+          "enabled": true
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "0"
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": 70000
+        },
+        {
+          "name": "Gamry Cell ON",
+          "action": "gamry_cell_on",
+          "enabled": true,
+          "duration_s": null
+        },
+        {
+          "name": "EChem Measurement",
+          "action": "echem",
+          "enabled": true,
+          "protocol": "OCP_CP"
+        },
+        {
+          "name": "Gamry Cell OFF",
+          "action": "gamry_cell_off",
+          "enabled": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "Set RDE RPM",
+          "action": "set_rpm",
+          "enabled": true,
+          "rpm": 2000
+        },
+        {
+          "name": "Wait",
+          "action": "wait",
+          "enabled": true,
+          "duration_s": 10.0
+        },
+        {
+          "name": "Stop RDE",
+          "action": "stop_rpm",
+          "enabled": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "1"
+        },
+        {
+          "name": "Move X \u2014 Relative Steps",
+          "action": "move_x",
+          "enabled": true,
+          "steps": 255000
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "0"
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": 70000
+        },
+        {
+          "name": "Packaged Concurrent Rinse",
+          "action": "rinse",
+          "enabled": true,
+          "cycles": 8,
+          "diamond": {
+            "x_radius_steps": 5000,
+            "z_radius_steps": 7000
+          },
+          "arm_oscillation": {
+            "enabled": true,
+            "amplitude_deg": 2.0,
+            "amplitude_steps": 9,
+            "pause_between_moves_s": 0.1,
+            "mode": "continuous_until_diamond_complete",
+            "stop_policy": "finish_closed_cycle"
+          },
+          "disk_rotation": {
+            "enabled": true,
+            "rpm": 300,
+            "settle_s": 1.0,
+            "mode": "continuous_for_entire_rinse_step",
+            "stop_after": true,
+            "immersed_rotation_confirmed": true
+          },
+          "inter_cycle_pause_s": 0.0,
+          "cycle_timeout_s": 30.0,
+          "require_closed_paths": true
+        },
+        {
+          "name": "Packaged Concurrent Rinse",
+          "action": "rinse",
+          "enabled": true,
+          "cycles": 8,
+          "diamond": {
+            "x_radius_steps": 5000,
+            "z_radius_steps": 7000
+          },
+          "arm_oscillation": {
+            "enabled": true,
+            "amplitude_deg": 2.0,
+            "amplitude_steps": 9,
+            "pause_between_moves_s": 0.1,
+            "mode": "continuous_until_diamond_complete",
+            "stop_policy": "finish_closed_cycle"
+          },
+          "disk_rotation": {
+            "enabled": true,
+            "rpm": 300,
+            "settle_s": 1.0,
+            "mode": "continuous_for_entire_rinse_step",
+            "stop_after": true,
+            "immersed_rotation_confirmed": true
+          },
+          "inter_cycle_pause_s": 0.0,
+          "cycle_timeout_s": 30.0,
+          "require_closed_paths": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "Set RDE RPM",
+          "action": "set_rpm",
+          "enabled": true,
+          "rpm": 2000
+        },
+        {
+          "name": "Wait",
+          "action": "wait",
+          "enabled": true,
+          "duration_s": 30.0
+        },
+        {
+          "name": "Stop RDE",
+          "action": "stop_rpm",
+          "enabled": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "1"
+        },
+        {
+          "name": "Move X \u2014 Relative Steps",
+          "action": "move_x",
+          "enabled": true,
+          "steps": -205000
+        }
+      ]
+    },
+    {
+      "group_id": "group_002",
+      "label": "Sample 2",
+      "enabled": true,
+      "steps": [
+        {
+          "name": "Gamry Cell OFF",
+          "action": "gamry_cell_off",
+          "enabled": true
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "0"
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": 70000
+        },
+        {
+          "name": "Gamry Cell ON",
+          "action": "gamry_cell_on",
+          "enabled": true,
+          "duration_s": null
+        },
+        {
+          "name": "EChem Measurement",
+          "action": "echem",
+          "enabled": true,
+          "protocol": "OCP_CP"
+        },
+        {
+          "name": "Gamry Cell OFF",
+          "action": "gamry_cell_off",
+          "enabled": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "Set RDE RPM",
+          "action": "set_rpm",
+          "enabled": true,
+          "rpm": 2000
+        },
+        {
+          "name": "Wait",
+          "action": "wait",
+          "enabled": true,
+          "duration_s": 10.0
+        },
+        {
+          "name": "Stop RDE",
+          "action": "stop_rpm",
+          "enabled": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "1"
+        },
+        {
+          "name": "Move X \u2014 Relative Steps",
+          "action": "move_x",
+          "enabled": true,
+          "steps": 205000
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "0"
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": 70000
+        },
+        {
+          "name": "Packaged Concurrent Rinse",
+          "action": "rinse",
+          "enabled": true,
+          "cycles": 8,
+          "diamond": {
+            "x_radius_steps": 5000,
+            "z_radius_steps": 7000
+          },
+          "arm_oscillation": {
+            "enabled": true,
+            "amplitude_deg": 2.0,
+            "amplitude_steps": 9,
+            "pause_between_moves_s": 0.1,
+            "mode": "continuous_until_diamond_complete",
+            "stop_policy": "finish_closed_cycle"
+          },
+          "disk_rotation": {
+            "enabled": true,
+            "rpm": 300,
+            "settle_s": 1.0,
+            "mode": "continuous_for_entire_rinse_step",
+            "stop_after": true,
+            "immersed_rotation_confirmed": true
+          },
+          "inter_cycle_pause_s": 0.0,
+          "cycle_timeout_s": 30.0,
+          "require_closed_paths": true
+        },
+        {
+          "name": "Packaged Concurrent Rinse",
+          "action": "rinse",
+          "enabled": true,
+          "cycles": 8,
+          "diamond": {
+            "x_radius_steps": 5000,
+            "z_radius_steps": 7000
+          },
+          "arm_oscillation": {
+            "enabled": true,
+            "amplitude_deg": 2.0,
+            "amplitude_steps": 9,
+            "pause_between_moves_s": 0.1,
+            "mode": "continuous_until_diamond_complete",
+            "stop_policy": "finish_closed_cycle"
+          },
+          "disk_rotation": {
+            "enabled": true,
+            "rpm": 300,
+            "settle_s": 1.0,
+            "mode": "continuous_for_entire_rinse_step",
+            "stop_after": true,
+            "immersed_rotation_confirmed": true
+          },
+          "inter_cycle_pause_s": 0.0,
+          "cycle_timeout_s": 30.0,
+          "require_closed_paths": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "Set RDE RPM",
+          "action": "set_rpm",
+          "enabled": true,
+          "rpm": 2000
+        },
+        {
+          "name": "Wait",
+          "action": "wait",
+          "enabled": true,
+          "duration_s": 30.0
+        },
+        {
+          "name": "Stop RDE",
+          "action": "stop_rpm",
+          "enabled": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "1"
+        },
+        {
+          "name": "Move X \u2014 Relative Steps",
+          "action": "move_x",
+          "enabled": true,
+          "steps": -155000
+        }
+      ]
+    },
+    {
+      "group_id": "group_003",
+      "label": "Sample 3",
+      "enabled": true,
+      "steps": [
+        {
+          "name": "Gamry Cell OFF",
+          "action": "gamry_cell_off",
+          "enabled": true
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "0"
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": 70000
+        },
+        {
+          "name": "Gamry Cell ON",
+          "action": "gamry_cell_on",
+          "enabled": true,
+          "duration_s": null
+        },
+        {
+          "name": "EChem Measurement",
+          "action": "echem",
+          "enabled": true,
+          "protocol": "OCP_CP"
+        },
+        {
+          "name": "Gamry Cell OFF",
+          "action": "gamry_cell_off",
+          "enabled": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "Set RDE RPM",
+          "action": "set_rpm",
+          "enabled": true,
+          "rpm": 2000
+        },
+        {
+          "name": "Wait",
+          "action": "wait",
+          "enabled": true,
+          "duration_s": 10.0
+        },
+        {
+          "name": "Stop RDE",
+          "action": "stop_rpm",
+          "enabled": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "1"
+        },
+        {
+          "name": "Move X \u2014 Relative Steps",
+          "action": "move_x",
+          "enabled": true,
+          "steps": 155000
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "0"
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": 70000
+        },
+        {
+          "name": "Packaged Concurrent Rinse",
+          "action": "rinse",
+          "enabled": true,
+          "cycles": 8,
+          "diamond": {
+            "x_radius_steps": 5000,
+            "z_radius_steps": 7000
+          },
+          "arm_oscillation": {
+            "enabled": true,
+            "amplitude_deg": 2.0,
+            "amplitude_steps": 9,
+            "pause_between_moves_s": 0.1,
+            "mode": "continuous_until_diamond_complete",
+            "stop_policy": "finish_closed_cycle"
+          },
+          "disk_rotation": {
+            "enabled": true,
+            "rpm": 300,
+            "settle_s": 1.0,
+            "mode": "continuous_for_entire_rinse_step",
+            "stop_after": true,
+            "immersed_rotation_confirmed": true
+          },
+          "inter_cycle_pause_s": 0.0,
+          "cycle_timeout_s": 30.0,
+          "require_closed_paths": true
+        },
+        {
+          "name": "Packaged Concurrent Rinse",
+          "action": "rinse",
+          "enabled": true,
+          "cycles": 8,
+          "diamond": {
+            "x_radius_steps": 5000,
+            "z_radius_steps": 7000
+          },
+          "arm_oscillation": {
+            "enabled": true,
+            "amplitude_deg": 2.0,
+            "amplitude_steps": 9,
+            "pause_between_moves_s": 0.1,
+            "mode": "continuous_until_diamond_complete",
+            "stop_policy": "finish_closed_cycle"
+          },
+          "disk_rotation": {
+            "enabled": true,
+            "rpm": 300,
+            "settle_s": 1.0,
+            "mode": "continuous_for_entire_rinse_step",
+            "stop_after": true,
+            "immersed_rotation_confirmed": true
+          },
+          "inter_cycle_pause_s": 0.0,
+          "cycle_timeout_s": 30.0,
+          "require_closed_paths": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "Set RDE RPM",
+          "action": "set_rpm",
+          "enabled": true,
+          "rpm": 2000
+        },
+        {
+          "name": "Wait",
+          "action": "wait",
+          "enabled": true,
+          "duration_s": 30.0
+        },
+        {
+          "name": "Stop RDE",
+          "action": "stop_rpm",
+          "enabled": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "1"
+        },
+        {
+          "name": "Move X \u2014 Relative Steps",
+          "action": "move_x",
+          "enabled": true,
+          "steps": -105000
+        }
+      ]
+    },
+    {
+      "group_id": "group_004",
+      "label": "Sample 4",
+      "enabled": true,
+      "steps": [
+        {
+          "name": "Gamry Cell OFF",
+          "action": "gamry_cell_off",
+          "enabled": true
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "0"
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": 70000
+        },
+        {
+          "name": "Gamry Cell ON",
+          "action": "gamry_cell_on",
+          "enabled": true,
+          "duration_s": null
+        },
+        {
+          "name": "EChem Measurement",
+          "action": "echem",
+          "enabled": true,
+          "protocol": "OCP_CP"
+        },
+        {
+          "name": "Gamry Cell OFF",
+          "action": "gamry_cell_off",
+          "enabled": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "Set RDE RPM",
+          "action": "set_rpm",
+          "enabled": true,
+          "rpm": 2000
+        },
+        {
+          "name": "Wait",
+          "action": "wait",
+          "enabled": true,
+          "duration_s": 10.0
+        },
+        {
+          "name": "Stop RDE",
+          "action": "stop_rpm",
+          "enabled": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "1"
+        },
+        {
+          "name": "Move X \u2014 Relative Steps",
+          "action": "move_x",
+          "enabled": true,
+          "steps": 105000
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "0"
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": 70000
+        },
+        {
+          "name": "Packaged Concurrent Rinse",
+          "action": "rinse",
+          "enabled": true,
+          "cycles": 8,
+          "diamond": {
+            "x_radius_steps": 5000,
+            "z_radius_steps": 7000
+          },
+          "arm_oscillation": {
+            "enabled": true,
+            "amplitude_deg": 2.0,
+            "amplitude_steps": 9,
+            "pause_between_moves_s": 0.1,
+            "mode": "continuous_until_diamond_complete",
+            "stop_policy": "finish_closed_cycle"
+          },
+          "disk_rotation": {
+            "enabled": true,
+            "rpm": 300,
+            "settle_s": 1.0,
+            "mode": "continuous_for_entire_rinse_step",
+            "stop_after": true,
+            "immersed_rotation_confirmed": true
+          },
+          "inter_cycle_pause_s": 0.0,
+          "cycle_timeout_s": 30.0,
+          "require_closed_paths": true
+        },
+        {
+          "name": "Packaged Concurrent Rinse",
+          "action": "rinse",
+          "enabled": true,
+          "cycles": 8,
+          "diamond": {
+            "x_radius_steps": 5000,
+            "z_radius_steps": 7000
+          },
+          "arm_oscillation": {
+            "enabled": true,
+            "amplitude_deg": 2.0,
+            "amplitude_steps": 9,
+            "pause_between_moves_s": 0.1,
+            "mode": "continuous_until_diamond_complete",
+            "stop_policy": "finish_closed_cycle"
+          },
+          "disk_rotation": {
+            "enabled": true,
+            "rpm": 300,
+            "settle_s": 1.0,
+            "mode": "continuous_for_entire_rinse_step",
+            "stop_after": true,
+            "immersed_rotation_confirmed": true
+          },
+          "inter_cycle_pause_s": 0.0,
+          "cycle_timeout_s": 30.0,
+          "require_closed_paths": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "Set RDE RPM",
+          "action": "set_rpm",
+          "enabled": true,
+          "rpm": 2000
+        },
+        {
+          "name": "Wait",
+          "action": "wait",
+          "enabled": true,
+          "duration_s": 30.0
+        },
+        {
+          "name": "Stop RDE",
+          "action": "stop_rpm",
+          "enabled": true
+        },
+        {
+          "name": "Move Z \u2014 Relative Steps",
+          "action": "move_z",
+          "enabled": true,
+          "steps": -35000
+        },
+        {
+          "name": "RDE Arm Rotation",
+          "action": "rotation",
+          "enabled": true,
+          "command": "1"
+        },
+        {
+          "name": "Move X \u2014 Relative Steps",
+          "action": "move_x",
+          "enabled": true,
+          "steps": -255000
+        }
+      ]
+    }
+  ],
+  "saved_at": "2026-07-27T17:59:39.015695+00:00"
+}

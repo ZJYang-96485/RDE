@@ -23,12 +23,12 @@
       "technique": "lsv",
       "output": "LSV.DTA",
       "start_voltage_v": 0,
-      "end_voltage_v": -1.6,
-      "scan_rate_v_s": 0.005,
+      "end_voltage_v": -1.7,
+      "scan_rate_v_s": 0.02,
       "step_size_v": 0.001,
       "area_cm2": 0.2826
     }
   ],
   "editor_mode": "edit",
-  "saved_at": "2026-07-24T13:14:07.568082+00:00"
+  "saved_at": "2026-07-28T09:13:59.075869+00:00"
 }

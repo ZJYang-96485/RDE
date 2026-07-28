@@ -1329,7 +1329,7 @@
         </div>
         <button id="abortHomeBtn" class="abort-btn" type="button">Emergency Abort — Stop RDE, X/Z, and Arm Now</button>
         <p id="automationStatus" class="hint">Idle</p>
-        <p class="hint">Emergency Abort stops RDE and interruptible X/Z/arm motion immediately. An active ToolkitPy measurement may still need its current acquisition call to return.</p>
+        <p class="hint">Emergency Abort stops RDE and interruptible X/Z/arm motion immediately, terminates the active ToolkitPy measurement worker, forces Gamry Cell OFF, then automatically releases controls after interrupted commands finish unwinding.</p>
             <p id="automationError" class="error" hidden></p>
           </div>
 
@@ -1796,6 +1796,7 @@
       let running = false;
       let endsAt = null;
       let automationRunning = false;
+      let emergencyStopRecovering = false;
       let gamryRealRunnerConfigured = false;
       let gamryModeDirty = false;
       let availableProtocols = [];
@@ -2652,9 +2653,9 @@
 
       function updateGamryCellButtons(busy = false) {
         gamryCellRefreshBtn.disabled = busy;
-        gamryCellOn5Btn.disabled = busy || automationRunning;
-        gamryCellOn30Btn.disabled = busy || automationRunning;
-        gamryCellOnUntilOffBtn.disabled = busy || automationRunning;
+        gamryCellOn5Btn.disabled = busy || automationRunning || emergencyStopRecovering;
+        gamryCellOn30Btn.disabled = busy || automationRunning || emergencyStopRecovering;
+        gamryCellOnUntilOffBtn.disabled = busy || automationRunning || emergencyStopRecovering;
         // OFF deliberately stays available during automation and other requests.
         gamryCellOffBtn.disabled = false;
       }
@@ -2877,6 +2878,9 @@
           endsAt = data.ends_at ? new Date(data.ends_at) : null;
           const wasAutomationRunning = automationRunning;
           automationRunning = Boolean(data.automation_running);
+          emergencyStopRecovering = Boolean(
+            data.emergency_stop_recovering || data.abort_requested
+          );
           if (data.gamry_mode && !gamryModeDirty) {
             renderGamryModeStatus(data.gamry_mode, data.gamry_real_runner_configured);
           }
@@ -2885,9 +2889,19 @@
             : data.automation_step || "Idle";
           positionStatusEl.textContent = `Tracked relative total: X ${data.horizontal_position ?? 0}, Z ${data.linear_position ?? 0}`;
           setAutomationError(data.automation_error || "");
-          startExperimentBtn.disabled = automationRunning;
+          startExperimentBtn.disabled = automationRunning || emergencyStopRecovering;
           abortHomeBtn.disabled = !automationRunning;
-          const manualArmDisabled = automationRunning || manualArmRequestRunning;
+          const manualArmDisabled = (
+            automationRunning || manualArmRequestRunning || emergencyStopRecovering
+          );
+          if (emergencyStopRecovering) {
+            motorEmergencyStatusEl.textContent = (
+              data.emergency_stop_message
+              || "Emergency-stop cleanup is finishing; controls will recover automatically."
+            );
+          } else if (data.emergency_stop_message) {
+            motorEmergencyStatusEl.textContent = data.emergency_stop_message;
+          }
           const serialDevices = data.serial_devices || {};
           const rotationFirmwareReady = serialDevices.rotation?.firmware_ready !== false;
           const linearFirmwareReady = serialDevices.linear?.firmware_ready !== false;
@@ -2954,14 +2968,16 @@
           horizontalStepsInput.disabled = manualArmDisabled || !horizontalFirmwareReady;
           verticalStepsSlider.disabled = manualArmDisabled;
           verticalStepsInput.disabled = manualArmDisabled;
-          automationRepetitionsInput.disabled = automationRunning;
+          automationRepetitionsInput.disabled = automationRunning || emergencyStopRecovering;
           gamryModeSelect.disabled = true;
           saveGamryModeBtn.disabled = true;
           updateGamryProbeButton();
-          setRecipeDisabled(automationRunning);
-          setProtocolBuilderDisabled(automationRunning);
+          setRecipeDisabled(automationRunning || emergencyStopRecovering);
+          setProtocolBuilderDisabled(automationRunning || emergencyStopRecovering);
           updateGamryCellButtons(false);
-          setError(data.last_error || "");
+          // Historical RDE/automation failures belong in their own status
+          // panels. Re-inserting them here made a successful later Z command
+          // look as if it had failed with an unrelated Gamry error.
           updateButton();
           updateStatusText();
           if (wasAutomationRunning && !automationRunning) {
@@ -5119,13 +5135,13 @@
         }
 
         automationStatusEl.textContent = data.message || "Abort requested.";
-        if (data.gamry_cell_off_error) {
-          gamryCellMessageEl.classList.remove("hint");
-          gamryCellMessageEl.classList.add("error");
-          gamryCellMessageEl.textContent = `Emergency Cell OFF failed: ${data.gamry_cell_off_error}`;
-        } else {
-          await refreshGamryCellStatus();
-        }
+        gamryCellMessageEl.classList.remove("error");
+        gamryCellMessageEl.classList.add("hint");
+        gamryCellMessageEl.textContent = (
+          data.gamry_disconnect?.worker_was_active
+            ? "Active Gamry measurement disconnected; Cell OFF cleanup is finishing."
+            : "No active Gamry measurement worker; Cell OFF cleanup is finishing."
+        );
         await fetchStatus();
         return true;
       }
@@ -5149,13 +5165,13 @@
           setError(`RDE stop reported an error: ${data.rde_stop_error}`);
         }
 
-        if (data.gamry_cell_off_error) {
-          gamryCellMessageEl.classList.remove("hint");
-          gamryCellMessageEl.classList.add("error");
-          gamryCellMessageEl.textContent = `Emergency Cell OFF failed: ${data.gamry_cell_off_error}`;
-        } else {
-          await refreshGamryCellStatus();
-        }
+        gamryCellMessageEl.classList.remove("error");
+        gamryCellMessageEl.classList.add("hint");
+        gamryCellMessageEl.textContent = (
+          data.gamry_disconnect?.worker_was_active
+            ? "Active Gamry measurement disconnected; Cell OFF cleanup is finishing."
+            : "No active Gamry measurement worker; Cell OFF cleanup is finishing."
+        );
 
         await fetchStatus();
         return true;

@@ -517,6 +517,14 @@ class RotationController:
         )
         return sent
 
+    def wait_until_idle(self, timeout_s: float = 0.25) -> bool:
+        acquired = self.command_lock.acquire(
+            timeout=max(0.0, float(timeout_s))
+        )
+        if acquired:
+            self.command_lock.release()
+        return acquired
+
     def close(self) -> None:
         self.device.close()
 

@@ -1,6 +1,6 @@
 {
-  "protocol_name": "OCP_CP",
-  "display_name": "OCP+CP",
+  "protocol_name": "OCP_CP_10mA",
+  "display_name": "OCP+CP-10mA",
   "description": "",
   "source": {
     "type": "ui_flexible_builder",
@@ -22,7 +22,7 @@
       "enabled": true,
       "technique": "cp",
       "output": "CP.DTA",
-      "current_a": -0.00043,
+      "current_a": -0.002826,
       "duration_s": 3600,
       "sample_period_s": 1,
       "voltage_limit_low_v": -10,
@@ -32,5 +32,5 @@
     }
   ],
   "editor_mode": "edit",
-  "saved_at": "2026-07-28T09:13:09.703140+00:00"
+  "saved_at": "2026-07-28T09:18:03.028312+00:00"
 }

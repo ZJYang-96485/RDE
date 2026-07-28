@@ -12,7 +12,7 @@
       "enabled": true,
       "technique": "ocp",
       "output": "OCP.DTA",
-      "duration_s": 300,
+      "duration_s": 60,
       "sample_period_s": 0.5,
       "stability_mv_s": 0,
       "area_cm2": 0.2826
@@ -26,13 +26,13 @@
       "apex1_voltage_v": 0.2,
       "apex2_voltage_v": -0.2,
       "final_voltage_v": -0.2,
-      "scan_rate_v_s": 100,
+      "scan_rate_v_s": 0.05,
       "step_size_v": 0.002,
       "cycles": 5,
       "precharge_s": 1,
       "area_cm2": 0.2826
     }
   ],
-  "editor_mode": "create",
-  "saved_at": "2026-07-24T13:13:16.551578+00:00"
+  "editor_mode": "edit",
+  "saved_at": "2026-07-27T14:44:24.985141+00:00"
 }

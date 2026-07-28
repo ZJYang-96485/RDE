@@ -49,7 +49,9 @@ if __name__ == "__main__":
 
     serve(
         app,
-        host="0.0.0.0",
+        # This hardware-control UI is for the station laptop. Keep it off the
+        # LAN while retaining Waitress and the Windows keep-awake thread.
+        host="127.0.0.1",
         port=5055,
         threads=4,
     )

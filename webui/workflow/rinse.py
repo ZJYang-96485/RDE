@@ -448,19 +448,9 @@ def execute_rinse(
         )
         record_fn(run_dir, result)
         raise RinseExecutionError(result["error"])
-    if x_start_confidence != "tracked" or z_start_confidence != "tracked":
-        result.update(
-            {
-                "status": "failed",
-                "completed_at": utc_timestamp(),
-                "error": (
-                    "X/Z tracked-position confidence is uncertain; "
-                    "packaged rinse was not started."
-                ),
-            }
-        )
-        record_fn(run_dir, result)
-        raise RinseExecutionError(result["error"])
+    # X/Z confidence is retained in the run record for diagnostics, but it is
+    # not a packaged-rinse start interlock. Travel limits are still validated
+    # for every commanded segment, and emergency-stop behavior is unchanged.
 
     disk_enabled = bool(settings["disk_rotation"]["enabled"])
     arm_enabled = bool(settings["arm_oscillation"]["enabled"])

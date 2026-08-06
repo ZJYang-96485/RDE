@@ -13,6 +13,7 @@ from workflow.rinse import execute_rinse
 from workflow.rinse_paths import validate_rinse_settings
 from workflow.state import (
     get_axis_position_confidence,
+    mark_axis_positions_uncertain,
     reset_axis_positions,
 )
 
@@ -155,6 +156,38 @@ class PackagedRinseTests(unittest.TestCase):
         self.assertEqual(result["final_rpm"], 0)
         self.assertFalse(result["disk_angular_origin_claimed"])
         self.assertEqual(records[-1]["status"], "completed")
+
+    def test_uncertain_xz_confidence_does_not_block_rinse_start(self) -> None:
+        order: list[str] = []
+        arm = FakeArmController(order)
+        records: list[dict] = []
+        move_commands: list[tuple[int, int]] = []
+
+        mark_axis_positions_uncertain(("horizontal", "linear"))
+
+        result = execute_rinse(
+            run_dir=".",
+            label="Rinse",
+            settings=settings(cycles=1),
+            position_state={"x": 100, "z": 200},
+            controller=arm,
+            move_fn=lambda *, x_steps, z_steps, abort_event: (
+                move_commands.append((x_steps, z_steps))
+                or {"x_ack": "ACK", "z_ack": "ACK"}
+            ),
+            send_rpm_fn=lambda _rpm: "ACK",
+            stop_rde_fn=lambda _error: None,
+            emergency_stop_motion_fn=lambda: None,
+            emergency_stop_rotation_fn=lambda: None,
+            external_abort_event=threading.Event(),
+            record_fn=lambda _run_dir, record: records.append(dict(record)) or record,
+            log_fn=lambda _run_dir, _message: None,
+        )
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["rinse_start_x_confidence"], "uncertain")
+        self.assertEqual(result["rinse_start_z_confidence"], "uncertain")
+        self.assertTrue(move_commands)
 
     def test_component_failure_cancels_without_return_or_homing(self) -> None:
         order: list[str] = []
